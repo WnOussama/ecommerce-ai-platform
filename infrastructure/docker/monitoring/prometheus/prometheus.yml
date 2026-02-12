@@ -1,0 +1,96 @@
+# =============================================================================
+# Prometheus Configuration
+# Collecte des métriques de l'écosystème SaaS AI
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: 'production'
+    service: 'saas-ai-ecommerce'
+
+# Alerting
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Règles d'alerte
+rule_files:
+  - /etc/prometheus/alerts/alerts.yml
+  - /etc/prometheus/alerts/ai_alerts.yml
+
+# Configuration des scrapes
+scrape_configs:
+  # ===========================================================================
+  # AI CHAT SERVICE - Client-facing
+  # ===========================================================================
+  - job_name: 'ai-chat-service'
+    static_configs:
+      - targets: ['ai-chat-service:8001']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'chat'
+
+  # ===========================================================================
+  # AI ADMIN SERVICE - Admin-facing
+  # ===========================================================================
+  - job_name: 'ai-admin-service'
+    static_configs:
+      - targets: ['ai-admin-service:8002']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'admin'
+
+  # ===========================================================================
+  # AI SYNC SERVICE - Background workers (pas de metrics HTTP)
+  # Les métriques sont pushées via Redis ou pushgateway
+  # ===========================================================================
+
+  # ===========================================================================
+  # MySQL (via mysqld_exporter si configuré)
+  # ===========================================================================
+  - job_name: 'mysql'
+    static_configs:
+      - targets: ['mysql-exporter:9104']
+    scrape_interval: 30s
+
+  # ===========================================================================
+  # Redis
+  # ===========================================================================
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 15s
+
+  # ===========================================================================
+  # Nginx
+  # ===========================================================================
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx-exporter:9113']
+    scrape_interval: 15s
+
+  # ===========================================================================
+  # Node Exporter (métriques système)
+  # ===========================================================================
+  - job_name: 'node'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+  # ===========================================================================
+  # Prometheus self-monitoring
+  # ===========================================================================
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+

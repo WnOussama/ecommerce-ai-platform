@@ -1,0 +1,426 @@
+# =============================================================================
+# ALERTING RULES - SLA & AI Specific
+# =============================================================================
+
+groups:
+  # ===========================================================================
+  # SLA ALERTS
+  # ===========================================================================
+  - name: sla_alerts
+    interval: 30s
+    rules:
+      # API Availability < 99.9%
+      - alert: APIAvailabilityLow
+        expr: |
+          100 * (1 - sum(rate(api_requests_total{status_code=~"5.."}[5m])) 
+          / sum(rate(api_requests_total[5m]))) < 99.9
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "API availability below SLA (99.9%)"
+          description: "Current availability: {{ $value | printf \"%.2f\" }}%"
+          runbook_url: "https://docs.example.com/runbooks/api-availability"
+
+      # API Latency P95 > 2s
+      - alert: APILatencyHigh
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(api_request_duration_seconds_bucket[5m])) by (le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "API P95 latency exceeds 2s"
+          description: "Current P95 latency: {{ $value | printf \"%.2f\" }}s"
+
+      # Error Rate > 1%
+      - alert: HighErrorRate
+        expr: |
+          100 * sum(rate(api_requests_total{status_code=~"5.."}[5m])) 
+          / sum(rate(api_requests_total[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Error rate exceeds 1%"
+          description: "Current error rate: {{ $value | printf \"%.2f\" }}%"
+
+  # ===========================================================================
+  # LLM ALERTS
+  # ===========================================================================
+  - name: llm_alerts
+    interval: 30s
+    rules:
+      # LLM Latency P95 > 5s
+      - alert: LLMLatencyHigh
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(llm_request_duration_seconds_bucket[5m])) by (le)
+          ) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "LLM P95 latency exceeds 5s"
+          description: "Current P95 latency: {{ $value | printf \"%.2f\" }}s"
+
+      # LLM Latency P95 > 10s (Critical)
+      - alert: LLMLatencyCritical
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(llm_request_duration_seconds_bucket[5m])) by (le)
+          ) > 10
+        for: 3m
+        labels:
+          severity: critical
+          team: ai
+        annotations:
+          summary: "LLM P95 latency critically high (>10s)"
+          description: "Current P95 latency: {{ $value | printf \"%.2f\" }}s"
+
+      # LLM Error Rate > 5%
+      - alert: LLMErrorRateHigh
+        expr: |
+          100 * sum(rate(llm_errors_total[5m])) 
+          / sum(rate(llm_requests_total[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "LLM error rate exceeds 5%"
+          description: "Current error rate: {{ $value | printf \"%.2f\" }}%"
+
+      # LLM Rate Limit Errors
+      - alert: LLMRateLimitErrors
+        expr: |
+          sum(rate(llm_errors_total{error_type="rate_limit"}[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "LLM rate limit errors detected"
+          description: "Provider rate limits being hit"
+
+      # High Token Usage per Tenant (cost control)
+      - alert: TenantHighTokenUsage
+        expr: |
+          sum(increase(llm_tokens_total[1h])) by (tenant_id) > 100000
+        for: 10m
+        labels:
+          severity: warning
+          team: billing
+        annotations:
+          summary: "High token usage for tenant {{ $labels.tenant_id }}"
+          description: "{{ $value | printf \"%.0f\" }} tokens in last hour"
+
+      # Daily Cost Exceeds Budget
+      - alert: TenantDailyCostHigh
+        expr: |
+          sum(increase(llm_cost_dollars_total[24h])) by (tenant_id) > 100
+        for: 30m
+        labels:
+          severity: warning
+          team: billing
+        annotations:
+          summary: "Daily LLM cost exceeds $100 for tenant {{ $labels.tenant_id }}"
+          description: "Current daily cost: ${{ $value | printf \"%.2f\" }}"
+
+  # ===========================================================================
+  # RAG ALERTS
+  # ===========================================================================
+  - name: rag_alerts
+    interval: 30s
+    rules:
+      # RAG Hit Rate < 60%
+      - alert: RAGHitRateLow
+        expr: |
+          100 * sum(rate(rag_queries_total{result="hit"}[1h])) 
+          / sum(rate(rag_queries_total[1h])) < 60
+        for: 30m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "RAG hit rate below 60%"
+          description: "Current hit rate: {{ $value | printf \"%.1f\" }}%"
+          action: "Review indexing quality and query relevance"
+
+      # RAG Latency P95 > 1s
+      - alert: RAGLatencyHigh
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(rag_query_duration_seconds_bucket{stage="total"}[5m])) by (le)
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "RAG P95 latency exceeds 1s"
+          description: "Current P95 latency: {{ $value | printf \"%.2f\" }}s"
+
+      # Embedding Queue Backlog High
+      - alert: EmbeddingQueueBacklogHigh
+        expr: |
+          sum(embedding_queue_backlog) > 100
+        for: 10m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "Embedding queue backlog exceeds 100"
+          description: "Current backlog: {{ $value | printf \"%.0f\" }} jobs"
+          action: "Scale up sync workers"
+
+      # Embedding Queue Backlog Critical
+      - alert: EmbeddingQueueBacklogCritical
+        expr: |
+          sum(embedding_queue_backlog) > 500
+        for: 5m
+        labels:
+          severity: critical
+          team: ai
+        annotations:
+          summary: "Embedding queue backlog critically high"
+          description: "Current backlog: {{ $value | printf \"%.0f\" }} jobs"
+          action: "Immediate scaling required"
+
+  # ===========================================================================
+  # QUALITY ALERTS
+  # ===========================================================================
+  - name: quality_alerts
+    interval: 1m
+    rules:
+      # Hallucination Rate > 5%
+      - alert: HallucinationRateHigh
+        expr: |
+          100 * sum(rate(ai_hallucination_detected_total[1h])) 
+          / sum(rate(llm_requests_total{status="success"}[1h])) > 5
+        for: 30m
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "Hallucination rate exceeds 5%"
+          description: "Current rate: {{ $value | printf \"%.1f\" }}%"
+          action: "Review RAG context quality and prompt engineering"
+
+      # Low Response Confidence
+      - alert: LowResponseConfidence
+        expr: |
+          histogram_quantile(0.5, 
+            sum(rate(ai_response_confidence_bucket[1h])) by (le)
+          ) < 0.6
+        for: 1h
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "Median response confidence below 60%"
+          description: "Current median confidence: {{ $value | printf \"%.1f\" }}"
+
+      # High Guardrail Trigger Rate
+      - alert: GuardrailTriggerRateHigh
+        expr: |
+          sum(rate(guardrail_triggers_total{action="blocked"}[1h])) 
+          / sum(rate(llm_requests_total[1h])) > 0.1
+        for: 30m
+        labels:
+          severity: info
+          team: ai
+        annotations:
+          summary: "High guardrail trigger rate (>10%)"
+          description: "Many responses being blocked by guardrails"
+
+  # ===========================================================================
+  # SECURITY ALERTS
+  # ===========================================================================
+  - name: security_alerts
+    interval: 30s
+    rules:
+      # Prompt Injection Attempts (any blocked)
+      - alert: PromptInjectionDetected
+        expr: |
+          sum(increase(prompt_injection_attempts_total{blocked="true"}[5m])) > 0
+        for: 1m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Prompt injection attempts detected and blocked"
+          description: "{{ $value | printf \"%.0f\" }} attempts in last 5 minutes"
+
+      # High Rate of Injection Attempts
+      - alert: PromptInjectionRateHigh
+        expr: |
+          sum(rate(prompt_injection_attempts_total[10m])) > 1
+        for: 5m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "High rate of prompt injection attempts"
+          description: "Possible targeted attack in progress"
+          action: "Review source IPs and consider blocking"
+
+      # Critical Threat Level Attempts
+      - alert: CriticalThreatDetected
+        expr: |
+          sum(increase(prompt_injection_attempts_total{threat_level="critical"}[5m])) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Critical threat level prompt injection detected"
+          description: "Immediate review required"
+
+      # Rate Limit Exceeded (possible abuse)
+      - alert: RateLimitExceededFrequent
+        expr: |
+          sum(rate(rate_limit_exceeded_total[5m])) by (tenant_id) > 1
+        for: 5m
+        labels:
+          severity: warning
+          team: security
+        annotations:
+          summary: "Frequent rate limit exceeded for tenant {{ $labels.tenant_id }}"
+          description: "Possible abuse or misconfigured client"
+
+  # ===========================================================================
+  # BUSINESS ALERTS
+  # ===========================================================================
+  - name: business_alerts
+    interval: 1m
+    rules:
+      # No Conversations (service may be down)
+      - alert: NoConversations
+        expr: |
+          sum(rate(conversations_total[30m])) == 0
+        for: 30m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "No new conversations in 30 minutes"
+          description: "Service may be experiencing issues"
+
+      # Conversion Rate Drop
+      - alert: ConversionRateDrop
+        expr: |
+          sum(rate(conversion_events_total{event_type="purchased"}[1h])) 
+          / sum(rate(conversations_total[1h])) 
+          < 0.01
+        for: 2h
+        labels:
+          severity: warning
+          team: business
+        annotations:
+          summary: "Conversion rate below 1%"
+          description: "Current conversion rate: {{ $value | printf \"%.2f\" }}%"
+
+      # Negative Feedback Spike
+      - alert: NegativeFeedbackSpike
+        expr: |
+          sum(rate(response_feedback_total{feedback="negative"}[1h])) 
+          / sum(rate(response_feedback_total[1h])) > 0.2
+        for: 1h
+        labels:
+          severity: warning
+          team: ai
+        annotations:
+          summary: "Negative feedback rate exceeds 20%"
+          description: "Review recent AI responses for quality issues"
+
+  # ===========================================================================
+  # ADMIN AI ALERTS
+  # ===========================================================================
+  - name: admin_alerts
+    interval: 1m
+    rules:
+      # Pending Human Approvals
+      - alert: PendingHumanApprovals
+        expr: |
+          sum(admin_ai_human_approvals_pending) > 5
+        for: 30m
+        labels:
+          severity: info
+          team: admin
+        annotations:
+          summary: "{{ $value | printf \"%.0f\" }} pending human approvals"
+          description: "Admin actions awaiting approval"
+
+      # Failed Admin Actions
+      - alert: AdminActionFailures
+        expr: |
+          sum(rate(admin_ai_actions_total{status="failed"}[1h])) > 0.1
+        for: 30m
+        labels:
+          severity: warning
+          team: admin
+        annotations:
+          summary: "Admin AI actions failing"
+          description: "Review failed actions and error logs"
+
+  # ===========================================================================
+  # INFRASTRUCTURE ALERTS
+  # ===========================================================================
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      # High CPU Usage
+      - alert: HighCPUUsage
+        expr: |
+          100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 80
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High CPU usage (>80%)"
+          description: "Consider scaling up"
+
+      # High Memory Usage
+      - alert: HighMemoryUsage
+        expr: |
+          100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 85
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High memory usage (>85%)"
+          description: "Consider scaling up"
+
+      # Redis Connection Issues
+      - alert: RedisConnectionIssues
+        expr: |
+          redis_connected_clients < 1
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Redis connection issues"
+          description: "No clients connected to Redis"
+
+      # MySQL Replication Lag
+      - alert: MySQLReplicationLag
+        expr: |
+          mysql_slave_seconds_behind_master > 30
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "MySQL replication lag exceeds 30s"
+          description: "Current lag: {{ $value | printf \"%.0f\" }}s"
+
