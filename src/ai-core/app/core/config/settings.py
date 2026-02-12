@@ -1,0 +1,244 @@
+"""
+Configuration centralisée Production-Ready
+Utilise pydantic-settings pour validation et typage fort
+"""
+
+from functools import lru_cache
+from typing import List, Optional
+from pydantic import Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class DatabaseSettings(BaseSettings):
+    """Configuration base de données MySQL"""
+    model_config = SettingsConfigDict(env_prefix="DB_")
+
+    host: str = "localhost"
+    port: int = 3306
+    name: str = "saas_ecommerce"
+    user: str = "saas_user"
+    password: str = Field(..., min_length=8)
+    pool_size: int = Field(default=10, ge=5, le=50)
+    max_overflow: int = Field(default=20, ge=0, le=100)
+    pool_recycle: int = 3600  # Recycle connections after 1 hour
+    echo: bool = False
+
+    @property
+    def url(self) -> str:
+        return f"mysql+aiomysql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+
+    @property
+    def sync_url(self) -> str:
+        return f"mysql+pymysql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+
+
+class RedisSettings(BaseSettings):
+    """Configuration Redis pour cache et rate limiting"""
+    model_config = SettingsConfigDict(env_prefix="REDIS_")
+
+    host: str = "localhost"
+    port: int = 6379
+    db: int = 0
+    password: Optional[str] = None
+    max_connections: int = 50
+    socket_timeout: int = 5
+
+    # Séparation des DBs par usage
+    cache_db: int = 0
+    session_db: int = 1
+    rate_limit_db: int = 2
+    celery_db: int = 3
+
+    @property
+    def url(self) -> str:
+        auth = f":{self.password}@" if self.password else ""
+        return f"redis://{auth}{self.host}:{self.port}/{self.db}"
+
+
+class VectorStoreSettings(BaseSettings):
+    """Configuration ChromaDB pour embeddings"""
+    model_config = SettingsConfigDict(env_prefix="CHROMA_")
+
+    persist_directory: str = "./data/chroma"
+    collection_prefix: str = "tenant"  # tenant_{tenant_id}_{collection_type}
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+    max_batch_size: int = 100
+
+
+class LLMSettings(BaseSettings):
+    """Configuration LLM avec support multi-provider"""
+    model_config = SettingsConfigDict(env_prefix="LLM_")
+
+    provider: str = "mock"  # mock, openai, anthropic, azure
+
+    # OpenAI
+    openai_api_key: Optional[str] = None
+    openai_model: str = "gpt-4-turbo-preview"
+    openai_embedding_model: str = "text-embedding-3-small"
+
+    # Anthropic (backup)
+    anthropic_api_key: Optional[str] = None
+    anthropic_model: str = "claude-3-sonnet-20240229"
+
+    # Paramètres génération
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=1000, ge=100, le=4096)
+    timeout: int = 30
+    max_retries: int = 3
+
+    # Rate limiting par tenant (requêtes/minute)
+    default_rate_limit: int = 60
+    max_rate_limit: int = 300
+
+    # Coût tracking
+    track_costs: bool = True
+    cost_per_1k_input_tokens: float = 0.01  # GPT-4 Turbo
+    cost_per_1k_output_tokens: float = 0.03
+
+
+class SecuritySettings(BaseSettings):
+    """Configuration sécurité"""
+    model_config = SettingsConfigDict(env_prefix="SECURITY_")
+
+    # JWT
+    jwt_secret_key: str = Field(..., min_length=32)
+    jwt_algorithm: str = "HS256"
+    jwt_expiration_hours: int = 24
+    jwt_refresh_expiration_days: int = 7
+
+    # API Keys
+    api_key_prefix: str = "sk_"
+    api_key_length: int = 32
+
+    # Rate Limiting
+    rate_limit_requests: int = 100
+    rate_limit_window_seconds: int = 60
+
+    # CORS
+    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:8080"]
+    cors_allow_credentials: bool = True
+
+    # Content Security
+    max_request_size_mb: int = 10
+    allowed_file_types: List[str] = ["image/jpeg", "image/png", "application/pdf"]
+
+    # Prompt Injection Protection
+    prompt_injection_detection: bool = True
+    sensitive_action_confirmation: bool = True
+    admin_action_audit_log: bool = True
+
+
+class MonitoringSettings(BaseSettings):
+    """Configuration observabilité"""
+    model_config = SettingsConfigDict(env_prefix="MONITORING_")
+
+    # Prometheus
+    prometheus_enabled: bool = True
+    prometheus_port: int = 9090
+
+    # Logging
+    log_level: str = "INFO"
+    log_format: str = "json"  # json ou text
+    log_file: Optional[str] = None
+
+    # Tracing
+    tracing_enabled: bool = False
+    jaeger_host: str = "localhost"
+    jaeger_port: int = 6831
+
+    # Health checks
+    health_check_interval: int = 30
+
+
+class TenantSettings(BaseSettings):
+    """Configuration multi-tenant"""
+    model_config = SettingsConfigDict(env_prefix="TENANT_")
+
+    # Isolation
+    isolation_mode: str = "logical"  # logical (shared DB) ou physical (separate DBs)
+
+    # Limites par défaut
+    default_max_conversations_per_day: int = 1000
+    default_max_products_indexed: int = 10000
+    default_max_customers: int = 50000
+
+    # Plans
+    plans: dict = {
+        "starter": {
+            "max_conversations_per_day": 500,
+            "max_products_indexed": 1000,
+            "max_customers": 5000,
+            "rate_limit_rpm": 30,
+            "features": ["chatbot", "faq"]
+        },
+        "professional": {
+            "max_conversations_per_day": 2000,
+            "max_products_indexed": 10000,
+            "max_customers": 25000,
+            "rate_limit_rpm": 100,
+            "features": ["chatbot", "faq", "recommendations", "coupons"]
+        },
+        "enterprise": {
+            "max_conversations_per_day": 10000,
+            "max_products_indexed": 100000,
+            "max_customers": -1,  # Illimité
+            "rate_limit_rpm": 300,
+            "features": ["chatbot", "faq", "recommendations", "coupons", "admin_ai", "analytics"]
+        }
+    }
+
+
+class Settings(BaseSettings):
+    """Configuration principale agrégée"""
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+
+    # Application
+    app_name: str = "SaaS AI E-commerce Assistant"
+    app_version: str = "1.0.0"
+    environment: str = Field(default="development", pattern="^(development|staging|production)$")
+    debug: bool = False
+
+    # API
+    api_prefix: str = "/api/v1"
+    docs_enabled: bool = True
+
+    # Sub-configurations
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    redis: RedisSettings = Field(default_factory=RedisSettings)
+    vector_store: VectorStoreSettings = Field(default_factory=VectorStoreSettings)
+    llm: LLMSettings = Field(default_factory=LLMSettings)
+    security: SecuritySettings = Field(default_factory=SecuritySettings)
+    monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
+    tenant: TenantSettings = Field(default_factory=TenantSettings)
+
+    @field_validator("environment")
+    @classmethod
+    def validate_environment(cls, v: str) -> str:
+        if v == "production":
+            # En production, certaines options doivent être désactivées
+            pass
+        return v
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment == "production"
+
+    @property
+    def is_development(self) -> bool:
+        return self.environment == "development"
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    """Singleton cached pour les settings"""
+    return Settings()
+
+
+# Export pour faciliter l'import
+settings = get_settings()
+
