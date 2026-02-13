@@ -60,6 +60,7 @@ class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         "Conversation",
         back_populates="tenant",
         passive_deletes=True,
+        overlaps="tenant,conversations",
     )
     rules = relationship(
         "Rule",
@@ -70,6 +71,7 @@ class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         "Coupon",
         back_populates="tenant",
         passive_deletes=True,
+        overlaps="tenant,coupons",
     )
     analytics_events = relationship(
         "AnalyticsEvent",
@@ -86,6 +88,7 @@ class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         Index("idx_tenant_slug", "slug"),
         Index("idx_tenant_is_active", "is_active"),
         Index("idx_tenant_created_at", "created_at"),
+        {'extend_existing': True}
     )
 
     def __repr__(self) -> str:

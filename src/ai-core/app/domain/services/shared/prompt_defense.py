@@ -55,6 +55,10 @@ logger = logging.getLogger(__name__)
 # TYPES
 # =============================================================================
 
+# Mapping pour comparaison ordinale des niveaux de menace
+_THREAT_ORDER = {"none": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}
+
+
 class ThreatLevel(str, Enum):
     """Niveau de menace détecté"""
     NONE = "none"
@@ -64,6 +68,7 @@ class ThreatLevel(str, Enum):
     CRITICAL = "critical"
 
     @property
+<<<<<<< HEAD
     def severity(self) -> int:
         """Numeric severity for proper comparison"""
         _severity_map = {
@@ -74,6 +79,31 @@ class ThreatLevel(str, Enum):
             "critical": 4,
         }
         return _severity_map[self.value]
+=======
+    def order(self) -> int:
+        """Retourne l'ordre numérique pour comparaison"""
+        return _THREAT_ORDER[self.value]
+
+    def __lt__(self, other):
+        if isinstance(other, ThreatLevel):
+            return self.order < other.order
+        return NotImplemented
+
+    def __le__(self, other):
+        if isinstance(other, ThreatLevel):
+            return self.order <= other.order
+        return NotImplemented
+
+    def __gt__(self, other):
+        if isinstance(other, ThreatLevel):
+            return self.order > other.order
+        return NotImplemented
+
+    def __ge__(self, other):
+        if isinstance(other, ThreatLevel):
+            return self.order >= other.order
+        return NotImplemented
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
 
 
 class DefenseLayer(str, Enum):
@@ -132,6 +162,7 @@ class InputSanitizer:
         r"god\s+mode",
         r"jailbreak",
 
+<<<<<<< HEAD
         # Data extraction - Enhanced patterns
         r"(show|reveal|print|output|display)\s+(me\s+)?(your\s+)?((system|initial)\s+)?prompt",
         r"(show|reveal|print|output|display)\s+(me\s+)?(your\s+)?((system|initial)\s+)?instructions?",
@@ -140,6 +171,14 @@ class InputSanitizer:
 
         # Roleplay attacks (moved to CRITICAL)
         r"you\s+are\s+now\s+(a\s+)?(\w+\s+)?(AI|bot|assistant|hacker)",
+=======
+        # Data extraction (critical level)
+        r"(show|reveal|print|output)\s+(me\s+)?(your\s+)?(system\s+)?prompt",
+        r"what\s+are\s+your\s+(instructions|rules)",
+        r"repeat\s+(your\s+)?instructions",
+        r"reveal\s+your\s+instructions",
+        r"print\s+your\s+(\w+\s+)?prompt",
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
     ]
 
     # Patterns suspects (medium risk)
@@ -149,8 +188,13 @@ class InputSanitizer:
         r"let'?s\s+play\s+a\s+game",
         r"ignore\s+the\s+(above|previous)",
         r"</?(system|user|assistant)>",
+<<<<<<< HEAD
         r"\{system_prompt\}",  # Template-style data exfiltration
         r"!\[.*\]\(.*system_prompt.*\)",  # Markdown image injection
+=======
+        r"!\[.*?\]\(.*?\{.*?prompt.*?\}.*?\)",  # Markdown image with prompt variable
+        r"\{system_prompt\}",  # Direct variable reference
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
     ]
 
     # Encodings malicieux
@@ -214,14 +258,22 @@ class InputSanitizer:
             for regex in self._suspicious_regex:
                 if regex.search(text):
                     threats.append(f"suspicious_pattern:{regex.pattern[:30]}")
+<<<<<<< HEAD
                     if threat_level.severity < ThreatLevel.HIGH.severity:
+=======
+                    if threat_level < ThreatLevel.HIGH:
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
                         threat_level = ThreatLevel.HIGH
 
         # 6. Détecter encodings malicieux
         for regex in self._encoding_regex:
             if regex.search(text):
                 threats.append("encoded_content")
+<<<<<<< HEAD
                 if threat_level.severity < ThreatLevel.MEDIUM.severity:
+=======
+                if threat_level < ThreatLevel.MEDIUM:
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
                     threat_level = ThreatLevel.MEDIUM
 
         # Décision de blocage
@@ -494,6 +546,7 @@ class OutputValidator:
 
     # Patterns indiquant une fuite d'information
     LEAK_PATTERNS = [
+<<<<<<< HEAD
         r"(voici|here\s+is|here\'s)\s+(my|the|your|mon|le)\s+(system\s+)?prompt",
         r"voici\s+mon\s+system\s+prompt",
         r"mon\s+system\s+prompt",
@@ -503,6 +556,14 @@ class OutputValidator:
         r"SYSTEM_INSTRUCTIONS",
         r"<<<.+>>>",  # Nos marqueurs
         r"system\s+prompt\s*:",
+=======
+        r"(voici|here\s+is|here\'s)\s+(my|the|your|mon|ma|mes|le|la|les)\s+(system\s+)?prompt",
+        r"(my|the|mon|ma)\s+instructions?\s+(are|say|tell|est|sont)",
+        r"RÈGLES\s+VERROUILLÉES",
+        r"SYSTEM_INSTRUCTIONS",
+        r"<<<.+>>>",  # Nos marqueurs
+        r"system\s+prompt\s*:",  # Direct leak attempt
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
     ]
 
     # Patterns de comportement inapproprié

@@ -107,9 +107,9 @@ class Message(Base, UUIDMixin, TimestampMixin):
     tokens_output = Column(Integer, nullable=True)
 
     # Relations ORM
-    # Note: overlaps="messages" pour éviter warning SQLAlchemy
+    # Note: overlaps pour éviter warning SQLAlchemy avec models.py
     tenant = relationship("Tenant", foreign_keys=[tenant_id], overlaps="messages")
-    conversation = relationship("Conversation", back_populates="messages")
+    conversation = relationship("Conversation", back_populates="messages", overlaps="conversation,messages")
 
     __table_args__ = (
         # Index pour isolation multi-tenant
@@ -125,6 +125,8 @@ class Message(Base, UUIDMixin, TimestampMixin):
 
         # Index pour idempotency (éviter double insertion)
         Index("idx_message_idempotency_key", "idempotency_key", unique=True),
+
+        {'extend_existing': True}
     )
 
     def __repr__(self) -> str:

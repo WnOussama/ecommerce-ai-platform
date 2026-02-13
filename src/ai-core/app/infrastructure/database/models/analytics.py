@@ -91,6 +91,8 @@ class AnalyticsEvent(Base, UUIDMixin, TimestampMixin):
         # Commentaire pour partitioning futur
         # En production, considérer partitioning par mois:
         # PARTITION BY RANGE (created_at)
+
+        {'extend_existing': True}
     )
 
     def __repr__(self) -> str:

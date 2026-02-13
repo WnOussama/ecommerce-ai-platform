@@ -104,8 +104,10 @@ class Coupon(Base, UUIDMixin, TimestampMixin):
     )
 
     # Relations ORM
-    tenant = relationship("Tenant", back_populates="coupons")
-    conversation = relationship("Conversation", foreign_keys=[conversation_id])
+    tenant = relationship("Tenant", back_populates="coupons", overlaps="tenant,coupons")
+    # NOTE: conversation_id exists as FK column but relationship is NOT defined here
+    # to avoid conflict with models.py which also defines coupons table.
+    # Use explicit queries via conversation_id if needed.
     rule = relationship("Rule", back_populates="coupons")
 
     __table_args__ = (
@@ -114,6 +116,7 @@ class Coupon(Base, UUIDMixin, TimestampMixin):
         Index("idx_coupon_status", "tenant_id", "status"),
         Index("idx_coupon_expires_at", "tenant_id", "expires_at"),
         Index("idx_coupon_created_at", "tenant_id", "created_at"),
+        {'extend_existing': True}
     )
 
     def __repr__(self) -> str:

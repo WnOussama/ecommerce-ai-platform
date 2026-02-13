@@ -72,13 +72,14 @@ class TenantModel(Base):
 
     # Relations
     customers = relationship("CustomerModel", back_populates="tenant", lazy="dynamic")
-    conversations = relationship("ConversationModel", back_populates="tenant", lazy="dynamic")
-    coupons = relationship("CouponModel", back_populates="tenant", lazy="dynamic")
+    conversations = relationship("ConversationModel", back_populates="tenant", lazy="dynamic", overlaps="tenant,conversations")
+    coupons = relationship("CouponModel", back_populates="tenant", lazy="dynamic", overlaps="tenant,coupons")
     admin_actions = relationship("AdminActionModel", back_populates="tenant", lazy="dynamic")
 
     __table_args__ = (
         Index("idx_tenant_status", "status"),
         Index("idx_tenant_platform", "platform"),
+        {'extend_existing': True}
     )
 
 
@@ -136,6 +137,7 @@ class CustomerModel(Base):
         Index("idx_customer_email", "tenant_id", "email"),
         Index("idx_customer_segment", "tenant_id", "segment"),
         Index("idx_customer_loyalty", "tenant_id", "loyalty_score"),
+        {'extend_existing': True}
     )
 
 
@@ -180,15 +182,16 @@ class ConversationModel(Base):
     resolved_at = Column(DateTime, nullable=True)
 
     # Relations
-    tenant = relationship("TenantModel", back_populates="conversations")
+    tenant = relationship("TenantModel", back_populates="conversations", overlaps="tenant,conversations")
     customer = relationship("CustomerModel", back_populates="conversations")
     messages = relationship("MessageModel", back_populates="conversation", lazy="dynamic",
-                          order_by="MessageModel.created_at")
+                          order_by="MessageModel.created_at", overlaps="conversation,messages")
 
     __table_args__ = (
         Index("idx_conv_tenant_session", "tenant_id", "session_id"),
         Index("idx_conv_tenant_status", "tenant_id", "status"),
         Index("idx_conv_tenant_date", "tenant_id", "created_at"),
+        {'extend_existing': True}
     )
 
 
@@ -226,10 +229,11 @@ class MessageModel(Base):
     created_at = Column(DateTime, default=func.now())
 
     # Relations
-    conversation = relationship("ConversationModel", back_populates="messages")
+    conversation = relationship("ConversationModel", back_populates="messages", overlaps="conversation,messages")
 
     __table_args__ = (
         Index("idx_message_conv_date", "conversation_id", "created_at"),
+        {'extend_existing': True}
     )
 
 
@@ -258,7 +262,7 @@ class CouponModel(Base):
     # Génération IA
     generation_reason = Column(String(100), nullable=False)
     ai_generated = Column(Boolean, default=True)
-    conversation_id = Column(UUID(as_uuid=True), nullable=True)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
 
     # Validité
     valid_from = Column(DateTime, nullable=False)
@@ -272,9 +276,18 @@ class CouponModel(Base):
     created_at = Column(DateTime, default=func.now())
 
     # Relations
-    tenant = relationship("TenantModel", back_populates="coupons")
+    tenant = relationship("TenantModel", back_populates="coupons", overlaps="tenant,coupons")
     customer = relationship("CustomerModel", back_populates="coupons")
 
+<<<<<<< HEAD
+=======
+    __table_args__ = (
+        Index("idx_coupon_code", "code"),
+        Index("idx_coupon_tenant_status", "tenant_id", "status"),
+        Index("idx_coupon_customer", "customer_id"),
+        {'extend_existing': True}
+    )
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
 
 
 # ============================================================================
@@ -327,6 +340,7 @@ class AdminActionModel(Base):
         Index("idx_admin_tenant_type", "tenant_id", "action_type"),
         Index("idx_admin_tenant_status", "tenant_id", "status"),
         Index("idx_admin_tenant_date", "tenant_id", "created_at"),
+        {'extend_existing': True}
     )
 
 
@@ -361,6 +375,7 @@ class LLMUsageModel(Base):
     __table_args__ = (
         Index("idx_usage_tenant_date", "tenant_id", "created_at"),
         Index("idx_usage_tenant_model", "tenant_id", "model"),
+        {'extend_existing': True}
     )
 
 
@@ -395,5 +410,6 @@ class ProductEmbeddingModel(Base):
     __table_args__ = (
         Index("idx_embed_tenant_product", "tenant_id", "product_external_id", unique=True),
         Index("idx_embed_hash", "content_hash"),
+        {'extend_existing': True}
     )
 

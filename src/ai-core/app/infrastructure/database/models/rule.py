@@ -101,6 +101,7 @@ class Rule(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         Index("idx_rule_tenant_id", "tenant_id"),
         Index("idx_rule_tenant_active", "tenant_id", "is_active"),
         Index("idx_rule_priority", "tenant_id", "priority"),
+        {'extend_existing': True}
     )
 
     def __repr__(self) -> str:

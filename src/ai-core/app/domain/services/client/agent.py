@@ -232,6 +232,8 @@ FORMAT DE RÉPONSE:
 """
 
     # Protection contre injection
+    # IMPORTANT: Tous les patterns doivent être en minuscules car la comparaison
+    # se fait avec message.lower()
     INJECTION_PATTERNS = [
         "ignore previous",
         "ignore above",
@@ -243,7 +245,12 @@ FORMAT DE RÉPONSE:
         "act as",
         "roleplay",
         "jailbreak",
+<<<<<<< HEAD
         "dan mode",
+=======
+        "dan mode",  # DAN (Do Anything Now) jailbreak
+        "do anything now",  # Variante explicite
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
     ]
 
     def __init__(self, tenant_settings: Dict[str, Any]):
@@ -375,27 +382,19 @@ class ClientAIAgent:
         Point d'entrée principal pour traiter un message client.
 
         Pipeline:
-        1. Récupération/création conversation
-        2. Enrichissement du contexte
-        3. Classification de l'intention
-        4. Récupération connaissances (RAG)
-        5. Génération de réponse
-        6. Actions post-traitement
-        7. Sauvegarde et métriques
+        1. Sécurité - Sanitize input (AVANT création ressources)
+        2. Récupération/création conversation
+        3. Enrichissement du contexte
+        4. Classification de l'intention
+        5. Récupération connaissances (RAG)
+        6. Génération de réponse
+        7. Actions post-traitement
+        8. Sauvegarde et métriques
         """
         context = context or {}
 
-        # 1. Conversation
-        conversation = await self._get_or_create_conversation(
-            tenant_id, session_id, context.get("customer_id")
-        )
-
-        # 2. Contexte enrichi
-        enriched_context = await self._build_context(
-            tenant_id, conversation, context
-        )
-
-        # 3. Sécurité - Sanitize input
+        # 1. Sécurité - Sanitize input AVANT création de ressources
+        # On ne crée pas de conversation pour des inputs malveillants
         tenant_settings = await self._get_tenant_settings(tenant_id)
         prompt_builder = PromptBuilder(tenant_settings)
         sanitized_message, is_suspicious = prompt_builder.sanitize_user_input(message)
@@ -409,6 +408,16 @@ class ClientAIAgent:
                 suggestions=["Voir nos produits", "Contacter le support"],
                 metadata={"blocked": True, "reason": "suspicious_input"}
             )
+
+        # 2. Conversation
+        conversation = await self._get_or_create_conversation(
+            tenant_id, session_id, context.get("customer_id")
+        )
+
+        # 3. Contexte enrichi
+        enriched_context = await self._build_context(
+            tenant_id, conversation, context
+        )
 
         # 4. Classification intention
         intent, confidence = self.intent_classifier.classify(

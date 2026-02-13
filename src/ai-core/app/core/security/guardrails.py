@@ -195,9 +195,13 @@ class PromptInjectionGuardrail(Guardrail):
         r"system\s*:\s*",
         r"\[system\]",
         r"<\s*system\s*>",
+        r"```\s*system",  # Markdown code block with system
+        r"---\s*\n\s*system",  # Horizontal rule followed by system
         r"jailbreak",
         r"\bDAN\b",  # DAN word boundary
         r"DAN\s+mode",
+        r"\bDAN\b",  # DAN alone (Do Anything Now)
+        r"do\s+anything\s+now",
         r"developer\s+mode",
         r"bypass\s+(safety|filter|rules?)",
         r"```\s*system",  # Markdown code block injection
@@ -207,12 +211,22 @@ class PromptInjectionGuardrail(Guardrail):
     INDIRECT_PATTERNS = [
         r"what\s+(is|are)\s+your\s+(instructions?|rules?|prompt|system)",
         r"reveal\s+your\s+(prompt|instructions?|system)",
+<<<<<<< HEAD
         r"show\s+me\s+your\s+(prompt|instructions?|system)",
         r"print\s+(your\s+)?(prompt|instructions?|system|initial)",
         r"repeat\s+(back\s+)?(your\s+)?(instructions?|prompt)",
         r"tell\s+me\s+(your|the)\s+(rules?|instructions?|prompt)",
         r"output\s+your\s+(prompt|instructions?|system)",
         r"display\s+your\s+(prompt|instructions?|system)",
+=======
+        r"show\s+me\s+your\s+(prompt|instructions?)",
+        r"print\s+your\s+(\w+\s+)?(prompt|instructions?|system)",
+        r"repeat\s+(back\s+)?(your\s+)?(instructions?|prompt)",
+        r"tell\s+me\s+(your|the)\s+(rules?|instructions?|prompt)",
+        r"your\s+initial\s+instructions",
+        r"(the\s+)?rules?\s+you\s+follow",
+        r"repeat\s+.{0,20}verbatim",
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
     ]
 
     # Patterns niveau 3: Encodage/Obfuscation
@@ -443,9 +457,13 @@ class TopicBoundaryGuardrail(Guardrail):
 
     # Topics interdits
     FORBIDDEN_TOPICS = [
+<<<<<<< HEAD
         r"(?:\b[eé]lections?\b|\bvote[rz]?\b|\bpr[eé]sident\b|\bgouvernement\b|\bparti\s+politiq)",
+=======
+        r"\b(politi[qc]|[ée]lections?|votes?|votez|pr[eé]sident|gouvernement)\b",
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
         r"\b(religion|dieu|allah|jesus|bouddha)\b",
-        r"\b(drogue|cannabis|cocaine|heroine)\b",
+        r"\b(drogue|cannabis|cocaine|hero[ïi]ne)\b",
         r"\b(arme|fusil|pistolet|bombe)\b",
         r"\b(hack|pirater|virus|malware)\b",
         r"\b(suicide|se\s+tuer|mourir)\b",

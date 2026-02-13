@@ -105,6 +105,7 @@ class ProductModel(Base):
         Index("idx_product_name", "name"),
         # Recherche par référence
         Index("idx_product_reference", "reference"),
+        {'extend_existing': True}
     )
 
     def __repr__(self) -> str:

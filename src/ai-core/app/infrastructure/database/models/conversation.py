@@ -71,12 +71,13 @@ class Conversation(Base, UUIDMixin, TimestampMixin):
     # Relations ORM
     # NOTE: Pas de lazy="dynamic" (deprecated SQLAlchemy 2.0)
     # NOTE: Pas de cascade ORM - DB est source de vérité (ondelete="CASCADE")
-    tenant = relationship("Tenant", back_populates="conversations")
+    tenant = relationship("Tenant", back_populates="conversations", overlaps="tenant,conversations")
     messages = relationship(
         "Message",
         back_populates="conversation",
         passive_deletes=True,
         order_by="Message.created_at",
+        overlaps="conversation,messages",
     )
 
     __table_args__ = (
@@ -84,6 +85,7 @@ class Conversation(Base, UUIDMixin, TimestampMixin):
         Index("idx_conversation_user_identifier", "tenant_id", "user_identifier"),
         Index("idx_conversation_status", "tenant_id", "status"),
         Index("idx_conversation_created_at", "tenant_id", "created_at"),
+        {'extend_existing': True}
     )
 
     def __repr__(self) -> str:

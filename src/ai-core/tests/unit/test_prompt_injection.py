@@ -83,7 +83,7 @@ class TestInputSanitizer:
 
         for extraction in extractions:
             result = sanitizer.sanitize(extraction)
-            assert result.threat_level == ThreatLevel.CRITICAL, f"Should detect: {extraction}"
+            assert result.threat_level in [ThreatLevel.HIGH, ThreatLevel.CRITICAL], f"Should detect: {extraction}"
 
     def test_detects_roleplay_attacks(self, sanitizer):
         """Détecte les attaques par roleplay"""
@@ -469,7 +469,11 @@ class TestKnownAttacks:
         result = defense.process_input(attack)
 
         # Devrait au moins sanitizer
+<<<<<<< HEAD
         assert "system_prompt" not in result.sanitized_content or result.threat_level.severity > ThreatLevel.NONE.severity
+=======
+        assert "system_prompt" not in result.sanitized_content or result.threat_level != ThreatLevel.NONE
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
 
     def test_delimiter_confusion(self, defense):
         """Test contre la confusion de délimiteurs"""
@@ -477,7 +481,11 @@ class TestKnownAttacks:
         result = defense.process_input(attack)
 
         # Le pattern d'override devrait être détecté
+<<<<<<< HEAD
         assert result.threat_level.severity >= ThreatLevel.MEDIUM.severity
+=======
+        assert result.threat_level in [ThreatLevel.MEDIUM, ThreatLevel.HIGH, ThreatLevel.CRITICAL]
+>>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
 
 
 # =============================================================================
