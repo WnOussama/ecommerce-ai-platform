@@ -1,0 +1,186 @@
+# =============================================================================
+# Alerting Rules - SaaS AI E-commerce
+# Règles d'alerte critiques pour la production
+# =============================================================================
+
+groups:
+  # ===========================================================================
+  # AI CORE SERVICE
+  # ===========================================================================
+  - name: ai_core_alerts
+    rules:
+      # Service down
+      - alert: AICoreServiceDown
+        expr: up{job="ai-core"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AI Core service is down"
+          description: "AI Core service has been down for more than 1 minute."
+
+      # High latency
+      - alert: AICoreHighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="ai-core"}[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI Core high latency detected"
+          description: "95th percentile latency is above 2 seconds for 5 minutes."
+
+      # High error rate
+      - alert: AICoreHighErrorRate
+        expr: sum(rate(http_requests_total{job="ai-core",status=~"5.."}[5m])) / sum(rate(http_requests_total{job="ai-core"}[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "AI Core high error rate"
+          description: "Error rate is above 5% for 5 minutes."
+
+  # ===========================================================================
+  # LLM METRICS
+  # ===========================================================================
+  - name: llm_alerts
+    rules:
+      # LLM latency too high
+      - alert: LLMHighLatency
+        expr: histogram_quantile(0.95, rate(llm_request_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM response time is too high"
+          description: "95th percentile LLM latency is above 10 seconds."
+
+      # LLM error rate
+      - alert: LLMHighErrorRate
+        expr: sum(rate(llm_requests_total{status="error"}[5m])) / sum(rate(llm_requests_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LLM error rate is high"
+          description: "LLM error rate is above 10%."
+
+      # Daily cost alert per tenant
+      - alert: TenantLLMCostHigh
+        expr: sum by (tenant_id) (increase(llm_cost_usd_total[24h])) > 50
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tenant {{ $labels.tenant_id }} LLM cost is high"
+          description: "Daily LLM cost for tenant {{ $labels.tenant_id }} exceeds $50."
+
+      # Total daily cost
+      - alert: TotalLLMCostCritical
+        expr: sum(increase(llm_cost_usd_total[24h])) > 500
+        for: 1h
+        labels:
+          severity: critical
+        annotations:
+          summary: "Total daily LLM cost is critical"
+          description: "Total daily LLM cost exceeds $500."
+
+  # ===========================================================================
+  # DATABASE
+  # ===========================================================================
+  - name: database_alerts
+    rules:
+      # MySQL down
+      - alert: MySQLDown
+        expr: mysql_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "MySQL is down"
+          description: "MySQL database is not responding."
+
+      # High connections
+      - alert: MySQLHighConnections
+        expr: mysql_global_status_threads_connected / mysql_global_variables_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "MySQL connections approaching limit"
+          description: "MySQL is using more than 80% of available connections."
+
+      # Slow queries
+      - alert: MySQLSlowQueries
+        expr: rate(mysql_global_status_slow_queries[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate of slow queries"
+          description: "More than 1 slow query per second detected."
+
+  # ===========================================================================
+  # REDIS
+  # ===========================================================================
+  - name: redis_alerts
+    rules:
+      # Redis down
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is down"
+          description: "Redis cache is not responding."
+
+      # High memory usage
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage is high"
+          description: "Redis is using more than 90% of available memory."
+
+  # ===========================================================================
+  # RATE LIMITING
+  # ===========================================================================
+  - name: rate_limit_alerts
+    rules:
+      # Tenant hitting rate limits frequently
+      - alert: TenantRateLimitExceeded
+        expr: sum by (tenant_id) (rate(rate_limit_exceeded_total[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tenant {{ $labels.tenant_id }} hitting rate limits"
+          description: "Tenant is exceeding rate limits frequently."
+
+  # ===========================================================================
+  # BUSINESS METRICS
+  # ===========================================================================
+  - name: business_alerts
+    rules:
+      # Conversation resolution rate dropping
+      - alert: LowConversationResolutionRate
+        expr: sum(rate(conversations_resolved_by_ai_total[1h])) / sum(rate(conversations_total[1h])) < 0.6
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "AI conversation resolution rate is low"
+          description: "Less than 60% of conversations are being resolved by AI."
+
+      # Coupon generation anomaly
+      - alert: CouponGenerationAnomaly
+        expr: sum(rate(coupons_generated_total[1h])) > 100
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unusual coupon generation activity"
+          description: "More than 100 coupons generated in the last hour."
+

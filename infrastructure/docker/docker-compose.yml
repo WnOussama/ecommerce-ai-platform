@@ -1,0 +1,279 @@
+version: '3.8'
+
+# =============================================================================
+# DOCKER COMPOSE - SaaS AI E-commerce
+# Production-ready avec séparation des services
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # AI CORE SERVICE
+  # ===========================================================================
+  ai-core:
+    build:
+      context: ../../src/ai-core
+      dockerfile: ../../infrastructure/docker/services/ai-core.Dockerfile
+      target: ${BUILD_TARGET:-production}
+    container_name: saas_ai_core
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-development}
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-saas_ecommerce}
+      - DB_USER=${DB_USER:-saas_user}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-mock}
+      - LLM_OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - LLM_ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - SECURITY_JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - CHROMA_PERSIST_DIRECTORY=/data/chroma
+    ports:
+      - "${AI_CORE_PORT:-8000}:8000"
+    volumes:
+      - chroma_data:/data/chroma
+      - ai_logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ===========================================================================
+  # DATABASE - MySQL 8
+  # ===========================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: saas_mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${DB_NAME:-saas_ecommerce}
+      - MYSQL_USER=${DB_USER:-saas_user}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./services/mysql/init:/docker-entrypoint-initdb.d
+      - ./services/mysql/conf.d:/etc/mysql/conf.d
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # ===========================================================================
+  # CACHE & SESSION - Redis
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: saas_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ===========================================================================
+  # REVERSE PROXY - Nginx
+  # ===========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: saas_nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - ai-core
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================================================
+  # MONITORING - Prometheus
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: saas_prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
+  # ===========================================================================
+  # DASHBOARDS - Grafana
+  # ===========================================================================
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: saas_grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
+  # ===========================================================================
+  # LOGS - Loki
+  # ===========================================================================
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: saas_loki
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
+  # ===========================================================================
+  # LOG COLLECTOR - Promtail
+  # ===========================================================================
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: saas_promtail
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ai_logs:/var/log/ai-core:ro
+      - nginx_logs:/var/log/nginx:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
+  # ===========================================================================
+  # ALERTING - AlertManager
+  # ===========================================================================
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: saas_alertmanager
+    restart: unless-stopped
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  saas_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  chroma_data:
+    driver: local
+  ai_logs:
+    driver: local
+  nginx_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+

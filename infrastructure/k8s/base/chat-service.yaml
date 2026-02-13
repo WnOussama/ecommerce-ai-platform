@@ -1,0 +1,266 @@
+# =============================================================================
+# AI CHAT SERVICE - Kubernetes Deployment
+# Stateless, horizontally scalable
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-chat-service
+  labels:
+    app: ai-chat-service
+    tier: api
+    component: chat
+spec:
+  # Initial replicas (will be managed by HPA)
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: ai-chat-service
+
+  # Rolling update strategy for zero-downtime deployments
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1        # Max pods above desired during update
+      maxUnavailable: 0  # Never have less than desired
+
+  template:
+    metadata:
+      labels:
+        app: ai-chat-service
+        tier: api
+        component: chat
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/metrics"
+
+    spec:
+      # Service account for RBAC
+      serviceAccountName: ai-service-account
+
+      # Anti-affinity: spread pods across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - ai-chat-service
+                topologyKey: kubernetes.io/hostname
+
+      # Graceful shutdown
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: ai-chat
+          image: ${REGISTRY}/ai-chat-service:${VERSION}
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 8001
+              name: http
+              protocol: TCP
+
+          # Environment variables from ConfigMap and Secrets
+          envFrom:
+            - configMapRef:
+                name: ai-service-config
+            - secretRef:
+                name: ai-service-secrets
+
+          env:
+            - name: SERVICE_NAME
+              value: "ai-chat-service"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # Stateless: all state in Redis
+            - name: SESSION_STORE
+              value: "redis"
+            - name: STATELESS_MODE
+              value: "true"
+
+          # Resource requests and limits
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+
+          # Liveness probe: is the container alive?
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Readiness probe: is the container ready for traffic?
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # Startup probe: for slow starting containers
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30  # 5s * 30 = 150s max startup time
+
+          # Lifecycle hooks
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - "sleep 10"  # Wait for LB to remove pod
+
+          # Security context
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+
+          # Volume mounts
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: cache
+              mountPath: /app/.cache
+
+      # Volumes
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: cache
+          emptyDir: {}
+
+---
+# =============================================================================
+# SERVICE
+# =============================================================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-chat-service
+  labels:
+    app: ai-chat-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8001
+      targetPort: 8001
+      protocol: TCP
+      name: http
+  selector:
+    app: ai-chat-service
+
+---
+# =============================================================================
+# HORIZONTAL POD AUTOSCALER
+# =============================================================================
+
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-chat-service-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-chat-service
+
+  # Scaling limits
+  minReplicas: 2
+  maxReplicas: 10
+
+  # Scaling metrics
+  metrics:
+    # CPU-based scaling
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+    # Memory-based scaling
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+    # Custom metric: requests per second (from Prometheus)
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "100"
+
+  # Scaling behavior
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60   # Wait 1 min before scaling up again
+      policies:
+        - type: Pods
+          value: 2                      # Add max 2 pods at a time
+          periodSeconds: 60
+        - type: Percent
+          value: 50                     # Or 50% of current
+          periodSeconds: 60
+      selectPolicy: Max
+
+    scaleDown:
+      stabilizationWindowSeconds: 300  # Wait 5 min before scaling down
+      policies:
+        - type: Pods
+          value: 1                      # Remove max 1 pod at a time
+          periodSeconds: 120
+      selectPolicy: Min
+
+---
+# =============================================================================
+# POD DISRUPTION BUDGET
+# Ensures minimum availability during updates/maintenance
+# =============================================================================
+
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-chat-service-pdb
+spec:
+  minAvailable: 1  # At least 1 pod must always be available
+  selector:
+    matchLabels:
+      app: ai-chat-service
+

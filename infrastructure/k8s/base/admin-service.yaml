@@ -1,0 +1,175 @@
+# =============================================================================
+# AI ADMIN SERVICE - Kubernetes Deployment
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-admin-service
+  labels:
+    app: ai-admin-service
+    tier: api
+    component: admin
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: ai-admin-service
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  template:
+    metadata:
+      labels:
+        app: ai-admin-service
+        tier: api
+        component: admin
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8002"
+        prometheus.io/path: "/metrics"
+
+    spec:
+      serviceAccountName: ai-service-account
+
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - ai-admin-service
+                topologyKey: kubernetes.io/hostname
+
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: ai-admin
+          image: ${REGISTRY}/ai-admin-service:${VERSION}
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 8002
+              name: http
+
+          envFrom:
+            - configMapRef:
+                name: ai-service-config
+            - secretRef:
+                name: ai-service-secrets
+
+          env:
+            - name: SERVICE_NAME
+              value: "ai-admin-service"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: STATELESS_MODE
+              value: "true"
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1500m"
+              memory: "1.5Gi"
+
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8002
+            initialDelaySeconds: 15
+            periodSeconds: 20
+
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-admin-service
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8002
+      targetPort: 8002
+      name: http
+  selector:
+    app: ai-admin-service
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai-admin-service-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai-admin-service
+
+  minReplicas: 2
+  maxReplicas: 5
+
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 120
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-admin-service-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ai-admin-service
+
