@@ -1,5 +1,5 @@
 """
-Chat Endpoints - Client AI Interactions
+Chat Endpoints - Client AI Interactions with RAG Support
 """
 
 import time
@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.infrastructure.llm import get_llm_provider
+from app.services.rag.factory import get_retrieval_service
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,8 @@ class ChatMessageRequest(BaseModel):
     conversation_id: Optional[str] = None
     customer_id: Optional[str] = None
     context: Optional[Dict[str, Any]] = Field(default_factory=dict)
+    use_rag: bool = Field(default=True, description="Enable RAG product search")
+    top_k: int = Field(default=5, ge=1, le=20, description="Number of products to retrieve")
 
     class Config:
         json_schema_extra = {
@@ -38,7 +41,9 @@ class ChatMessageRequest(BaseModel):
                 "context": {
                     "current_page": "/category/smartphones",
                     "cart_items": []
-                }
+                },
+                "use_rag": True,
+                "top_k": 5
             }
         }
 
@@ -58,6 +63,7 @@ class ChatMessageResponse(BaseModel):
     confidence: float
     actions: List[ChatAction] = []
     suggestions: List[str] = []
+    products: List[Dict[str, Any]] = Field(default_factory=list, description="Related products from RAG")
     metadata: Dict[str, Any] = {}
 
 
@@ -91,8 +97,8 @@ async def send_message(
 
     This endpoint handles:
     - Intent classification
-    - Context retrieval (RAG)
-    - Response generation
+    - Context retrieval (RAG) - searches relevant products
+    - Response generation with product context
     - Action extraction
     """
     start_time = time.time()
@@ -106,7 +112,8 @@ async def send_message(
         extra={
             "tenant_id": tenant_id,
             "conversation_id": body.conversation_id,
-            "message_length": len(body.message)
+            "message_length": len(body.message),
+            "use_rag": body.use_rag,
         }
     )
 
@@ -114,26 +121,91 @@ async def send_message(
     conversation_id = body.conversation_id or f"conv_{uuid.uuid4().hex[:12]}"
     message_id = f"msg_{uuid.uuid4().hex[:12]}"
 
+    # Variables pour le RAG
+    products_context = ""
+    retrieved_products = []
+    rag_search_time_ms = 0
+
     try:
-        # Obtenir le LLM provider (mock ou real)
+        # =====================================================================
+        # ÉTAPE 1: RAG - Recherche de produits pertinents
+        # =====================================================================
+        if body.use_rag:
+            try:
+                retrieval_service = get_retrieval_service()
+                rag_result = await retrieval_service.search_products(
+                    query=body.message,
+                    tenant_id=tenant_id,
+                    top_k=body.top_k,
+                )
+
+                rag_search_time_ms = rag_result.search_time_ms
+
+                if rag_result.has_results:
+                    products_context = rag_result.to_context_string()
+                    retrieved_products = [
+                        {
+                            "id": p.product_id,
+                            "name": p.name,
+                            "price": p.price,
+                            "category": p.category,
+                            "in_stock": p.in_stock,
+                            "similarity": round(p.similarity_score, 3),
+                        }
+                        for p in rag_result.products
+                    ]
+
+                    logger.debug(
+                        "RAG found relevant products",
+                        extra={
+                            "tenant_id": tenant_id,
+                            "products_found": len(retrieved_products),
+                            "search_time_ms": rag_search_time_ms,
+                        }
+                    )
+                else:
+                    logger.debug(
+                        "RAG found no relevant products",
+                        extra={"tenant_id": tenant_id}
+                    )
+
+            except Exception as e:
+                # Fallback gracieux - continuer sans RAG
+                logger.warning(
+                    "RAG search failed, continuing without product context",
+                    extra={"tenant_id": tenant_id, "error": str(e)}
+                )
+
+        # =====================================================================
+        # ÉTAPE 2: Obtenir le LLM provider
+        # =====================================================================
         llm = get_llm_provider()
 
-        # Construire le contexte système
-        system_context = f"""Tu es un assistant IA pour une boutique e-commerce.
-Tenant: {tenant_id}
-Sois concis, utile et professionnel. Utilise le vouvoiement."""
+        # =====================================================================
+        # ÉTAPE 3: Construire le contexte système avec produits
+        # =====================================================================
+        system_context = _build_system_context(
+            tenant_id=tenant_id,
+            products_context=products_context,
+        )
 
-        # Générer la réponse
+        # =====================================================================
+        # ÉTAPE 4: Générer la réponse
+        # =====================================================================
         response_text = await llm.chat(
             message=body.message,
             context=system_context
         )
 
-        # Classifier l'intention (basique)
+        # =====================================================================
+        # ÉTAPE 5: Classifier l'intention
+        # =====================================================================
         intent = _classify_intent(body.message)
 
-        # Générer suggestions contextuelles
-        suggestions = _generate_suggestions(intent)
+        # =====================================================================
+        # ÉTAPE 6: Générer suggestions contextuelles
+        # =====================================================================
+        suggestions = _generate_suggestions(intent, has_products=len(retrieved_products) > 0)
 
         processing_time_ms = int((time.time() - start_time) * 1000)
 
@@ -144,6 +216,8 @@ Sois concis, utile et professionnel. Utilise le vouvoiement."""
                 "message_id": message_id,
                 "intent": intent,
                 "processing_time_ms": processing_time_ms,
+                "rag_search_time_ms": rag_search_time_ms,
+                "products_found": len(retrieved_products),
                 "llm_provider": llm.get_model_name()
             }
         )
@@ -156,9 +230,12 @@ Sois concis, utile et professionnel. Utilise le vouvoiement."""
             confidence=0.85,
             actions=[],
             suggestions=suggestions,
+            products=retrieved_products,
             metadata={
                 "processing_time_ms": processing_time_ms,
-                "model": llm.get_model_name()
+                "rag_search_time_ms": rag_search_time_ms,
+                "model": llm.get_model_name(),
+                "rag_enabled": body.use_rag,
             }
         )
 
@@ -180,11 +257,39 @@ Sois concis, utile et professionnel. Utilise le vouvoiement."""
             confidence=0.0,
             actions=[],
             suggestions=["Réessayer", "Contacter le support"],
+            products=[],
             metadata={
                 "processing_time_ms": int((time.time() - start_time) * 1000),
                 "error": True
             }
         )
+
+
+def _build_system_context(tenant_id: str, products_context: str = "") -> str:
+    """
+    Construit le contexte système pour le LLM.
+
+    Args:
+        tenant_id: ID du tenant
+        products_context: Contexte produits formaté (peut être vide)
+
+    Returns:
+        Prompt système complet
+    """
+    base_context = f"""Tu es un assistant IA pour une boutique e-commerce.
+Tenant: {tenant_id}
+Sois concis, utile et professionnel. Utilise le vouvoiement.
+"""
+
+    if products_context:
+        return f"""{base_context}
+{products_context}
+
+Utilise ces informations produits pour répondre à la question de l'utilisateur.
+Si les produits ne sont pas pertinents pour la question, réponds normalement sans les mentionner.
+"""
+
+    return base_context
 
 
 def _classify_intent(message: str) -> str:
@@ -209,8 +314,8 @@ def _classify_intent(message: str) -> str:
     return "general"
 
 
-def _generate_suggestions(intent: str) -> List[str]:
-    """Génère des suggestions basées sur l'intention."""
+def _generate_suggestions(intent: str, has_products: bool = False) -> List[str]:
+    """Génère des suggestions basées sur l'intention et les produits trouvés."""
     suggestions_map = {
         "order_status": ["Suivre ma commande", "Contacter le support"],
         "product_search": ["Voir les promotions", "Filtrer par catégorie"],
@@ -223,7 +328,13 @@ def _generate_suggestions(intent: str) -> List[str]:
         "general": ["Parcourir le catalogue", "Aide"],
     }
 
-    return suggestions_map.get(intent, ["Aide", "Catalogue"])
+    base_suggestions = suggestions_map.get(intent, ["Aide", "Catalogue"])
+
+    # Ajouter des suggestions si des produits ont été trouvés
+    if has_products:
+        base_suggestions = ["Voir les détails", "Ajouter au panier"] + base_suggestions[:2]
+
+    return base_suggestions[:4]  # Limiter à 4 suggestions
 
 
 @router.get("/history/{conversation_id}", response_model=ConversationHistory)
