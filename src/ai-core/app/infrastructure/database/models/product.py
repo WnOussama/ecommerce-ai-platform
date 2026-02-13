@@ -3,23 +3,25 @@ Product SQLAlchemy Model
 
 Modèle pour stocker les produits synchronisés depuis PrestaShop.
 Multi-tenant avec index optimisés.
+Compatible PostgreSQL.
 """
 
 from datetime import datetime
 from uuid import uuid4
+import uuid
 
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean, Text, JSON,
     DateTime, ForeignKey, Index, BigInteger
 )
-from sqlalchemy.dialects.mysql import CHAR
+from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 
-from app.infrastructure.database.models.models import Base
+from app.infrastructure.database.base import Base
 
 
 def generate_uuid():
-    return str(uuid4())
+    return uuid.uuid4()
 
 
 class ProductModel(Base):
@@ -34,11 +36,11 @@ class ProductModel(Base):
     __tablename__ = "products"
 
     # Clé primaire
-    id = Column(CHAR(36), primary_key=True, default=generate_uuid)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
 
     # Multi-tenant
     tenant_id = Column(
-        CHAR(36),
+        UUID(as_uuid=True),
         ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False,
         index=True
