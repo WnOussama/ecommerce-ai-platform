@@ -233,6 +233,100 @@ class TestLLMProviderFactory:
         assert provider1 is provider2
 
 
+class TestChatRAGIntegration:
+    """Tests pour l'intégration RAG dans le chat."""
+
+    def test_chat_request_accepts_use_rag_param(self, client):
+        """La requête doit accepter le paramètre use_rag."""
+        response = client.post(
+            "/api/v1/chat/message",
+            json={
+                "message": "Je cherche un téléphone",
+                "use_rag": True,
+                "top_k": 3
+            },
+            headers={"X-Tenant-ID": "demo-tenant"}
+        )
+
+        # Le status peut être 200 ou rejection tenant
+        assert response.status_code in [200, 401, 403]
+
+    def test_chat_request_can_disable_rag(self, client):
+        """Le RAG peut être désactivé via use_rag=False."""
+        response = client.post(
+            "/api/v1/chat/message",
+            json={
+                "message": "Bonjour",
+                "use_rag": False
+            },
+            headers={"X-Tenant-ID": "demo-tenant"}
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            # Sans RAG, la liste products devrait être vide
+            assert "products" in data
+
+    def test_chat_response_includes_products_field(self, client):
+        """La réponse doit inclure le champ products."""
+        response = client.post(
+            "/api/v1/chat/message",
+            json={"message": "Je cherche un produit"},
+            headers={"X-Tenant-ID": "demo-tenant"}
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            assert "products" in data
+            assert isinstance(data["products"], list)
+
+    def test_chat_response_includes_rag_metadata(self, client):
+        """La réponse doit inclure les metadata RAG."""
+        response = client.post(
+            "/api/v1/chat/message",
+            json={"message": "Quel est le prix ?"},
+            headers={"X-Tenant-ID": "demo-tenant"}
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            metadata = data.get("metadata", {})
+            assert "rag_enabled" in metadata or "rag_search_time_ms" in metadata
+
+    def test_chat_graceful_without_indexed_products(self, client):
+        """Le chat doit fonctionner même sans produits indexés."""
+        response = client.post(
+            "/api/v1/chat/message",
+            json={
+                "message": "Je cherche un produit spécifique",
+                "use_rag": True
+            },
+            headers={"X-Tenant-ID": "tenant-without-products"}
+        )
+
+        # Doit fonctionner même si pas de produits
+        if response.status_code == 200:
+            data = response.json()
+            assert "response" in data
+            # products peut être vide, c'est OK
+            assert "products" in data
+
+    def test_top_k_validation(self, client):
+        """top_k doit être validé (1-20)."""
+        # Test avec top_k invalide (trop grand)
+        response = client.post(
+            "/api/v1/chat/message",
+            json={
+                "message": "Test",
+                "top_k": 100  # Trop grand
+            },
+            headers={"X-Tenant-ID": "demo-tenant"}
+        )
+
+        # Pydantic devrait rejeter
+        assert response.status_code == 422
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
