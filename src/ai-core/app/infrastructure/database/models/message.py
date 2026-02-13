@@ -12,9 +12,14 @@ ARCHITECTURE MULTI-TENANT:
   3. Prépare sharding futur par tenant
   4. Performance sur tables volumineuses (10M+ rows/an)
 - La cohérence tenant_id == conversation.tenant_id est validée au service layer
+
+IDEMPOTENCY:
+- idempotency_key permet d'éviter les double insertions si timeout client
+- Le client génère un UUID unique par requête
+- Si retry avec même idempotency_key → on retourne le message existant
 """
 
-from sqlalchemy import Column, String, Text, Integer, ForeignKey, Index, Enum as SQLEnum, CheckConstraint
+from sqlalchemy import Column, String, Text, Integer, ForeignKey, Index, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 import enum
@@ -44,6 +49,7 @@ class Message(Base, UUIDMixin, TimestampMixin):
         id: UUID unique du message
         tenant_id: UUID du tenant (FK) - DÉNORMALISÉ pour performance
         conversation_id: UUID de la conversation (FK)
+        idempotency_key: UUID unique pour éviter double insertion
         role: Rôle de l'émetteur (user, assistant, system)
         content: Contenu textuel du message
         extra_data: Données additionnelles (tool_calls, intent, etc.)
@@ -71,6 +77,15 @@ class Message(Base, UUIDMixin, TimestampMixin):
         index=True,
     )
 
+    # Idempotency key pour éviter double insertion
+    # Généré côté client, unique globalement
+    idempotency_key = Column(
+        UUID(as_uuid=True),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
     # Contenu
     role = Column(
         SQLEnum(MessageRole, name="message_role"),
@@ -92,13 +107,11 @@ class Message(Base, UUIDMixin, TimestampMixin):
     tokens_output = Column(Integer, nullable=True)
 
     # Relations ORM
-    tenant = relationship("Tenant", foreign_keys=[tenant_id])
+    # Note: overlaps="messages" pour éviter warning SQLAlchemy
+    tenant = relationship("Tenant", foreign_keys=[tenant_id], overlaps="messages")
     conversation = relationship("Conversation", back_populates="messages")
 
     __table_args__ = (
-        # Note: Pas de CHECK constraint car l'Enum PostgreSQL valide déjà les valeurs
-        # L'Enum 'message_role' accepte uniquement: USER, ASSISTANT, SYSTEM
-
         # Index pour isolation multi-tenant
         Index("idx_message_tenant_id", "tenant_id"),
         Index("idx_message_tenant_created", "tenant_id", "created_at"),
@@ -109,6 +122,9 @@ class Message(Base, UUIDMixin, TimestampMixin):
 
         # Index composite pour historique chat (query la plus fréquente)
         Index("idx_message_conv_role_created", "conversation_id", "role", "created_at"),
+
+        # Index pour idempotency (éviter double insertion)
+        Index("idx_message_idempotency_key", "idempotency_key", unique=True),
     )
 
     def __repr__(self) -> str:

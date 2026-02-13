@@ -2,19 +2,16 @@
 Multi-Tenant Aware Repositories
 
 Architecture:
+- UnitOfWork: Gestion transactionnelle avec commit/rollback (RECOMMANDÉ)
 - TenantAwareRepository: Base class imposant tenant_id sur TOUTES les queries
-- Repositories concrets: CustomerRepository, ConversationRepository, etc.
 
-Usage:
-    from app.infrastructure.database.repositories import (
-        TenantContext,
-        CustomerRepository,
-        RepositoryFactory,
-    )
+Usage recommandé (UnitOfWork):
+    from app.infrastructure.database import UnitOfWork
 
-    ctx = TenantContext(tenant_id="xxx")
-    repo = CustomerRepository(session, ctx)
-    customers = await repo.get_all()  # Auto-filtré par tenant
+    async with UnitOfWork(tenant_id) as uow:
+        conversation = await uow.conversations.get_or_create(user_identifier)
+        message = await uow.messages.create_if_not_exists(...)
+        await uow.commit()
 """
 
 from app.infrastructure.database.repositories.base import (
@@ -23,16 +20,15 @@ from app.infrastructure.database.repositories.base import (
     TenantIdMissingError,
     CrossTenantAccessError,
     TenantIsolationError,
-    RepositoryFactory,
-    TenantQueryValidator,
 )
 
-from app.infrastructure.database.repositories.repositories import (
-    CustomerRepository,
+# Nouveaux repositories (nouveau style avec tenant_id direct)
+from app.infrastructure.database.repositories.conversation_repo import (
     ConversationRepository,
+)
+from app.infrastructure.database.repositories.message_repo import (
     MessageRepository,
-    CouponRepository,
-    AdminActionRepository,
+    DuplicateMessageError,
 )
 
 __all__ = [
@@ -42,14 +38,9 @@ __all__ = [
     "TenantIdMissingError",
     "CrossTenantAccessError",
     "TenantIsolationError",
-    "RepositoryFactory",
-    "TenantQueryValidator",
 
-    # Repositories
-    "CustomerRepository",
+    # New repositories (recommended)
     "ConversationRepository",
     "MessageRepository",
-    "CouponRepository",
-    "AdminActionRepository",
+    "DuplicateMessageError",
 ]
-
