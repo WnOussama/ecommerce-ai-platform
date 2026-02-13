@@ -16,22 +16,36 @@ from alembic import context
 # Ajouter le répertoire parent au path pour importer l'app
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Import configuration et modèles
+# ============================================================================
+# CHARGER LES VARIABLES D'ENVIRONNEMENT AVANT LES IMPORTS
+# ============================================================================
+# Ces valeurs par défaut permettent d'exécuter alembic sans fichier .env
+# En production, utiliser de vraies valeurs via variables d'environnement
+os.environ.setdefault('DB_HOST', 'localhost')
+os.environ.setdefault('DB_PORT', '5432')
+os.environ.setdefault('DB_NAME', 'saas_ecommerce')
+os.environ.setdefault('DB_USER', 'saas_user')
+os.environ.setdefault('DB_PASSWORD', 'test_password_123')
+os.environ.setdefault('SECURITY_JWT_SECRET_KEY', 'dev_jwt_secret_key_32_characters_minimum_for_alembic')
+os.environ.setdefault('LLM_PROVIDER', 'mock')
+
+# Import configuration et modèles (APRÈS avoir configuré les variables d'env)
 from app.core.config.settings import settings
 from app.infrastructure.database.base import Base
 
 # Import tous les modèles pour qu'ils soient enregistrés dans Base.metadata
+# Nouveaux modèles (propres)
 from app.infrastructure.database.models import (
-    TenantModel,
-    CustomerModel,
-    ConversationModel,
-    MessageModel,
-    CouponModel,
-    AdminActionModel,
-    LLMUsageModel,
-    ProductEmbeddingModel,
-    ProductModel,
+    Tenant,
+    Conversation,
+    Message,
+    Rule,
+    Coupon,
+    AnalyticsEvent,
 )
+
+# Legacy models (pour compatibilité)
+from app.infrastructure.database.models.product import ProductModel
 
 # Configuration Alembic
 config = context.config
