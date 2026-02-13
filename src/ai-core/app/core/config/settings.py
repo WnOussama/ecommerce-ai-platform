@@ -10,26 +10,40 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class DatabaseSettings(BaseSettings):
-    """Configuration base de données MySQL"""
+    """
+    Configuration base de données PostgreSQL.
+
+    FastAPI est le SEUL owner de cette base.
+    Laravel communique via REST API uniquement.
+
+    Pool configuration:
+    - Development: pool_size=5, max_overflow=10
+    - Production:  pool_size=20, max_overflow=40
+    """
     model_config = SettingsConfigDict(env_prefix="DB_")
 
     host: str = "localhost"
-    port: int = 3306
+    port: int = 5432
     name: str = "saas_ecommerce"
     user: str = "saas_user"
     password: str = Field(..., min_length=8)
-    pool_size: int = Field(default=10, ge=5, le=50)
-    max_overflow: int = Field(default=20, ge=0, le=100)
-    pool_recycle: int = 3600  # Recycle connections after 1 hour
-    echo: bool = False
+
+    # Pool configuration - configurable via env
+    pool_size: int = Field(default=5, ge=1, le=100, description="Number of connections in pool")
+    max_overflow: int = Field(default=10, ge=0, le=100, description="Max connections above pool_size")
+    pool_recycle: int = Field(default=3600, ge=300, description="Recycle connections after N seconds")
+
+    echo: bool = Field(default=False, description="Echo SQL queries (debug only)")
 
     @property
     def url(self) -> str:
-        return f"mysql+aiomysql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+        """URL async pour PostgreSQL (asyncpg)"""
+        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
 
     @property
     def sync_url(self) -> str:
-        return f"mysql+pymysql://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+        """URL sync pour Alembic (psycopg2)"""
+        return f"postgresql+psycopg2://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
 
 
 class RedisSettings(BaseSettings):

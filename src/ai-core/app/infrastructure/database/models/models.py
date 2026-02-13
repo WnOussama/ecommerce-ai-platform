@@ -1,30 +1,31 @@
 """
 Modèles SQLAlchemy - Multi-tenant avec isolation logique
+Compatible PostgreSQL
 """
 
 from datetime import datetime
 from typing import Optional
 from uuid import uuid4
+import uuid
 
 from sqlalchemy import (
     Column, String, Integer, Float, Boolean, Text, JSON,
     DateTime, ForeignKey, Enum as SQLEnum, Index, BigInteger
 )
-from sqlalchemy.dialects.mysql import CHAR
-from sqlalchemy.orm import relationship, declarative_base
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
+from app.infrastructure.database.base import Base
 from app.domain.entities.models import (
     TenantPlan, TenantStatus, CustomerSegment,
     ConversationStatus, MessageRole, IntentType,
     CouponStatus, AdminActionType, AdminActionStatus
 )
 
-Base = declarative_base()
-
 
 def generate_uuid():
-    return str(uuid4())
+    return uuid.uuid4()
 
 
 # ============================================================================
@@ -38,7 +39,7 @@ class TenantModel(Base):
     """
     __tablename__ = "tenants"
 
-    id = Column(CHAR(36), primary_key=True, default=generate_uuid)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
 
     # Identité
     name = Column(String(255), nullable=False)
@@ -91,8 +92,8 @@ class CustomerModel(Base):
     """
     __tablename__ = "customers"
 
-    id = Column(CHAR(36), primary_key=True, default=generate_uuid)
-    tenant_id = Column(CHAR(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
 
     # ID externe (dans le système e-commerce)
     external_id = Column(String(100), nullable=False)
@@ -147,9 +148,9 @@ class ConversationModel(Base):
     """
     __tablename__ = "conversations"
 
-    id = Column(CHAR(36), primary_key=True, default=generate_uuid)
-    tenant_id = Column(CHAR(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
-    customer_id = Column(CHAR(36), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
 
     # Session
     session_id = Column(String(100), nullable=False, index=True)
@@ -200,8 +201,8 @@ class MessageModel(Base):
     """
     __tablename__ = "messages"
 
-    id = Column(CHAR(36), primary_key=True, default=generate_uuid)
-    conversation_id = Column(CHAR(36), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
 
     # Contenu
     role = Column(SQLEnum(MessageRole), nullable=False)
@@ -241,9 +242,9 @@ class CouponModel(Base):
     """
     __tablename__ = "coupons"
 
-    id = Column(CHAR(36), primary_key=True, default=generate_uuid)
-    tenant_id = Column(CHAR(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
-    customer_id = Column(CHAR(36), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
 
     # Code et valeur
     code = Column(String(50), nullable=False, unique=True)
@@ -256,7 +257,7 @@ class CouponModel(Base):
     # Génération IA
     generation_reason = Column(String(100), nullable=False)
     ai_generated = Column(Boolean, default=True)
-    conversation_id = Column(CHAR(36), nullable=True)
+    conversation_id = Column(UUID(as_uuid=True), nullable=True)
 
     # Validité
     valid_from = Column(DateTime, nullable=False)
@@ -291,8 +292,8 @@ class AdminActionModel(Base):
     """
     __tablename__ = "admin_actions"
 
-    id = Column(CHAR(36), primary_key=True, default=generate_uuid)
-    tenant_id = Column(CHAR(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
 
     # Type et statut
     action_type = Column(SQLEnum(AdminActionType), nullable=False)
@@ -344,7 +345,7 @@ class LLMUsageModel(Base):
     __tablename__ = "llm_usage"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    tenant_id = Column(CHAR(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
 
     # Usage
     model = Column(String(100), nullable=False)
@@ -356,7 +357,7 @@ class LLMUsageModel(Base):
 
     # Contexte
     intent = Column(SQLEnum(IntentType), nullable=True)
-    conversation_id = Column(CHAR(36), nullable=True)
+    conversation_id = Column(UUID(as_uuid=True), nullable=True)
 
     # Date
     created_at = Column(DateTime, default=func.now())
@@ -377,8 +378,8 @@ class ProductEmbeddingModel(Base):
     """
     __tablename__ = "product_embeddings"
 
-    id = Column(CHAR(36), primary_key=True, default=generate_uuid)
-    tenant_id = Column(CHAR(36), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
+    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
 
     # Produit
     product_external_id = Column(String(100), nullable=False)

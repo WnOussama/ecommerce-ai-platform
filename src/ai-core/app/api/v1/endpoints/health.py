@@ -136,4 +136,32 @@ async def full_health_check(request: Request, response: Response):
     return report.to_dict()
 
 
+@router.get("/db")
+async def database_health_check(request: Request, response: Response):
+    """
+    Database health check endpoint.
+
+    Checks PostgreSQL connection status.
+    FastAPI is the SOLE owner of this database.
+
+    Returns:
+        200 if database is healthy
+        503 if database is unreachable
+    """
+    from app.infrastructure.database.connection import check_database_connection
+
+    db_status = await check_database_connection()
+
+    if not db_status.get("connected", False):
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        logger.error(f"Database health check failed: {db_status.get('error', 'Unknown error')}")
+
+    return {
+        "component": "postgresql",
+        "owner": "fastapi",
+        "timestamp": datetime.utcnow().isoformat(),
+        **db_status,
+    }
+
+
 
