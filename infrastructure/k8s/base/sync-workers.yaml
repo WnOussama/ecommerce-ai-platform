@@ -1,0 +1,200 @@
+# =============================================================================
+# SYNC WORKERS - Kubernetes Deployment
+# Background workers for embeddings, catalog sync, bulk operations
+# =============================================================================
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-sync-workers
+  labels:
+    app: ai-sync-workers
+    tier: worker
+    component: sync
+spec:
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: ai-sync-workers
+
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1  # Workers can have some unavailability
+
+  template:
+    metadata:
+      labels:
+        app: ai-sync-workers
+        tier: worker
+        component: sync
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+
+    spec:
+      serviceAccountName: ai-service-account
+
+      # Spread workers across nodes
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 50
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - ai-sync-workers
+                topologyKey: kubernetes.io/hostname
+
+      # Longer termination for workers to finish jobs
+      terminationGracePeriodSeconds: 120
+
+      containers:
+        - name: sync-worker
+          image: ${REGISTRY}/ai-sync-service:${VERSION}
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 9090
+              name: metrics
+
+          envFrom:
+            - configMapRef:
+                name: ai-service-config
+            - secretRef:
+                name: ai-service-secrets
+
+          env:
+            - name: SERVICE_NAME
+              value: "ai-sync-worker"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: WORKER_TYPE
+              value: "all"  # Handles all job types
+            - name: CONSUMER_GROUP
+              value: "sync-workers"
+
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+
+          # Workers don't have HTTP endpoints for health
+          # Use exec probe instead
+          livenessProbe:
+            exec:
+              command:
+                - python
+                - -c
+                - "import redis; r = redis.from_url('${REDIS_URL}'); r.ping()"
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+
+          # Lifecycle: graceful shutdown
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    # Signal worker to stop accepting new jobs
+                    kill -SIGTERM 1
+                    # Wait for current job to complete
+                    sleep 60
+
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+
+---
+# Workers don't need a Service (no incoming HTTP)
+# But we create one for metrics scraping
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai-sync-workers-metrics
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service for metrics
+  ports:
+    - port: 9090
+      targetPort: 9090
+      name: metrics
+  selector:
+    app: ai-sync-workers
+
+---
+# KEDA ScaledObject for queue-based autoscaling
+# (Alternative to HPA for queue-driven workers)
+
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: ai-sync-workers-scaler
+spec:
+  scaleTargetRef:
+    name: ai-sync-workers
+
+  minReplicaCount: 1
+  maxReplicaCount: 10
+
+  # Cooldown periods
+  cooldownPeriod: 300
+  pollingInterval: 30
+
+  triggers:
+    # Scale based on Redis Stream length
+    - type: redis-streams
+      metadata:
+        address: ${REDIS_URL}
+        stream: jobs:embeddings
+        consumerGroup: sync-workers
+        lagCount: "10"  # Scale up if lag > 10
+
+    - type: redis-streams
+      metadata:
+        address: ${REDIS_URL}
+        stream: jobs:catalog_sync
+        consumerGroup: sync-workers
+        lagCount: "5"
+
+    - type: redis-streams
+      metadata:
+        address: ${REDIS_URL}
+        stream: jobs:bulk_ops
+        consumerGroup: sync-workers
+        lagCount: "5"
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ai-sync-workers-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ai-sync-workers
+

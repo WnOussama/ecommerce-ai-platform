@@ -1,0 +1,36 @@
+# =============================================================================
+# KUSTOMIZATION - Base Configuration
+# =============================================================================
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: saas-ai
+
+# Common labels
+commonLabels:
+  app.kubernetes.io/name: saas-ai
+  app.kubernetes.io/part-of: saas-ecommerce
+
+# Resources
+resources:
+  - shared.yaml
+  - databases.yaml
+  - chat-service.yaml
+  - admin-service.yaml
+  - sync-workers.yaml
+
+# ConfigMap generator
+configMapGenerator:
+  - name: ai-service-config
+    behavior: merge
+    literals:
+      - ENVIRONMENT=production
+
+# Secret generator (example - use external secrets in prod)
+secretGenerator:
+  - name: ai-service-secrets
+    type: Opaque
+    literals:
+      - JWT_SECRET_KEY=CHANGE_ME_IN_PRODUCTION
+

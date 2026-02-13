@@ -1,0 +1,436 @@
+version: '3.8'
+
+# =============================================================================
+# DOCKER COMPOSE - SaaS AI E-commerce
+# Architecture Multi-Services Production-Ready
+#
+# Services:
+# - ai-chat-service:  Client interactions (chat, recommendations, coupons)
+# - ai-admin-service: Admin operations (analytics, commands, reports)
+# - ai-sync-service:  Background workers (embeddings, catalog sync)
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # AI CHAT SERVICE - Client-facing (Port 8001)
+  # Optimisé pour latence minimale et throughput élevé
+  # ===========================================================================
+  ai-chat-service:
+    build:
+      context: ../../src/ai-core
+      dockerfile: ../../infrastructure/docker/services/chat-service.Dockerfile
+      target: ${BUILD_TARGET:-production}
+    container_name: saas_ai_chat
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - SERVICE_NAME=ai-chat-service
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-saas_ecommerce}
+      - DB_USER=${DB_USER:-saas_user}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - SECURITY_JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    ports:
+      - "${CHAT_SERVICE_PORT:-8001}:8001"
+    volumes:
+      - ai_chat_logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      replicas: ${CHAT_REPLICAS:-1}
+
+  # ===========================================================================
+  # AI ADMIN SERVICE - Admin-facing (Port 8002)
+  # Optimisé pour opérations analytiques complexes
+  # ===========================================================================
+  ai-admin-service:
+    build:
+      context: ../../src/ai-core
+      dockerfile: ../../infrastructure/docker/services/admin-service.Dockerfile
+      target: ${BUILD_TARGET:-production}
+    container_name: saas_ai_admin
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - SERVICE_NAME=ai-admin-service
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-saas_ecommerce}
+      - DB_USER=${DB_USER:-saas_user}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_OPENAI_API_KEY=${OPENAI_API_KEY}
+      - LLM_ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - SECURITY_JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    ports:
+      - "${ADMIN_SERVICE_PORT:-8002}:8002"
+    volumes:
+      - ai_admin_logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1.5G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+  # ===========================================================================
+  # AI SYNC SERVICE - Background Workers
+  # Tâches asynchrones: embeddings, sync catalogue, bulk operations
+  # ===========================================================================
+  ai-sync-service:
+    build:
+      context: ../../src/ai-core
+      dockerfile: ../../infrastructure/docker/services/sync-service.Dockerfile
+      target: ${BUILD_TARGET:-production}
+    container_name: saas_ai_sync
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - SERVICE_NAME=ai-sync-service
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-saas_ecommerce}
+      - DB_USER=${DB_USER:-saas_user}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8000
+    volumes:
+      - ai_sync_logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chromadb:
+        condition: service_healthy
+    networks:
+      - saas_network
+    # No healthcheck needed for worker (no HTTP)
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+      replicas: ${SYNC_REPLICAS:-1}
+
+  # ===========================================================================
+  # DATABASE - MySQL 8
+  # ===========================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: saas_mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD}
+      - MYSQL_DATABASE=${DB_NAME:-saas_ecommerce}
+      - MYSQL_USER=${DB_USER:-saas_user}
+      - MYSQL_PASSWORD=${DB_PASSWORD}
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./services/mysql/init:/docker-entrypoint-initdb.d
+      - ./services/mysql/conf.d:/etc/mysql/conf.d
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # ===========================================================================
+  # CACHE & MESSAGE QUEUE - Redis
+  # Utilisé pour: cache, sessions, rate limiting, message queue (Streams)
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: saas_redis
+    restart: unless-stopped
+    command: >
+      redis-server 
+      --appendonly yes 
+      --maxmemory 256mb 
+      --maxmemory-policy allkeys-lru
+      ${REDIS_PASSWORD:+--requirepass $REDIS_PASSWORD}
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
+  # ===========================================================================
+  # VECTOR DATABASE - ChromaDB
+  # Stockage des embeddings pour RAG
+  # ===========================================================================
+  chromadb:
+    image: chromadb/chroma:0.4.22
+    container_name: saas_chromadb
+    restart: unless-stopped
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=FALSE
+    ports:
+      - "${CHROMA_PORT:-8000}:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+  # ===========================================================================
+  # REVERSE PROXY - Nginx
+  # Routing vers les différents services
+  # ===========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: saas_nginx
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - ai-chat-service
+      - ai-admin-service
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================================================
+  # MONITORING - Prometheus
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: saas_prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts:/etc/prometheus/alerts:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+      - '--web.enable-lifecycle'
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
+  # ===========================================================================
+  # DASHBOARDS - Grafana
+  # ===========================================================================
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: saas_grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
+  # ===========================================================================
+  # LOGS - Loki
+  # ===========================================================================
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: saas_loki
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./monitoring/loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
+  # ===========================================================================
+  # LOG COLLECTOR - Promtail
+  # ===========================================================================
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: saas_promtail
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - ai_chat_logs:/var/log/ai-chat:ro
+      - ai_admin_logs:/var/log/ai-admin:ro
+      - ai_sync_logs:/var/log/ai-sync:ro
+      - nginx_logs:/var/log/nginx:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
+  # ===========================================================================
+  # ALERTING - AlertManager
+  # ===========================================================================
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: saas_alertmanager
+    restart: unless-stopped
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  saas_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# =============================================================================
+# VOLUMES
+# =============================================================================
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  chroma_data:
+    driver: local
+  ai_chat_logs:
+    driver: local
+  ai_admin_logs:
+    driver: local
+  ai_sync_logs:
+    driver: local
+  nginx_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+
