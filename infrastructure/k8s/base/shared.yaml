@@ -1,0 +1,203 @@
+# =============================================================================
+# SHARED RESOURCES - ConfigMaps, Secrets, RBAC
+# =============================================================================
+
+---
+# ConfigMap for all AI services
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-service-config
+data:
+  ENVIRONMENT: "production"
+  LOG_LEVEL: "INFO"
+  LOG_FORMAT: "json"
+
+  # Database
+  DB_HOST: "mysql-primary"
+  DB_PORT: "3306"
+  DB_NAME: "saas_ecommerce"
+  DB_READ_HOST: "mysql-replica"  # Read replicas
+
+  # Redis
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+
+  # ChromaDB
+  CHROMA_HOST: "chromadb"
+  CHROMA_PORT: "8000"
+
+  # LLM
+  LLM_PROVIDER: "openai"
+  LLM_MODEL: "gpt-4-turbo-preview"
+  LLM_EMBEDDING_MODEL: "text-embedding-3-small"
+
+  # Features
+  STATELESS_MODE: "true"
+  ENABLE_READ_REPLICAS: "true"
+
+  # Rate Limiting
+  RATE_LIMIT_ENABLED: "true"
+
+  # Monitoring
+  METRICS_ENABLED: "true"
+  TRACING_ENABLED: "true"
+
+---
+# Service Account for AI services
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ai-service-account
+
+---
+# RBAC Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: ai-service-role
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps", "secrets"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+
+---
+# Role Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ai-service-rolebinding
+subjects:
+  - kind: ServiceAccount
+    name: ai-service-account
+roleRef:
+  kind: Role
+  name: ai-service-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Network Policy - Restrict traffic
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: ai-services-network-policy
+spec:
+  podSelector:
+    matchLabels:
+      tier: api
+
+  policyTypes:
+    - Ingress
+    - Egress
+
+  ingress:
+    # Allow from ingress controller
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 8001
+        - protocol: TCP
+          port: 8002
+
+    # Allow from same namespace
+    - from:
+        - podSelector: {}
+
+  egress:
+    # Allow to databases
+    - to:
+        - podSelector:
+            matchLabels:
+              app: mysql
+        - podSelector:
+            matchLabels:
+              app: redis
+        - podSelector:
+            matchLabels:
+              app: chromadb
+      ports:
+        - protocol: TCP
+          port: 3306
+        - protocol: TCP
+          port: 6379
+        - protocol: TCP
+          port: 8000
+
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+
+    # Allow HTTPS (for LLM APIs)
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
+
+---
+# Ingress for API Gateway
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ai-services-ingress
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+    - hosts:
+        - api.example.com
+      secretName: api-tls
+
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          # Chat service
+          - path: /api/v1/chat
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-chat-service
+                port:
+                  number: 8001
+
+          - path: /api/v1/recommend
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-chat-service
+                port:
+                  number: 8001
+
+          # Admin service
+          - path: /api/v1/admin
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-admin-service
+                port:
+                  number: 8002
+
+          # Health checks
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: ai-chat-service
+                port:
+                  number: 8001
+

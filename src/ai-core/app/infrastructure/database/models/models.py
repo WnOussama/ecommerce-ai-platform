@@ -161,7 +161,7 @@ class ConversationModel(Base):
 
     # Contexte (page, produit, etc.)
     context = Column(JSON, default=dict)
-    metadata = Column(JSON, default=dict)
+    conversation_metadata = Column(JSON, default=dict)  # Renamed from 'metadata' (reserved by SQLAlchemy)
 
     # Métriques
     message_count = Column(Integer, default=0)
