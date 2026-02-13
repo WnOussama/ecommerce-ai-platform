@@ -6,6 +6,7 @@ from app.core.config.settings import (
     Settings,
     get_settings,
     settings,
+    Environment,
     DatabaseSettings,
     RedisSettings,
     VectorStoreSettings,
@@ -26,6 +27,7 @@ __all__ = [
     "Settings",
     "get_settings",
     "settings",
+    "Environment",
 
     # Sub-settings
     "DatabaseSettings",

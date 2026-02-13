@@ -3,10 +3,26 @@ Configuration centralisée Production-Ready
 Utilise pydantic-settings pour validation et typage fort
 """
 
+from enum import Enum
 from functools import lru_cache
 from typing import List, Optional
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Environment(str, Enum):
+    """
+    Environnements supportés par l'application.
+
+    - development: Développement local avec debug activé
+    - test: Exécution des tests (CI/CD)
+    - staging: Pré-production pour validation
+    - production: Production avec sécurité renforcée
+    """
+    DEVELOPMENT = "development"
+    TEST = "test"
+    STAGING = "staging"
+    PRODUCTION = "production"
 
 
 class DatabaseSettings(BaseSettings):
@@ -214,7 +230,7 @@ class Settings(BaseSettings):
     # Application
     app_name: str = "SaaS AI E-commerce Assistant"
     app_version: str = "1.0.0"
-    environment: str = Field(default="development", pattern="^(development|staging|production)$")
+    environment: Environment = Field(default=Environment.DEVELOPMENT)
     debug: bool = False
 
     # API
@@ -230,21 +246,35 @@ class Settings(BaseSettings):
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     tenant: TenantSettings = Field(default_factory=TenantSettings)
 
-    @field_validator("environment")
+    @field_validator("environment", mode="before")
     @classmethod
-    def validate_environment(cls, v: str) -> str:
-        if v == "production":
-            # En production, certaines options doivent être désactivées
-            pass
+    def validate_environment(cls, v) -> Environment:
+        """Convertit string en Environment Enum"""
+        if isinstance(v, Environment):
+            return v
+        if isinstance(v, str):
+            try:
+                return Environment(v.lower())
+            except ValueError:
+                valid = [e.value for e in Environment]
+                raise ValueError(f"Invalid environment '{v}'. Must be one of: {valid}")
         return v
 
     @property
     def is_production(self) -> bool:
-        return self.environment == "production"
+        return self.environment == Environment.PRODUCTION
 
     @property
     def is_development(self) -> bool:
-        return self.environment == "development"
+        return self.environment == Environment.DEVELOPMENT
+
+    @property
+    def is_test(self) -> bool:
+        return self.environment == Environment.TEST
+
+    @property
+    def is_staging(self) -> bool:
+        return self.environment == Environment.STAGING
 
 
 @lru_cache()
