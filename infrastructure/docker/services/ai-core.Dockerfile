@@ -47,7 +47,8 @@ FROM base as development
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Installer les dépendances de dev
+# Copier requirements-dev.txt et installer
+COPY requirements-dev.txt ./
 RUN pip install -r requirements-dev.txt || true
 
 # Copier le code
