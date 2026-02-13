@@ -73,11 +73,21 @@ class IntentClassifier:
     """
 
     # Patterns pour classification rapide
+    # NOTE: Les patterns multi-mots sont prioritaires (plus spécifiques)
+    # ATTENTION: Éviter les substrings qui peuvent matcher d'autres mots
+    #   (ex: "commande" matche dans "recommandez")
     INTENT_PATTERNS = {
         IntentType.ORDER_STATUS: [
+<<<<<<< HEAD
             "ma commande", "mes commandes", "order", "livraison",
             "suivi", "tracking", "où est", "statut", "expédié",
             "envoyé", "colis", "arrivé", "shipped"
+=======
+            "ma commande", "order", "suivi", "tracking",
+            "où est", "statut", "expédié", "envoyé",
+            "colis", "pas arrivé", "pas reçu", "package", "parcel",
+            "ma livraison", "de ma commande"
+>>>>>>> d04549b (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
         ],
         IntentType.RETURN_REQUEST: [
             "retour", "rembours", "échange", "renvoyer", "return",
@@ -85,6 +95,7 @@ class IntentClassifier:
         ],
         IntentType.SHIPPING_INFO: [
             "délai", "frais de port", "shipping",
+<<<<<<< HEAD
             "combien de temps", "expédition"
         ],
         IntentType.PRODUCT_SEARCH: [
@@ -99,6 +110,21 @@ class IntentClassifier:
         IntentType.COUPON_REQUEST: [
             "code promo", "réduction", "coupon", "remise",
             "discount", "promotions", "promotion", "offre", "promo"
+=======
+            "combien de temps", "expédition", "délai de livraison"
+        ],
+        IntentType.PRODUCT_SEARCH: [
+            "cherche", "recherche", "trouver", "avez-vous",
+            "article", "looking for"
+        ],
+        IntentType.RECOMMENDATION: [
+            "recommand", "suggé", "conseil", "similaire",
+            "meilleur", "populaire", "tendance", "produits similaires"
+        ],
+        IntentType.COUPON_REQUEST: [
+            "code promo", "réduction", "coupon", "remise",
+            "discount", "promotion", "offre", "avez-vous un code"
+>>>>>>> d04549b (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
         ],
         IntentType.COMPLAINT: [
             "problème", "plainte", "mécontent", "déçu",
