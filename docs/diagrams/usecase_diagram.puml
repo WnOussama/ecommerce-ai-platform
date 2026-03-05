@@ -1,0 +1,142 @@
+@startuml UseCase_Ecommerce_AI_Platform
+
+!define ACTOR_COLOR #E1F5FE
+!define USECASE_COLOR #FFF3E0
+!define SYSTEM_COLOR #E8F5E9
+
+skinparam actorStyle awesome
+skinparam packageStyle rectangle
+skinparam usecase {
+    BackgroundColor USECASE_COLOR
+    BorderColor #FF9800
+}
+skinparam actor {
+    BackgroundColor ACTOR_COLOR
+    BorderColor #0288D1
+}
+
+title Diagramme de Cas d'Utilisation - E-commerce AI Platform
+
+' ============================================================================
+' ACTEURS
+' ============================================================================
+
+actor "Client\n(Visiteur/Acheteur)" as Client #E3F2FD
+actor "Administrateur\n(Marchand)" as Admin #FFF3E0
+actor "Agent IA Client" as AIClient #E8F5E9
+actor "Agent IA Admin" as AIAdmin #E8F5E9
+actor "LLM Provider\n(OpenAI/Anthropic)" as LLM #FCE4EC
+
+' ============================================================================
+' SYSTÈME PRINCIPAL
+' ============================================================================
+
+rectangle "E-commerce AI Platform" as Platform {
+
+    ' --- Zone Client ---
+    package "Interactions Client" as ClientZone {
+        usecase "Poser une question\nau chatbot" as UC_AskChatbot
+        usecase "Rechercher un produit" as UC_SearchProduct
+        usecase "Demander une\nrecommandation" as UC_GetRecommendation
+        usecase "Suivre une commande" as UC_TrackOrder
+        usecase "Demander un retour" as UC_RequestReturn
+        usecase "Demander un\ncode promo" as UC_RequestCoupon
+    }
+
+    ' --- Zone Admin ---
+    package "Gestion Administrative" as AdminZone {
+        usecase "Générer un rapport\nanalytics" as UC_GenerateReport
+        usecase "Créer des coupons\nen masse" as UC_CreateCoupons
+        usecase "Modifier les prix" as UC_UpdatePrices
+        usecase "Consulter les\nconversations" as UC_ViewConversations
+        usecase "Configurer l'agent IA" as UC_ConfigureAgent
+    }
+
+    ' --- Zone IA ---
+    package "Traitement IA" as AIZone {
+        usecase "Classifier l'intention" as UC_ClassifyIntent
+        usecase "Récupérer le contexte\n(RAG)" as UC_RetrieveRAG
+        usecase "Générer une réponse" as UC_GenerateResponse
+        usecase "Valider la sécurité\n(Guardrails)" as UC_ValidateSecurity
+        usecase "Exécuter une action" as UC_ExecuteAction
+    }
+
+    ' --- Zone Sécurité ---
+    package "Sécurité" as SecurityZone {
+        usecase "S'authentifier\n(API Key)" as UC_Authenticate
+        usecase "Détecter injection\nde prompt" as UC_DetectInjection
+        usecase "Valider le tenant" as UC_ValidateTenant
+    }
+
+    ' --- Zone Technique ---
+    package "Intégrations" as IntegrationZone {
+        usecase "Synchroniser le\ncatalogue PrestaShop" as UC_SyncCatalog
+        usecase "Indexer les produits\n(ChromaDB)" as UC_IndexProducts
+    }
+}
+
+' ============================================================================
+' RELATIONS CLIENT
+' ============================================================================
+
+Client --> UC_AskChatbot
+Client --> UC_SearchProduct
+Client --> UC_GetRecommendation
+Client --> UC_TrackOrder
+Client --> UC_RequestReturn
+Client --> UC_RequestCoupon
+Client --> UC_Authenticate
+
+' ============================================================================
+' RELATIONS ADMIN
+' ============================================================================
+
+Admin --> UC_GenerateReport
+Admin --> UC_CreateCoupons
+Admin --> UC_UpdatePrices
+Admin --> UC_ViewConversations
+Admin --> UC_ConfigureAgent
+Admin --> UC_Authenticate
+
+' ============================================================================
+' RELATIONS AGENTS IA
+' ============================================================================
+
+AIClient --> UC_ClassifyIntent
+AIClient --> UC_RetrieveRAG
+AIClient --> UC_GenerateResponse
+AIClient --> UC_ExecuteAction
+
+AIAdmin --> UC_GenerateReport : <<extend>>
+AIAdmin --> UC_CreateCoupons : <<extend>>
+AIAdmin --> UC_UpdatePrices : <<extend>>
+
+' ============================================================================
+' RELATIONS LLM
+' ============================================================================
+
+LLM <-- UC_GenerateResponse : API Call
+LLM <-- UC_ClassifyIntent : Fallback
+
+' ============================================================================
+' INCLUDES / EXTENDS
+' ============================================================================
+
+UC_AskChatbot ..> UC_ClassifyIntent : <<include>>
+UC_AskChatbot ..> UC_ValidateSecurity : <<include>>
+UC_AskChatbot ..> UC_RetrieveRAG : <<include>>
+UC_AskChatbot ..> UC_GenerateResponse : <<include>>
+
+UC_SearchProduct ..> UC_RetrieveRAG : <<include>>
+UC_GetRecommendation ..> UC_RetrieveRAG : <<include>>
+
+UC_ValidateSecurity ..> UC_DetectInjection : <<include>>
+UC_ValidateSecurity ..> UC_ValidateTenant : <<include>>
+
+UC_SyncCatalog ..> UC_IndexProducts : <<include>>
+
+UC_CreateCoupons ..> UC_ValidateSecurity : <<include>>
+UC_UpdatePrices ..> UC_ValidateSecurity : <<include>>
+
+@enduml
+

@@ -99,11 +99,11 @@ class TestRepositoryInitialization:
 
     def test_repository_requires_tenant_context(self, mock_session):
         """Repository nécessite un TenantContext"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         # Mock repository
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         # Sans contexte = erreur
         with pytest.raises(TenantIdMissingError):
@@ -111,10 +111,10 @@ class TestRepositoryInitialization:
 
     def test_repository_requires_valid_tenant_id(self, mock_session):
         """Repository nécessite un tenant_id valide"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         # Contexte vide = erreur
         with pytest.raises(TenantIdMissingError):
@@ -122,10 +122,10 @@ class TestRepositoryInitialization:
 
     def test_repository_stores_tenant_id(self, mock_session, tenant_context):
         """Repository stocke le tenant_id"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         repo = TestRepo(mock_session, tenant_context)
         assert repo.tenant_id == tenant_context.tenant_id
@@ -140,10 +140,10 @@ class TestCrossTenantPrevention:
 
     def test_validate_entity_same_tenant(self, mock_session, tenant_context, tenant_id):
         """Entité du même tenant = OK"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         repo = TestRepo(mock_session, tenant_context)
 
@@ -158,10 +158,10 @@ class TestCrossTenantPrevention:
         self, mock_session, tenant_context, other_tenant_id
     ):
         """Entité d'un autre tenant = Exception"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         repo = TestRepo(mock_session, tenant_context)
 
@@ -178,10 +178,10 @@ class TestCrossTenantPrevention:
         self, mock_session, tenant_context, other_tenant_id
     ):
         """Update valide le tenant de l'entité"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         repo = TestRepo(mock_session, tenant_context)
 
@@ -198,10 +198,10 @@ class TestCrossTenantPrevention:
         self, mock_session, tenant_context, other_tenant_id
     ):
         """Delete valide le tenant de l'entité"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         repo = TestRepo(mock_session, tenant_context)
 
@@ -224,10 +224,10 @@ class TestTenantIdModification:
     @pytest.mark.asyncio
     async def test_cannot_update_tenant_id(self, mock_session, tenant_context):
         """Impossible de modifier tenant_id via update"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         repo = TestRepo(mock_session, tenant_context)
 
@@ -242,10 +242,10 @@ class TestTenantIdModification:
     @pytest.mark.asyncio
     async def test_create_forces_tenant_id(self, mock_session, tenant_context, tenant_id):
         """Create force toujours le bon tenant_id"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         repo = TestRepo(mock_session, tenant_context)
 
@@ -325,10 +325,10 @@ class TestRepositoryQueries:
     @pytest.mark.asyncio
     async def test_get_by_id_includes_tenant(self, mock_session, tenant_context, tenant_id):
         """get_by_id inclut tenant_id dans la query"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         repo = TestRepo(mock_session, tenant_context)
 
@@ -347,16 +347,16 @@ class TestRepositoryQueries:
         query = call_args[0][0]
 
         # Convertir en string et vérifier tenant_id
-        query_str = str(query.compile(compile_kwargs={"literal_binds": True}))
-        assert tenant_id in query_str or "tenant_id" in query_str.lower()
+        query_str = str(query.compile(compile_kwargs={"literal_binds": False}))
+        assert "tenant_id" in query_str.lower()
 
     @pytest.mark.asyncio
     async def test_get_all_includes_tenant(self, mock_session, tenant_context, tenant_id):
         """get_all inclut tenant_id dans la query"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         repo = TestRepo(mock_session, tenant_context)
 
@@ -374,10 +374,10 @@ class TestRepositoryQueries:
     @pytest.mark.asyncio
     async def test_find_by_includes_tenant(self, mock_session, tenant_context):
         """find_by inclut tenant_id même avec d'autres filtres"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         repo = TestRepo(mock_session, tenant_context)
 
@@ -395,10 +395,10 @@ class TestRepositoryQueries:
     @pytest.mark.asyncio
     async def test_delete_by_id_includes_tenant(self, mock_session, tenant_context):
         """delete_by_id inclut tenant_id"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         repo = TestRepo(mock_session, tenant_context)
 
@@ -424,10 +424,10 @@ class TestTenantIsolation:
         self, mock_session, tenant_id, other_tenant_id
     ):
         """Tenant A ne peut pas voir les données de Tenant B"""
-        from app.infrastructure.database.models.models import CustomerModel
+        from app.infrastructure.database.models import Conversation
 
         class TestRepo(TenantAwareRepository):
-            model_class = CustomerModel
+            model_class = Conversation
 
         # Repository pour tenant A
         context_a = TenantContext(tenant_id=tenant_id)

@@ -353,7 +353,8 @@ class TestHallucinationDetectionGuardrail:
 
         result = await guardrail.check(response, context)
         assert result.result == GuardrailResult.WARN
-        assert "Price mentioned without source" in result.details.get("warnings", [])
+        warnings = result.details.get("warnings", [])
+        assert any("Price mentioned without source" in w for w in warnings)
 
     @pytest.mark.asyncio
     async def test_passes_grounded_response(self, guardrail):

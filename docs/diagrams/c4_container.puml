@@ -1,0 +1,49 @@
+@startuml C4_Container
+
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+
+title C4 Container Diagram - E-commerce AI Platform
+
+Person(client, "Client E-commerce", "Visiteur/Acheteur")
+Person(admin, "Administrateur", "Marchand")
+
+System_Ext(prestashop, "PrestaShop", "E-commerce platform")
+System_Ext(openai, "OpenAI API", "GPT-4")
+System_Ext(anthropic, "Anthropic API", "Claude")
+
+System_Boundary(platform, "E-commerce AI Platform") {
+    Container(widget, "Chat Widget", "JavaScript", "Widget intégré")
+    Container(dashboard, "Admin Dashboard", "Laravel", "Interface admin")
+    Container(api, "AI Core API", "FastAPI", "API REST principale")
+    Container(client_agent, "Client Agent", "Python", "Agent interactions client")
+    Container(admin_agent, "Admin Agent", "Python", "Agent opérations admin")
+    Container(llm_gateway, "LLM Gateway", "Python", "Abstraction LLM")
+    Container(rag_service, "RAG Service", "Python", "Retrieval Augmented Generation")
+    Container(security, "Security Layer", "Python", "Guardrails 6 couches")
+    ContainerDb(postgres, "PostgreSQL", "SQL", "Tenants, Messages")
+    ContainerDb(chromadb, "ChromaDB", "Vector DB", "Embeddings")
+    ContainerDb(redis, "Redis", "Cache", "Sessions, Rate limit")
+    Container(sync_worker, "Sync Worker", "Python", "Sync catalogue")
+}
+
+Rel(client, widget, "Questions", "HTTPS")
+Rel(widget, api, "REST", "JSON")
+Rel(admin, dashboard, "Gère", "HTTPS")
+Rel(dashboard, api, "REST", "JSON")
+Rel(api, client_agent, "Route")
+Rel(api, admin_agent, "Route")
+Rel(client_agent, llm_gateway, "Generate")
+Rel(client_agent, rag_service, "Retrieve")
+Rel(client_agent, security, "Validate")
+Rel(llm_gateway, openai, "API", "HTTPS")
+Rel(llm_gateway, anthropic, "API", "HTTPS")
+Rel(api, postgres, "CRUD", "TCP")
+Rel(rag_service, chromadb, "Query", "HTTP")
+Rel(api, redis, "Cache", "TCP")
+Rel(sync_worker, prestashop, "Fetch", "REST")
+Rel(sync_worker, chromadb, "Index", "HTTP")
+
+@enduml
+

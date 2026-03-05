@@ -108,7 +108,7 @@ class TestInputSanitizer:
 
         for attack in encoded:
             result = sanitizer.sanitize(attack)
-            assert result.threat_level.value >= ThreatLevel.MEDIUM.value, f"Should detect: {attack}"
+            assert result.threat_level.severity >= ThreatLevel.MEDIUM.severity, f"Should detect: {attack}"
 
     def test_normalizes_homoglyphs(self, sanitizer):
         """Normalise les homoglyphes (caractères unicode similaires à ASCII)"""
@@ -454,7 +454,7 @@ class TestKnownAttacks:
         result = defense.process_input(attack)
 
         # Devrait détecter le "ignore your instructions"
-        assert result.threat_level.value >= ThreatLevel.HIGH.value
+        assert result.threat_level.severity >= ThreatLevel.HIGH.severity
 
     def test_translation_attack(self, defense):
         """Test contre l'attaque par traduction"""
@@ -469,7 +469,7 @@ class TestKnownAttacks:
         result = defense.process_input(attack)
 
         # Devrait au moins sanitizer
-        assert "system_prompt" not in result.sanitized_content or result.threat_level.value > ThreatLevel.NONE.value
+        assert "system_prompt" not in result.sanitized_content or result.threat_level.severity > ThreatLevel.NONE.severity
 
     def test_delimiter_confusion(self, defense):
         """Test contre la confusion de délimiteurs"""
@@ -477,7 +477,7 @@ class TestKnownAttacks:
         result = defense.process_input(attack)
 
         # Le pattern d'override devrait être détecté
-        assert result.threat_level.value >= ThreatLevel.MEDIUM.value
+        assert result.threat_level.severity >= ThreatLevel.MEDIUM.severity
 
 
 # =============================================================================

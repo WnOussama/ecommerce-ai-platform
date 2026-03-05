@@ -1,0 +1,106 @@
+@startuml Class_Diagram
+
+skinparam class {
+    BackgroundColor white
+    BorderColor #333333
+}
+
+title Diagramme de Classes - E-commerce AI Platform
+
+package "Domain Entities" #E8F5E9 {
+    class Tenant {
+        +id: UUID
+        +name: str
+        +slug: str
+        +api_key_hash: str
+        +settings: JSONB
+        +is_active: bool
+    }
+
+    class Conversation {
+        +id: UUID
+        +tenant_id: UUID
+        +user_identifier: str
+        +status: ConversationStatus
+    }
+
+    class Message {
+        +id: UUID
+        +tenant_id: UUID
+        +conversation_id: UUID
+        +role: MessageRole
+        +content: str
+    }
+
+    enum MessageRole {
+        USER
+        ASSISTANT
+        SYSTEM
+    }
+}
+
+package "Agents" #FFF3E0 {
+    abstract class BaseAgent {
+        #llm_gateway: LLMGateway
+        #rag_service: RAGService
+        +{abstract} process()
+    }
+
+    class ClientAgent {
+        -intent_classifier: IntentClassifier
+        +process_message(): AIResponse
+    }
+
+    class AdminAgent {
+        -command_validator: Validator
+        +execute_command(): AdminResponse
+    }
+
+    class IntentClassifier {
+        +classify(): Tuple[IntentType, float]
+    }
+}
+
+package "Shared Services" #E3F2FD {
+    class LLMGateway {
+        +generate(): LLMResponse
+        +generate_embeddings(): List
+    }
+
+    class RAGService {
+        +search(): RAGResult
+        +index_documents(): void
+    }
+
+    class PromptDefense {
+        +validate_input(): SecurityResult
+        +validate_output(): SecurityResult
+    }
+}
+
+package "Infrastructure" #FCE4EC {
+    abstract class BaseLLMProvider {
+        +{abstract} generate()
+        +{abstract} chat()
+    }
+
+    class OpenAIProvider
+    class AnthropicProvider
+    class MockProvider
+}
+
+' Relations
+Tenant "1" *-- "many" Conversation
+Conversation "1" *-- "many" Message
+BaseAgent <|-- ClientAgent
+BaseAgent <|-- AdminAgent
+ClientAgent *-- IntentClassifier
+ClientAgent --> RAGService
+ClientAgent --> LLMGateway
+LLMGateway o-- BaseLLMProvider
+BaseLLMProvider <|-- OpenAIProvider
+BaseLLMProvider <|-- AnthropicProvider
+BaseLLMProvider <|-- MockProvider
+
+@enduml
+

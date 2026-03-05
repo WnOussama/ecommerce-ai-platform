@@ -38,6 +38,7 @@ class TenantModel(Base):
     Chaque boutique e-commerce = 1 tenant.
     """
     __tablename__ = "tenants"
+    __table_args__ = {"extend_existing": True}
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
 
@@ -274,11 +275,6 @@ class CouponModel(Base):
     tenant = relationship("TenantModel", back_populates="coupons")
     customer = relationship("CustomerModel", back_populates="coupons")
 
-    __table_args__ = (
-        Index("idx_coupon_code", "code"),
-        Index("idx_coupon_tenant_status", "tenant_id", "status"),
-        Index("idx_coupon_customer", "customer_id"),
-    )
 
 
 # ============================================================================

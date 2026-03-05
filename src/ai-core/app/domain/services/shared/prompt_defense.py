@@ -63,6 +63,18 @@ class ThreatLevel(str, Enum):
     HIGH = "high"
     CRITICAL = "critical"
 
+    @property
+    def severity(self) -> int:
+        """Numeric severity for proper comparison"""
+        _severity_map = {
+            "none": 0,
+            "low": 1,
+            "medium": 2,
+            "high": 3,
+            "critical": 4,
+        }
+        return _severity_map[self.value]
+
 
 class DefenseLayer(str, Enum):
     """Couche de défense"""
@@ -106,7 +118,8 @@ class InputSanitizer:
     # Patterns d'injection connus (critiques)
     CRITICAL_PATTERNS = [
         # System prompt override
-        r"ignore\s+(all\s+)?(previous|prior|above|earlier)\s+instructions?",
+        r"ignore\s+(all\s+)?(previous|prior|above|earlier|your)\s+instructions?",
+        r"ignore\s+your\s+(rules?|guidelines?)",
         r"disregard\s+(your\s+)?(instructions?|rules?|guidelines?)",
         r"forget\s+(everything|all|what)",
         r"new\s+instructions?:",
@@ -119,19 +132,25 @@ class InputSanitizer:
         r"god\s+mode",
         r"jailbreak",
 
-        # Data extraction
-        r"(show|reveal|print|output)\s+(your\s+)?(system\s+)?prompt",
+        # Data extraction - Enhanced patterns
+        r"(show|reveal|print|output|display)\s+(me\s+)?(your\s+)?((system|initial)\s+)?prompt",
+        r"(show|reveal|print|output|display)\s+(me\s+)?(your\s+)?((system|initial)\s+)?instructions?",
         r"what\s+are\s+your\s+instructions",
         r"repeat\s+(your\s+)?instructions",
+
+        # Roleplay attacks (moved to CRITICAL)
+        r"you\s+are\s+now\s+(a\s+)?(\w+\s+)?(AI|bot|assistant|hacker)",
     ]
 
     # Patterns suspects (medium risk)
     SUSPICIOUS_PATTERNS = [
-        r"(you\s+are|act\s+as|pretend|roleplay)\s+",
+        r"(you\s+are|act\s+as|pretend|roleplay)\s+\w+",
         r"from\s+now\s+on",
         r"let'?s\s+play\s+a\s+game",
         r"ignore\s+the\s+(above|previous)",
         r"</?(system|user|assistant)>",
+        r"\{system_prompt\}",  # Template-style data exfiltration
+        r"!\[.*\]\(.*system_prompt.*\)",  # Markdown image injection
     ]
 
     # Encodings malicieux
@@ -195,14 +214,14 @@ class InputSanitizer:
             for regex in self._suspicious_regex:
                 if regex.search(text):
                     threats.append(f"suspicious_pattern:{regex.pattern[:30]}")
-                    if threat_level.value < ThreatLevel.HIGH.value:
+                    if threat_level.severity < ThreatLevel.HIGH.severity:
                         threat_level = ThreatLevel.HIGH
 
         # 6. Détecter encodings malicieux
         for regex in self._encoding_regex:
             if regex.search(text):
                 threats.append("encoded_content")
-                if threat_level.value < ThreatLevel.MEDIUM.value:
+                if threat_level.severity < ThreatLevel.MEDIUM.severity:
                     threat_level = ThreatLevel.MEDIUM
 
         # Décision de blocage
@@ -475,11 +494,15 @@ class OutputValidator:
 
     # Patterns indiquant une fuite d'information
     LEAK_PATTERNS = [
-        r"(voici|here\s+is|here\'s)\s+(my|the|your)\s+(system\s+)?prompt",
+        r"(voici|here\s+is|here\'s)\s+(my|the|your|mon|le)\s+(system\s+)?prompt",
+        r"voici\s+mon\s+system\s+prompt",
+        r"mon\s+system\s+prompt",
         r"(my|the)\s+instructions\s+(are|say|tell)",
+        r"my\s+system\s+prompt",
         r"RÈGLES\s+VERROUILLÉES",
         r"SYSTEM_INSTRUCTIONS",
         r"<<<.+>>>",  # Nos marqueurs
+        r"system\s+prompt\s*:",
     ]
 
     # Patterns de comportement inapproprié

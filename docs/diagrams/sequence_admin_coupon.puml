@@ -1,0 +1,50 @@
+@startuml Sequence_Admin_Coupon
+
+skinparam sequenceMessageAlign center
+title Flux Admin: Génération de Coupons IA
+
+actor "Admin" as Admin
+participant "FastAPI" as API #E3F2FD
+participant "Admin Agent" as Agent #FFF3E0
+participant "Command Validator" as Validator #FFCDD2
+participant "LLM Gateway" as LLM #F3E5F5
+database "PostgreSQL" as DB #E8EAF6
+
+Admin -> API : POST /admin/coupons/generate\n{count: 50, discount: 20%}
+activate API
+
+API -> API : Validate admin permissions
+
+API -> Agent : execute_command(COUPON_GENERATE, params)
+activate Agent
+
+Agent -> Validator : validate(command, tenant)
+activate Validator
+Validator -> Validator : Check limits (max 50)
+Validator -> Validator : Check discount (max 30%)
+Validator -> Validator : Check tenant plan
+Validator --> Agent : (valid, [])
+deactivate Validator
+
+Agent -> Agent : assess_risk()
+note right: risk_level = MEDIUM
+
+Agent -> LLM : generate_coupon_strategy(params)
+activate LLM
+LLM --> Agent : {codes[], validity}
+deactivate LLM
+
+loop for each coupon
+    Agent -> DB : INSERT coupon
+end
+
+Agent -> DB : INSERT audit_log
+
+Agent --> API : AdminResponse(success, coupons[])
+deactivate Agent
+
+API --> Admin : 200 OK {coupons: [...]}
+deactivate API
+
+@enduml
+

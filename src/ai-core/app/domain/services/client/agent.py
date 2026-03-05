@@ -75,28 +75,30 @@ class IntentClassifier:
     # Patterns pour classification rapide
     INTENT_PATTERNS = {
         IntentType.ORDER_STATUS: [
-            "commande", "order", "livraison", "suivi", "tracking",
-            "où est", "statut", "expédié", "envoyé"
+            "ma commande", "mes commandes", "order", "livraison",
+            "suivi", "tracking", "où est", "statut", "expédié",
+            "envoyé", "colis", "arrivé", "shipped"
         ],
         IntentType.RETURN_REQUEST: [
             "retour", "rembours", "échange", "renvoyer", "return",
             "refund", "ne fonctionne pas", "défectueux"
         ],
         IntentType.SHIPPING_INFO: [
-            "délai", "livraison", "frais de port", "shipping",
-            "quand", "combien de temps", "expédition"
+            "délai", "frais de port", "shipping",
+            "combien de temps", "expédition"
         ],
         IntentType.PRODUCT_SEARCH: [
             "cherche", "recherche", "trouver", "avez-vous",
-            "produit", "article", "looking for"
+            "produit", "article", "looking for", "cadeau"
         ],
         IntentType.RECOMMENDATION: [
             "recommand", "suggé", "conseil", "similaire",
-            "meilleur", "populaire", "tendance"
+            "meilleur", "populaire", "tendance",
+            "produits similaires", "que me recommand",
         ],
         IntentType.COUPON_REQUEST: [
             "code promo", "réduction", "coupon", "remise",
-            "discount", "promotion", "offre"
+            "discount", "promotions", "promotion", "offre", "promo"
         ],
         IntentType.COMPLAINT: [
             "problème", "plainte", "mécontent", "déçu",
@@ -215,7 +217,7 @@ FORMAT DE RÉPONSE:
         "act as",
         "roleplay",
         "jailbreak",
-        "DAN mode",
+        "dan mode",
     ]
 
     def __init__(self, tenant_settings: Dict[str, Any]):
