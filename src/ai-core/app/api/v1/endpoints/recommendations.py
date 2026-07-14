@@ -2,10 +2,11 @@
 Recommendations Endpoints - Product Recommendations
 """
 
-from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
 import logging
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -16,8 +17,10 @@ router = APIRouter()
 # SCHEMAS
 # =============================================================================
 
+
 class RecommendationRequest(BaseModel):
     """Request for product recommendations"""
+
     customer_id: Optional[str] = None
     product_id: Optional[str] = None  # For "similar products"
     category: Optional[str] = None
@@ -26,16 +29,13 @@ class RecommendationRequest(BaseModel):
 
     class Config:
         json_schema_extra = {
-            "example": {
-                "customer_id": "cust_123",
-                "product_id": "prod_456",
-                "limit": 5
-            }
+            "example": {"customer_id": "cust_123", "product_id": "prod_456", "limit": 5}
         }
 
 
 class ProductRecommendation(BaseModel):
     """A recommended product"""
+
     product_id: str
     name: str
     price: float
@@ -46,6 +46,7 @@ class ProductRecommendation(BaseModel):
 
 class RecommendationResponse(BaseModel):
     """Response with product recommendations"""
+
     recommendations: List[ProductRecommendation]
     strategy: str  # "collaborative", "content_based", "hybrid"
     metadata: Dict[str, Any] = {}
@@ -55,12 +56,10 @@ class RecommendationResponse(BaseModel):
 # ENDPOINTS
 # =============================================================================
 
+
 @router.post("", response_model=RecommendationResponse)
 @router.post("/", response_model=RecommendationResponse)
-async def get_recommendations(
-    request: Request,
-    body: RecommendationRequest
-):
+async def get_recommendations(request: Request, body: RecommendationRequest):
     """
     Get AI-powered product recommendations.
 
@@ -70,7 +69,7 @@ async def get_recommendations(
     - Category-based (based on category)
     - Contextual (based on current browsing context)
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    tenant_id = getattr(request.state, "tenant_id", None)
 
     if not tenant_id:
         raise HTTPException(status_code=401, detail="Tenant context required")
@@ -80,8 +79,8 @@ async def get_recommendations(
         extra={
             "tenant_id": tenant_id,
             "customer_id": body.customer_id,
-            "product_id": body.product_id
-        }
+            "product_id": body.product_id,
+        },
     )
 
     # TODO: Implement actual recommendation logic
@@ -98,49 +97,37 @@ async def get_recommendations(
                 price=29.99,
                 image_url="https://example.com/image.jpg",
                 score=0.92,
-                reason="Basé sur votre historique de navigation"
+                reason="Basé sur votre historique de navigation",
             )
         ],
         strategy="hybrid",
-        metadata={"processing_time_ms": 50}
+        metadata={"processing_time_ms": 50},
     )
 
 
 @router.get("/similar/{product_id}", response_model=RecommendationResponse)
-async def get_similar_products(
-    request: Request,
-    product_id: str,
-    limit: int = 5
-):
+async def get_similar_products(request: Request, product_id: str, limit: int = 5):
     """
     Get products similar to a given product.
     Uses vector similarity search.
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    getattr(request.state, "tenant_id", None)
 
     # TODO: Implement similarity search via ChromaDB
     return RecommendationResponse(
-        recommendations=[],
-        strategy="content_based",
-        metadata={"source_product_id": product_id}
+        recommendations=[], strategy="content_based", metadata={"source_product_id": product_id}
     )
 
 
 @router.get("/trending", response_model=RecommendationResponse)
-async def get_trending_products(
-    request: Request,
-    limit: int = 10
-):
+async def get_trending_products(request: Request, limit: int = 10):
     """
     Get trending/popular products.
     Based on recent interactions and sales.
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    getattr(request.state, "tenant_id", None)
 
     # TODO: Implement trending logic
     return RecommendationResponse(
-        recommendations=[],
-        strategy="popularity",
-        metadata={"time_window": "7d"}
+        recommendations=[], strategy="popularity", metadata={"time_window": "7d"}
     )
-

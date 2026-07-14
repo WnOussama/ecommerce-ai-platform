@@ -3,14 +3,13 @@ LLM Gateway - Service partagé d'accès aux LLMs
 Supporte OpenAI et Anthropic avec retry, fallback et cost tracking
 """
 
+import asyncio
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Optional, Dict, Any, List, AsyncGenerator
-from uuid import UUID, uuid4
 from enum import Enum
-import logging
-import asyncio
+from typing import Any, AsyncGenerator, Dict, List, Optional
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +18,7 @@ logger = logging.getLogger(__name__)
 # TYPES
 # =============================================================================
 
+
 class LLMProvider(str, Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
@@ -26,14 +26,16 @@ class LLMProvider(str, Enum):
 
 class ResponseFormat(str, Enum):
     """Format de réponse attendu"""
-    TEXT = "text"           # Texte libre (Client Agent)
-    JSON = "json"           # JSON structuré (Admin Agent)
-    STREAMING = "streaming" # Streaming pour chat temps réel
+
+    TEXT = "text"  # Texte libre (Client Agent)
+    JSON = "json"  # JSON structuré (Admin Agent)
+    STREAMING = "streaming"  # Streaming pour chat temps réel
 
 
 @dataclass
 class LLMRequest:
     """Requête vers le LLM"""
+
     messages: List[Dict[str, str]]
     model: Optional[str] = None
     temperature: float = 0.7
@@ -50,6 +52,7 @@ class LLMRequest:
 @dataclass
 class LLMResponse:
     """Réponse du LLM"""
+
     content: str
     model: str
     provider: LLMProvider
@@ -75,6 +78,7 @@ class LLMResponse:
 @dataclass
 class LLMUsage:
     """Usage cumulé pour tracking"""
+
     tenant_id: str
     period: str  # "daily", "monthly"
     input_tokens: int = 0
@@ -88,6 +92,7 @@ class LLMUsage:
 # COST CALCULATOR
 # =============================================================================
 
+
 class CostCalculator:
     """Calcul des coûts par modèle"""
 
@@ -100,13 +105,11 @@ class CostCalculator:
         "gpt-4o": {"input": 0.005, "output": 0.015},
         "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
         "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
-
         # Anthropic
         "claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
         "claude-3-sonnet-20240229": {"input": 0.003, "output": 0.015},
         "claude-3-haiku-20240307": {"input": 0.00025, "output": 0.00125},
         "claude-3-5-sonnet-20240620": {"input": 0.003, "output": 0.015},
-
         # Embeddings
         "text-embedding-3-small": {"input": 0.00002, "output": 0.0},
         "text-embedding-3-large": {"input": 0.00013, "output": 0.0},
@@ -116,14 +119,14 @@ class CostCalculator:
     def calculate(cls, model: str, input_tokens: int, output_tokens: int) -> float:
         """Calcule le coût en USD"""
         pricing = cls.PRICING.get(model, {"input": 0.01, "output": 0.03})
-        cost = (input_tokens * pricing["input"] / 1000) + \
-               (output_tokens * pricing["output"] / 1000)
+        cost = (input_tokens * pricing["input"] / 1000) + (output_tokens * pricing["output"] / 1000)
         return round(cost, 6)
 
 
 # =============================================================================
 # LLM CLIENT INTERFACE
 # =============================================================================
+
 
 class BaseLLMClient(ABC):
     """Interface abstraite pour les clients LLM"""
@@ -134,9 +137,7 @@ class BaseLLMClient(ABC):
         pass
 
     @abstractmethod
-    async def generate_stream(
-        self, request: LLMRequest
-    ) -> AsyncGenerator[str, None]:
+    async def generate_stream(self, request: LLMRequest) -> AsyncGenerator[str, None]:
         """Génère une réponse en streaming"""
         pass
 
@@ -150,6 +151,7 @@ class BaseLLMClient(ABC):
 # OPENAI CLIENT
 # =============================================================================
 
+
 class OpenAIClient(BaseLLMClient):
     """Client OpenAI"""
 
@@ -161,11 +163,13 @@ class OpenAIClient(BaseLLMClient):
     def _get_client(self):
         if self._client is None:
             from openai import AsyncOpenAI
+
             self._client = AsyncOpenAI(api_key=self.api_key)
         return self._client
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
         import time
+
         start_time = time.perf_counter()
 
         client = self._get_client()
@@ -197,6 +201,7 @@ class OpenAIClient(BaseLLMClient):
             json_valid = True
             if request.response_format == ResponseFormat.JSON:
                 import json
+
                 try:
                     parsed_json = json.loads(content)
                 except json.JSONDecodeError:
@@ -222,9 +227,7 @@ class OpenAIClient(BaseLLMClient):
             logger.error(f"OpenAI API error: {e}")
             raise
 
-    async def generate_stream(
-        self, request: LLMRequest
-    ) -> AsyncGenerator[str, None]:
+    async def generate_stream(self, request: LLMRequest) -> AsyncGenerator[str, None]:
         client = self._get_client()
         model = request.model or self.default_model
 
@@ -255,6 +258,7 @@ class OpenAIClient(BaseLLMClient):
 # ANTHROPIC CLIENT
 # =============================================================================
 
+
 class AnthropicClient(BaseLLMClient):
     """Client Anthropic Claude"""
 
@@ -266,11 +270,13 @@ class AnthropicClient(BaseLLMClient):
     def _get_client(self):
         if self._client is None:
             from anthropic import AsyncAnthropic
+
             self._client = AsyncAnthropic(api_key=self.api_key)
         return self._client
 
     async def generate(self, request: LLMRequest) -> LLMResponse:
         import time
+
         start_time = time.perf_counter()
 
         client = self._get_client()
@@ -283,10 +289,7 @@ class AnthropicClient(BaseLLMClient):
             if msg["role"] == "system":
                 system_message = msg["content"]
             else:
-                messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
+                messages.append({"role": msg["role"], "content": msg["content"]})
 
         try:
             response = await client.messages.create(
@@ -307,6 +310,7 @@ class AnthropicClient(BaseLLMClient):
             json_valid = True
             if request.response_format == ResponseFormat.JSON:
                 import json
+
                 try:
                     parsed_json = json.loads(content)
                 except json.JSONDecodeError:
@@ -331,9 +335,7 @@ class AnthropicClient(BaseLLMClient):
             logger.error(f"Anthropic API error: {e}")
             raise
 
-    async def generate_stream(
-        self, request: LLMRequest
-    ) -> AsyncGenerator[str, None]:
+    async def generate_stream(self, request: LLMRequest) -> AsyncGenerator[str, None]:
         client = self._get_client()
         model = request.model or self.default_model
 
@@ -363,6 +365,7 @@ class AnthropicClient(BaseLLMClient):
 # =============================================================================
 # LLM GATEWAY (MAIN ENTRY POINT)
 # =============================================================================
+
 
 class LLMGateway:
     """
@@ -437,7 +440,7 @@ class LLMGateway:
                             "latency_ms": response.latency_ms,
                             "tenant_id": request.tenant_id,
                             "agent_type": request.agent_type,
-                        }
+                        },
                     )
 
                     return response
@@ -449,11 +452,11 @@ class LLMGateway:
                         extra={
                             "provider": current_provider.value,
                             "error": str(e),
-                        }
+                        },
                     )
 
                     if attempt < self.max_retries - 1:
-                        await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                        await asyncio.sleep(2**attempt)  # Exponential backoff
 
             logger.warning(f"Falling back from {current_provider.value}")
 
@@ -487,7 +490,7 @@ class LLMGateway:
         all_embeddings = []
 
         for i in range(0, len(texts), batch_size):
-            batch = texts[i:i + batch_size]
+            batch = texts[i : i + batch_size]
             embeddings = await openai_client.generate_embeddings(batch)
             all_embeddings.extend(embeddings)
 
@@ -496,4 +499,3 @@ class LLMGateway:
     def get_available_providers(self) -> List[LLMProvider]:
         """Retourne les providers disponibles"""
         return list(self._clients.keys())
-

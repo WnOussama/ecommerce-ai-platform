@@ -44,17 +44,17 @@ Architecture:
 └─────────────────────────────────────────────────────────────────────────────────┘
 """
 
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Callable, TypeVar
-from enum import Enum
-from contextlib import asynccontextmanager
 import logging
 import random
 import time
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional, TypeVar
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, AsyncEngine
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import event, text
 
 logger = logging.getLogger(__name__)
 
@@ -65,16 +65,19 @@ T = TypeVar("T")
 # CONFIGURATION
 # =============================================================================
 
+
 class DatabaseRole(str, Enum):
     """Rôle de la connexion DB"""
-    PRIMARY = "primary"      # Write + Read critique
-    REPLICA = "replica"      # Read only
-    AUTO = "auto"            # Routing automatique
+
+    PRIMARY = "primary"  # Write + Read critique
+    REPLICA = "replica"  # Read only
+    AUTO = "auto"  # Routing automatique
 
 
 @dataclass
 class DatabaseNode:
     """Configuration d'un nœud de base de données"""
+
     host: str
     port: int = 3306
     role: DatabaseRole = DatabaseRole.PRIMARY
@@ -98,6 +101,7 @@ class DatabaseNode:
 @dataclass
 class DatabaseConfig:
     """Configuration complète de la base de données"""
+
     # Credentials
     database: str
     username: str
@@ -136,6 +140,7 @@ class DatabaseConfig:
 # =============================================================================
 # DATABASE ROUTER
 # =============================================================================
+
 
 class DatabaseRouter:
     """
@@ -299,7 +304,8 @@ class DatabaseRouter:
 
         # Round-robin sur les replicas healthy
         healthy_replicas = [
-            (i, sm) for i, sm in enumerate(self._replica_session_makers)
+            (i, sm)
+            for i, sm in enumerate(self._replica_session_makers)
             if self._config.replicas[i].is_healthy
         ]
 
@@ -392,9 +398,7 @@ class DatabaseRouter:
         """Vérifie le lag de réplication (en ms)"""
         try:
             async with engine.connect() as conn:
-                result = await conn.execute(text(
-                    "SHOW SLAVE STATUS"
-                ))
+                result = await conn.execute(text("SHOW SLAVE STATUS"))
                 row = result.fetchone()
 
                 if row:
@@ -419,12 +423,9 @@ class DatabaseRouter:
             **self._stats,
             "total_reads": total_reads,
             "replica_read_percent": (
-                round(self._stats["replica_reads"] / total_reads * 100, 1)
-                if total_reads > 0 else 0
+                round(self._stats["replica_reads"] / total_reads * 100, 1) if total_reads > 0 else 0
             ),
-            "healthy_replicas": sum(
-                1 for r in self._config.replicas if r.is_healthy
-            ),
+            "healthy_replicas": sum(1 for r in self._config.replicas if r.is_healthy),
             "total_replicas": len(self._config.replicas),
         }
 
@@ -432,6 +433,7 @@ class DatabaseRouter:
 # =============================================================================
 # REPOSITORY WITH READ REPLICA SUPPORT
 # =============================================================================
+
 
 class ReadReplicaAwareRepository:
     """
@@ -485,4 +487,3 @@ __all__ = [
     "DatabaseRouter",
     "ReadReplicaAwareRepository",
 ]
-

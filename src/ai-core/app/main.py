@@ -2,24 +2,30 @@
 Application FastAPI principale - Production Ready
 """
 
+import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
-import logging
 
 from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
 from prometheus_client import make_asgi_app
 
-from app.core.config.settings import settings
-from app.api.v1.endpoints import (
-    chat, recommendations, coupons, faq,
-    analytics, admin, tenants, health
-)
 from app.api.middleware.rate_limiter import RateLimiterMiddleware
-from app.api.middleware.tenant_context import TenantContextMiddleware
 from app.api.middleware.request_logging import RequestLoggingMiddleware
+from app.api.middleware.tenant_context import TenantContextMiddleware
+from app.api.v1.endpoints import (
+    admin,
+    analytics,
+    chat,
+    coupons,
+    faq,
+    health,
+    recommendations,
+    tenants,
+)
+from app.core.config.settings import settings
 from app.core.logging.config import setup_logging
 
 # Setup logging
@@ -35,10 +41,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     Shutdown: Cleanup propre
     """
     # Startup
-    logger.info("Starting AI Agent...", extra={
-        "environment": settings.environment,
-        "version": settings.app_version
-    })
+    logger.info(
+        "Starting AI Agent...",
+        extra={"environment": settings.environment, "version": settings.app_version},
+    )
 
     # Initialiser les connexions
     # await init_database()
@@ -65,7 +71,7 @@ def create_application() -> FastAPI:
         docs_url="/docs" if settings.docs_enabled else None,
         redoc_url="/redoc" if settings.docs_enabled else None,
         openapi_url="/openapi.json" if settings.docs_enabled else None,
-        lifespan=lifespan
+        lifespan=lifespan,
     )
 
     # =========================================================================
@@ -79,7 +85,7 @@ def create_application() -> FastAPI:
         allow_credentials=settings.security.cors_allow_credentials,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["*"],
-        expose_headers=["X-Request-ID", "X-RateLimit-Remaining"]
+        expose_headers=["X-Request-ID", "X-RateLimit-Remaining"],
     )
 
     # Request Logging
@@ -103,35 +109,27 @@ def create_application() -> FastAPI:
             content={
                 "error": "validation_error",
                 "message": "Invalid request data",
-                "details": exc.errors()
-            }
+                "details": exc.errors(),
+            },
         )
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         """Handler global pour erreurs non gérées"""
-        logger.exception("Unhandled exception", extra={
-            "path": request.url.path,
-            "method": request.method
-        })
+        logger.exception(
+            "Unhandled exception", extra={"path": request.url.path, "method": request.method}
+        )
 
         # En production, ne pas exposer les détails
         if settings.is_production:
             return JSONResponse(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                content={
-                    "error": "internal_error",
-                    "message": "An unexpected error occurred"
-                }
+                content={"error": "internal_error", "message": "An unexpected error occurred"},
             )
 
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={
-                "error": "internal_error",
-                "message": str(exc),
-                "type": type(exc).__name__
-            }
+            content={"error": "internal_error", "message": str(exc), "type": type(exc).__name__},
         )
 
     # =========================================================================
@@ -141,53 +139,23 @@ def create_application() -> FastAPI:
     # API v1
     api_prefix = settings.api_prefix
 
-    app.include_router(
-        health.router,
-        prefix="/health",
-        tags=["Health"]
-    )
+    app.include_router(health.router, prefix="/health", tags=["Health"])
+
+    app.include_router(chat.router, prefix=f"{api_prefix}/chat", tags=["Chat - Client AI"])
 
     app.include_router(
-        chat.router,
-        prefix=f"{api_prefix}/chat",
-        tags=["Chat - Client AI"]
+        recommendations.router, prefix=f"{api_prefix}/recommendations", tags=["Recommendations"]
     )
 
-    app.include_router(
-        recommendations.router,
-        prefix=f"{api_prefix}/recommendations",
-        tags=["Recommendations"]
-    )
+    app.include_router(coupons.router, prefix=f"{api_prefix}/coupons", tags=["Coupons"])
 
-    app.include_router(
-        coupons.router,
-        prefix=f"{api_prefix}/coupons",
-        tags=["Coupons"]
-    )
+    app.include_router(faq.router, prefix=f"{api_prefix}/faq", tags=["FAQ"])
 
-    app.include_router(
-        faq.router,
-        prefix=f"{api_prefix}/faq",
-        tags=["FAQ"]
-    )
+    app.include_router(analytics.router, prefix=f"{api_prefix}/analytics", tags=["Analytics"])
 
-    app.include_router(
-        analytics.router,
-        prefix=f"{api_prefix}/analytics",
-        tags=["Analytics"]
-    )
+    app.include_router(admin.router, prefix=f"{api_prefix}/admin", tags=["Admin AI"])
 
-    app.include_router(
-        admin.router,
-        prefix=f"{api_prefix}/admin",
-        tags=["Admin AI"]
-    )
-
-    app.include_router(
-        tenants.router,
-        prefix=f"{api_prefix}/tenants",
-        tags=["Tenant Management"]
-    )
+    app.include_router(tenants.router, prefix=f"{api_prefix}/tenants", tags=["Tenant Management"])
 
     # Prometheus metrics endpoint
     if settings.monitoring.prometheus_enabled:
@@ -204,7 +172,7 @@ def create_application() -> FastAPI:
             "service": settings.app_name,
             "version": settings.app_version,
             "status": "running",
-            "environment": settings.environment
+            "environment": settings.environment,
         }
 
     return app
@@ -223,6 +191,5 @@ if __name__ == "__main__":
         port=8000,
         reload=settings.is_development,
         workers=1 if settings.is_development else 4,
-        log_level=settings.monitoring.log_level.lower()
+        log_level=settings.monitoring.log_level.lower(),
     )
-

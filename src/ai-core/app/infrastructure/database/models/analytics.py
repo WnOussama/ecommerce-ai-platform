@@ -5,14 +5,14 @@ Stocke tous les événements pour analytics et reporting.
 Utilise une table append-only avec partitioning potentiel.
 """
 
-from sqlalchemy import Column, String, ForeignKey, Index
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Column, ForeignKey, Index, String
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.infrastructure.database.base import (
     Base,
-    UUIDMixin,
     TimestampMixin,
+    UUIDMixin,
 )
 
 
@@ -50,6 +50,7 @@ class AnalyticsEvent(Base, UUIDMixin, TimestampMixin):
             "latency_ms": 234
         }
     """
+
     __tablename__ = "analytics_events"
 
     # Relation tenant
@@ -81,21 +82,17 @@ class AnalyticsEvent(Base, UUIDMixin, TimestampMixin):
         Index("idx_analytics_tenant_type", "tenant_id", "event_type"),
         Index("idx_analytics_tenant_date", "tenant_id", "created_at"),
         Index("idx_analytics_entity", "tenant_id", "entity_type", "entity_id"),
-
         # Index pour time-series queries
         Index("idx_analytics_created_at", "created_at"),
-
         # Index GIN pour queries sur contenu JSONB (ex: payload->>'intent' = 'product_search')
         Index("idx_analytics_payload_gin", "payload", postgresql_using="gin"),
-
         # Commentaire pour partitioning futur
         # En production, considérer partitioning par mois:
         # PARTITION BY RANGE (created_at)
-
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
-        return f"<AnalyticsEvent(id={self.id}, type='{self.event_type}', tenant_id={self.tenant_id})>"
-
-
+        return (
+            f"<AnalyticsEvent(id={self.id}, type='{self.event_type}', tenant_id={self.tenant_id})>"
+        )

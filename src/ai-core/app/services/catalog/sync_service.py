@@ -19,20 +19,20 @@ import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
 from enum import Enum
-from typing import Optional, List, Dict, Any, Callable, Awaitable
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 from app.infrastructure.external.prestashop import (
+    PrestaShopAuthenticationError,
     PrestaShopClient,
     PrestaShopClientConfig,
-    Product as PrestaShopProduct,
-    PrestaShopError,
     PrestaShopConnectionError,
-    PrestaShopAuthenticationError,
+    PrestaShopError,
+)
+from app.infrastructure.external.prestashop import (
+    Product as PrestaShopProduct,
 )
 from app.services.catalog.repository import (
-    ProductRepository,
     ProductData,
     ProductRepositoryProtocol,
 )
@@ -44,8 +44,10 @@ logger = logging.getLogger(__name__)
 # DATA MODELS
 # =============================================================================
 
+
 class SyncStatus(str, Enum):
     """Statut d'une synchronisation."""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -56,6 +58,7 @@ class SyncStatus(str, Enum):
 @dataclass
 class SyncError:
     """Erreur survenue pendant la synchronisation."""
+
     product_id: Optional[int] = None
     product_name: Optional[str] = None
     error_type: str = ""
@@ -79,6 +82,7 @@ class SyncResult:
 
     Contient toutes les métriques et informations sur la sync.
     """
+
     tenant_id: str
     status: SyncStatus = SyncStatus.PENDING
 
@@ -139,6 +143,7 @@ class SyncResult:
 # =============================================================================
 # SYNC SERVICE
 # =============================================================================
+
 
 class CatalogSyncService:
     """
@@ -221,7 +226,7 @@ class CatalogSyncService:
                 "active_only": active_only,
                 "delete_missing": delete_missing,
                 "batch_size": self._batch_size,
-            }
+            },
         )
 
         start_time = time.monotonic()
@@ -254,19 +259,21 @@ class CatalogSyncService:
                                 "tenant_id": tenant_id,
                                 "offset": offset,
                                 "error": str(e),
-                            }
+                            },
                         )
-                        result.errors.append(SyncError(
-                            error_type="fetch_error",
-                            error_message=str(e),
-                        ))
+                        result.errors.append(
+                            SyncError(
+                                error_type="fetch_error",
+                                error_message=str(e),
+                            )
+                        )
                         break
 
                     if not response.products:
                         break
 
                     # Traiter le batch
-                    batch_result = await self._process_batch(
+                    await self._process_batch(
                         tenant_id=tenant_id,
                         products=response.products,
                         result=result,
@@ -289,7 +296,7 @@ class CatalogSyncService:
                             extra={
                                 "tenant_id": tenant_id,
                                 "errors_count": len(result.errors),
-                            }
+                            },
                         )
                         result.status = SyncStatus.PARTIAL
                         break
@@ -304,13 +311,15 @@ class CatalogSyncService:
                                 "elapsed_seconds": round(elapsed, 2),
                                 "max_duration": max_duration,
                                 "products_synced": result.total_fetched,
-                            }
+                            },
                         )
                         result.status = SyncStatus.PARTIAL
-                        result.errors.append(SyncError(
-                            error_type="timeout",
-                            error_message=f"Sync stopped after {round(elapsed)}s (max: {max_duration}s)",
-                        ))
+                        result.errors.append(
+                            SyncError(
+                                error_type="timeout",
+                                error_message=f"Sync stopped after {round(elapsed)}s (max: {max_duration}s)",
+                            )
+                        )
                         break
 
                     # Pagination
@@ -333,41 +342,42 @@ class CatalogSyncService:
                             extra={
                                 "tenant_id": tenant_id,
                                 "deleted_count": deleted,
-                            }
+                            },
                         )
 
         except PrestaShopAuthenticationError as e:
             logger.error(
-                "PrestaShop authentication failed",
-                extra={"tenant_id": tenant_id, "error": str(e)}
+                "PrestaShop authentication failed", extra={"tenant_id": tenant_id, "error": str(e)}
             )
             result.status = SyncStatus.FAILED
-            result.errors.append(SyncError(
-                error_type="authentication_error",
-                error_message="Invalid PrestaShop API key",
-            ))
+            result.errors.append(
+                SyncError(
+                    error_type="authentication_error",
+                    error_message="Invalid PrestaShop API key",
+                )
+            )
 
         except PrestaShopConnectionError as e:
             logger.error(
-                "PrestaShop connection failed",
-                extra={"tenant_id": tenant_id, "error": str(e)}
+                "PrestaShop connection failed", extra={"tenant_id": tenant_id, "error": str(e)}
             )
             result.status = SyncStatus.FAILED
-            result.errors.append(SyncError(
-                error_type="connection_error",
-                error_message=str(e),
-            ))
+            result.errors.append(
+                SyncError(
+                    error_type="connection_error",
+                    error_message=str(e),
+                )
+            )
 
         except Exception as e:
-            logger.exception(
-                "Unexpected error during sync",
-                extra={"tenant_id": tenant_id}
-            )
+            logger.exception("Unexpected error during sync", extra={"tenant_id": tenant_id})
             result.status = SyncStatus.FAILED
-            result.errors.append(SyncError(
-                error_type="unexpected_error",
-                error_message=str(e),
-            ))
+            result.errors.append(
+                SyncError(
+                    error_type="unexpected_error",
+                    error_message=str(e),
+                )
+            )
 
         finally:
             # Finaliser le résultat
@@ -382,10 +392,7 @@ class CatalogSyncService:
                     result.status = SyncStatus.COMPLETED
 
             # Log final
-            logger.info(
-                "Catalog sync completed",
-                extra=result.to_dict()
-            )
+            logger.info("Catalog sync completed", extra=result.to_dict())
 
         return result
 
@@ -416,15 +423,17 @@ class CatalogSyncService:
                         "tenant_id": tenant_id,
                         "product_id": ps_product.id,
                         "error": str(e),
-                    }
+                    },
                 )
                 result.total_failed += 1
-                result.errors.append(SyncError(
-                    product_id=ps_product.id,
-                    product_name=ps_product.name,
-                    error_type="transform_error",
-                    error_message=str(e),
-                ))
+                result.errors.append(
+                    SyncError(
+                        product_id=ps_product.id,
+                        product_name=ps_product.name,
+                        error_type="transform_error",
+                        error_message=str(e),
+                    )
+                )
 
         # Persister en bulk avec chunking
         if product_data_list:
@@ -445,7 +454,7 @@ class CatalogSyncService:
                         "batch_size": len(product_data_list),
                         "created": created,
                         "updated": updated,
-                    }
+                    },
                 )
 
             except Exception as e:
@@ -455,13 +464,15 @@ class CatalogSyncService:
                         "tenant_id": tenant_id,
                         "batch_size": len(product_data_list),
                         "error": str(e),
-                    }
+                    },
                 )
                 result.total_failed += len(product_data_list)
-                result.errors.append(SyncError(
-                    error_type="persist_error",
-                    error_message=str(e),
-                ))
+                result.errors.append(
+                    SyncError(
+                        error_type="persist_error",
+                        error_message=str(e),
+                    )
+                )
 
     async def _upsert_with_chunking(
         self,
@@ -483,7 +494,7 @@ class CatalogSyncService:
 
         # Découper en chunks
         for i in range(0, len(products), self.BULK_UPSERT_CHUNK_SIZE):
-            chunk = products[i:i + self.BULK_UPSERT_CHUNK_SIZE]
+            chunk = products[i : i + self.BULK_UPSERT_CHUNK_SIZE]
 
             created, updated = await self._repository.upsert_products_bulk(
                 tenant_id=tenant_id,
@@ -502,7 +513,7 @@ class CatalogSyncService:
                         "chunk_size": len(chunk),
                         "created": created,
                         "updated": updated,
-                    }
+                    },
                 )
 
         return total_created, total_updated
@@ -558,7 +569,9 @@ class CatalogSyncService:
         total = await self._repository.count_products(tenant_id)
         active = await self._repository.count_products(
             tenant_id,
-            filters=type('obj', (object,), {'active_only': True, 'in_stock_only': False, 'category_id': None})(),
+            filters=type(
+                "obj", (object,), {"active_only": True, "in_stock_only": False, "category_id": None}
+            )(),
         )
 
         return {
@@ -567,8 +580,3 @@ class CatalogSyncService:
             "active_products": active,
             "inactive_products": total - active,
         }
-
-
-
-
-

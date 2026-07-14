@@ -22,19 +22,13 @@ Architecture:
 └─────────────────────────────────────────────────────────────────────────────────┘
 """
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from datetime import datetime
-from typing import (
-    TypeVar, Generic, Optional, List, Dict, Any,
-    Type, Callable, Tuple
-)
-from uuid import UUID
 import logging
+from abc import ABC
+from dataclasses import dataclass
+from typing import Any, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
-from sqlalchemy import select, update, delete, func, and_, or_
+from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Query
 
 logger = logging.getLogger(__name__)
 
@@ -46,18 +40,22 @@ T = TypeVar("T")
 # EXCEPTIONS
 # =============================================================================
 
+
 class TenantIsolationError(Exception):
     """Erreur d'isolation multi-tenant"""
+
     pass
 
 
 class TenantIdMissingError(TenantIsolationError):
     """tenant_id manquant dans une opération"""
+
     pass
 
 
 class CrossTenantAccessError(TenantIsolationError):
     """Tentative d'accès à des données d'un autre tenant"""
+
     pass
 
 
@@ -65,9 +63,11 @@ class CrossTenantAccessError(TenantIsolationError):
 # TENANT CONTEXT
 # =============================================================================
 
+
 @dataclass
 class TenantContext:
     """Contexte tenant pour les opérations repository"""
+
     tenant_id: str
     user_id: Optional[str] = None  # Pour audit
     request_id: Optional[str] = None  # Pour tracing
@@ -80,6 +80,7 @@ class TenantContext:
 # =============================================================================
 # BASE REPOSITORY
 # =============================================================================
+
 
 class TenantAwareRepository(Generic[T], ABC):
     """
@@ -143,9 +144,7 @@ class TenantAwareRepository(Generic[T], ABC):
 
     def _apply_tenant_filter(self, query):
         """Applique le filtre tenant à une query existante"""
-        return query.where(
-            getattr(self.model_class, self.tenant_id_column) == self._tenant_id
-        )
+        return query.where(getattr(self.model_class, self.tenant_id_column) == self._tenant_id)
 
     def _validate_entity_tenant(self, entity: T) -> None:
         """
@@ -162,7 +161,7 @@ class TenantAwareRepository(Generic[T], ABC):
                     "actual_tenant": entity_tenant_id,
                     "entity_type": self.model_class.__name__,
                     "entity_id": getattr(entity, "id", "unknown"),
-                }
+                },
             )
             raise CrossTenantAccessError(
                 f"Entity belongs to tenant {entity_tenant_id}, not {self._tenant_id}"
@@ -176,9 +175,7 @@ class TenantAwareRepository(Generic[T], ABC):
         """
         Récupère une entité par ID (filtré par tenant).
         """
-        query = self._base_query().where(
-            getattr(self.model_class, "id") == entity_id
-        )
+        query = self._base_query().where(getattr(self.model_class, "id") == entity_id)
 
         result = await self._session.execute(query)
         entity = result.scalar_one_or_none()
@@ -204,9 +201,7 @@ class TenantAwareRepository(Generic[T], ABC):
         if order_by:
             order_col = getattr(self.model_class, order_by, None)
             if order_col is not None:
-                query = query.order_by(
-                    order_col.desc() if order_desc else order_col
-                )
+                query = query.order_by(order_col.desc() if order_desc else order_col)
 
         # Pagination
         query = query.offset(offset).limit(limit)
@@ -225,9 +220,7 @@ class TenantAwareRepository(Generic[T], ABC):
         if not entity_ids:
             return []
 
-        query = self._base_query().where(
-            getattr(self.model_class, "id").in_(entity_ids)
-        )
+        query = self._base_query().where(getattr(self.model_class, "id").in_(entity_ids))
 
         result = await self._session.execute(query)
         return list(result.scalars().all())
@@ -266,8 +259,10 @@ class TenantAwareRepository(Generic[T], ABC):
 
     async def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
         """Compte les entités (avec filtres optionnels)"""
-        query = select(func.count()).select_from(self.model_class).where(
-            getattr(self.model_class, self.tenant_id_column) == self._tenant_id
+        query = (
+            select(func.count())
+            .select_from(self.model_class)
+            .where(getattr(self.model_class, self.tenant_id_column) == self._tenant_id)
         )
 
         if filters:
@@ -281,10 +276,14 @@ class TenantAwareRepository(Generic[T], ABC):
 
     async def exists(self, entity_id: str) -> bool:
         """Vérifie si une entité existe"""
-        query = select(func.count()).select_from(self.model_class).where(
-            and_(
-                getattr(self.model_class, self.tenant_id_column) == self._tenant_id,
-                getattr(self.model_class, "id") == entity_id,
+        query = (
+            select(func.count())
+            .select_from(self.model_class)
+            .where(
+                and_(
+                    getattr(self.model_class, self.tenant_id_column) == self._tenant_id,
+                    getattr(self.model_class, "id") == entity_id,
+                )
             )
         )
 
@@ -388,13 +387,10 @@ class TenantAwareRepository(Generic[T], ABC):
         """
         Supprime une entité par ID (avec validation tenant).
         """
-        stmt = (
-            delete(self.model_class)
-            .where(
-                and_(
-                    getattr(self.model_class, self.tenant_id_column) == self._tenant_id,
-                    getattr(self.model_class, "id") == entity_id,
-                )
+        stmt = delete(self.model_class).where(
+            and_(
+                getattr(self.model_class, self.tenant_id_column) == self._tenant_id,
+                getattr(self.model_class, "id") == entity_id,
             )
         )
 
@@ -439,13 +435,14 @@ class TenantAwareRepository(Generic[T], ABC):
                 "tenant_id": self._tenant_id,
                 "user_id": self._tenant_context.user_id,
                 "request_id": self._tenant_context.request_id,
-            }
+            },
         )
 
 
 # =============================================================================
 # REPOSITORY FACTORY
 # =============================================================================
+
 
 class RepositoryFactory:
     """
@@ -479,6 +476,7 @@ class RepositoryFactory:
 # =============================================================================
 # QUERY VALIDATOR (pour tests)
 # =============================================================================
+
 
 class TenantQueryValidator:
     """
@@ -519,4 +517,3 @@ class TenantQueryValidator:
                 return False, f"DELETE query missing {tenant_id_column} filter"
 
         return True, None
-

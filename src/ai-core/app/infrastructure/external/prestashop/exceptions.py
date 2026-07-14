@@ -5,7 +5,7 @@ Exceptions spécifiques pour la gestion des erreurs de l'API PrestaShop.
 Hiérarchie claire pour faciliter le handling dans les services.
 """
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
 class PrestaShopError(Exception):
@@ -175,4 +175,3 @@ class PrestaShopServerError(PrestaShopError):
         **kwargs,
     ):
         super().__init__(message, **kwargs)
-

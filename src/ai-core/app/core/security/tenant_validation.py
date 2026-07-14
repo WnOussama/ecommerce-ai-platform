@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 # EXCEPTIONS
 # =============================================================================
 
+
 class TenantValidationError(Exception):
     """Exception levée quand un tenant_id est invalide"""
 
@@ -46,23 +47,47 @@ class TenantValidationError(Exception):
 # =============================================================================
 
 # Valeurs triviales interdites (après le préfixe tenant_)
-TRIVIAL_VALUES: Set[str] = frozenset({
-    # Séquences répétitives
-    "00000000", "11111111", "22222222", "33333333",
-    "44444444", "55555555", "66666666", "77777777",
-    "88888888", "99999999", "aaaaaaaa", "bbbbbbbb",
-    "cccccccc", "dddddddd", "eeeeeeee", "ffffffff",
-    "abcdefgh", "12345678", "87654321",
-
-    # Mots communs
-    "testtest", "devdevdev", "prodprod",
-    "demodemod", "samplesam", "exampleex",
-    "adminadmi", "useruser", "guestgues",
-
-    # Patterns simples
-    "abcd1234", "1234abcd", "test1234", "demo1234",
-    "a1b2c3d4", "0a0b0c0d",
-})
+TRIVIAL_VALUES: Set[str] = frozenset(
+    {
+        # Séquences répétitives
+        "00000000",
+        "11111111",
+        "22222222",
+        "33333333",
+        "44444444",
+        "55555555",
+        "66666666",
+        "77777777",
+        "88888888",
+        "99999999",
+        "aaaaaaaa",
+        "bbbbbbbb",
+        "cccccccc",
+        "dddddddd",
+        "eeeeeeee",
+        "ffffffff",
+        "abcdefgh",
+        "12345678",
+        "87654321",
+        # Mots communs
+        "testtest",
+        "devdevdev",
+        "prodprod",
+        "demodemod",
+        "samplesam",
+        "exampleex",
+        "adminadmi",
+        "useruser",
+        "guestgues",
+        # Patterns simples
+        "abcd1234",
+        "1234abcd",
+        "test1234",
+        "demo1234",
+        "a1b2c3d4",
+        "0a0b0c0d",
+    }
+)
 
 # Patterns d'injection à bloquer (compilés pour performance)
 INJECTION_PATTERNS: Tuple[Tuple[re.Pattern, str], ...] = (
@@ -81,7 +106,7 @@ INJECTION_PATTERNS: Tuple[Tuple[re.Pattern, str], ...] = (
 )
 
 # Pattern de validation principal
-VALID_TENANT_PATTERN = re.compile(r'^tenant_[a-z0-9]{8,32}$')
+VALID_TENANT_PATTERN = re.compile(r"^tenant_[a-z0-9]{8,32}$")
 
 # Limites
 MAX_TENANT_ID_LENGTH = 50
@@ -93,6 +118,7 @@ PREFIX = "tenant_"
 # =============================================================================
 # VALIDATOR
 # =============================================================================
+
 
 class TenantIDValidator:
     """
@@ -138,7 +164,7 @@ class TenantIDValidator:
 
         # Normaliser Unicode (NFKC pour compatibilité maximale)
         try:
-            normalized = unicodedata.normalize('NFKC', value)
+            normalized = unicodedata.normalize("NFKC", value)
         except (TypeError, ValueError):
             return None
 
@@ -146,9 +172,10 @@ class TenantIDValidator:
         normalized = normalized.strip()
 
         # Supprimer les caractères de contrôle et invisibles
-        normalized = ''.join(
-            char for char in normalized
-            if unicodedata.category(char) not in ('Cc', 'Cf', 'Co', 'Cs')
+        normalized = "".join(
+            char
+            for char in normalized
+            if unicodedata.category(char) not in ("Cc", "Cf", "Co", "Cs")
         )
 
         return normalized if normalized else None
@@ -218,10 +245,10 @@ class TenantIDValidator:
                     "injection_type": injection_type,
                     "tenant_id_prefix": normalized[:8] if normalized else None,
                     "tenant_id_length": len(normalized) if normalized else 0,
-                }
+                },
             )
             raise TenantValidationError(
-                message=f"X-Tenant-ID contains forbidden characters",
+                message="X-Tenant-ID contains forbidden characters",
                 tenant_id=cls.sanitize_for_logging(normalized),
                 error_code=f"INJECTION_{injection_type}",
             )
@@ -235,11 +262,11 @@ class TenantIDValidator:
             )
 
         # 6. Vérifier les valeurs triviales
-        suffix = normalized[len(PREFIX):]
+        suffix = normalized[len(PREFIX) :]
         if cls._is_trivial(suffix):
             logger.warning(
                 "Trivial tenant_id rejected",
-                extra={"tenant_id_safe": cls.sanitize_for_logging(normalized)}
+                extra={"tenant_id_safe": cls.sanitize_for_logging(normalized)},
             )
             raise TenantValidationError(
                 message="X-Tenant-ID value is too simple/predictable",
@@ -287,7 +314,10 @@ class TenantIDValidator:
         # Pattern répétitif (ex: "abcabc", "xyzxyz")
         for repeat_len in range(2, len(suffix) // 2 + 1):
             pattern = suffix[:repeat_len]
-            if pattern * (len(suffix) // len(pattern)) == suffix[:len(pattern) * (len(suffix) // len(pattern))]:
+            if (
+                pattern * (len(suffix) // len(pattern))
+                == suffix[: len(pattern) * (len(suffix) // len(pattern))]
+            ):
                 if len(suffix) / repeat_len >= 2:  # Au moins 2 répétitions
                     return True
 
@@ -329,7 +359,7 @@ class TenantIDValidator:
             return "<invalid_type>"
 
         # Tronquer et remplacer les caractères non-alphanum
-        safe = re.sub(r'[^a-zA-Z0-9_]', '?', tenant_id[:30])
+        safe = re.sub(r"[^a-zA-Z0-9_]", "?", tenant_id[:30])
 
         if len(tenant_id) > 30:
             safe += "..."
@@ -340,6 +370,7 @@ class TenantIDValidator:
 # =============================================================================
 # FASTAPI INTEGRATION
 # =============================================================================
+
 
 async def validate_tenant_id_dependency(request) -> str:
     """
@@ -379,7 +410,7 @@ async def validate_tenant_id_dependency(request) -> str:
                 "path": str(request.url.path),
                 "method": request.method,
                 "client_ip": request.client.host if request.client else "unknown",
-            }
+            },
         )
         raise HTTPException(
             status_code=400,
@@ -387,7 +418,7 @@ async def validate_tenant_id_dependency(request) -> str:
                 "error": "invalid_tenant_id",
                 "code": e.error_code,
                 "message": e.message,
-            }
+            },
         )
 
 
@@ -395,7 +426,10 @@ async def validate_tenant_id_dependency(request) -> str:
 # MIDDLEWARE HELPER
 # =============================================================================
 
-def extract_and_validate_tenant_id(headers: dict) -> Tuple[Optional[str], Optional[TenantValidationError]]:
+
+def extract_and_validate_tenant_id(
+    headers: dict,
+) -> Tuple[Optional[str], Optional[TenantValidationError]]:
     """
     Extrait et valide le tenant_id depuis les headers.
     Utile pour les middlewares qui ne peuvent pas lever d'exception.
@@ -427,4 +461,3 @@ __all__ = [
     "extract_and_validate_tenant_id",
     "VALID_TENANT_PATTERN",
 ]
-

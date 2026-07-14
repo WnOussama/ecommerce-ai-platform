@@ -19,20 +19,23 @@ IDEMPOTENCY:
 - Si retry avec même idempotency_key → on retourne le message existant
 """
 
-from sqlalchemy import Column, String, Text, Integer, ForeignKey, Index, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
 import enum
+
+from sqlalchemy import Column, ForeignKey, Index, Integer, Text
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
 
 from app.infrastructure.database.base import (
     Base,
-    UUIDMixin,
     TimestampMixin,
+    UUIDMixin,
 )
 
 
 class MessageRole(enum.Enum):
     """Rôle de l'émetteur du message."""
+
     USER = "user"
     ASSISTANT = "assistant"
     SYSTEM = "system"
@@ -59,6 +62,7 @@ class Message(Base, UUIDMixin, TimestampMixin):
         created_at: Date de création (via TimestampMixin)
         updated_at: Date de modification (via TimestampMixin)
     """
+
     __tablename__ = "messages"
 
     # Relation tenant (DÉNORMALISÉ pour multi-tenant strict)
@@ -109,31 +113,24 @@ class Message(Base, UUIDMixin, TimestampMixin):
     # Relations ORM
     # Note: overlaps pour éviter warning SQLAlchemy avec models.py
     tenant = relationship("Tenant", foreign_keys=[tenant_id], overlaps="messages")
-    conversation = relationship("Conversation", back_populates="messages", overlaps="conversation,messages")
+    conversation = relationship(
+        "Conversation", back_populates="messages", overlaps="conversation,messages"
+    )
 
     __table_args__ = (
         # Index pour isolation multi-tenant
         Index("idx_message_tenant_id", "tenant_id"),
         Index("idx_message_tenant_created", "tenant_id", "created_at"),
-
         # Index pour queries conversation
         Index("idx_message_conversation_id", "conversation_id"),
         Index("idx_message_conversation_created", "conversation_id", "created_at"),
-
         # Index composite pour historique chat (query la plus fréquente)
         Index("idx_message_conv_role_created", "conversation_id", "role", "created_at"),
-
         # Index pour idempotency (éviter double insertion)
         Index("idx_message_idempotency_key", "idempotency_key", unique=True),
-
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
         content_preview = self.content[:50] + "..." if len(self.content) > 50 else self.content
         return f"<Message(id={self.id}, role={self.role.value}, content='{content_preview}')>"
-
-
-
-
-

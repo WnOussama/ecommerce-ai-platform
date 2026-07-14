@@ -30,13 +30,13 @@ Architecture:
 └─────────────────────────────────────────────────────────────────────────────────┘
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Set
-from enum import Enum
 import hashlib
 import json
 import logging
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ SUPPORTED_EMBEDDING_VERSIONS = {"v1", "v2"}
 
 class SyncStatus(str, Enum):
     """Statut de synchronisation d'un document"""
+
     UP_TO_DATE = "up_to_date"
     CONTENT_CHANGED = "content_changed"
     EMBEDDING_OUTDATED = "embedding_outdated"
@@ -65,6 +66,7 @@ class SyncStatus(str, Enum):
 @dataclass
 class DocumentVersion:
     """Informations de version d'un document"""
+
     document_id: str
     tenant_id: str
     document_type: str
@@ -108,14 +110,19 @@ class DocumentVersion:
             document_version=metadata.get("document_version", "v1"),
             embedding_version=metadata.get("embedding_version", "v1"),
             embedding_model=metadata.get("embedding_model", ""),
-            indexed_at=datetime.fromisoformat(metadata["indexed_at"]) if metadata.get("indexed_at") else datetime.utcnow(),
-            last_synced_at=datetime.fromisoformat(metadata["last_synced_at"]) if metadata.get("last_synced_at") else datetime.utcnow(),
+            indexed_at=datetime.fromisoformat(metadata["indexed_at"])
+            if metadata.get("indexed_at")
+            else datetime.utcnow(),
+            last_synced_at=datetime.fromisoformat(metadata["last_synced_at"])
+            if metadata.get("last_synced_at")
+            else datetime.utcnow(),
         )
 
 
 @dataclass
 class SyncResult:
     """Résultat d'une synchronisation"""
+
     tenant_id: str
     document_type: str
 
@@ -140,6 +147,7 @@ class SyncResult:
 # =============================================================================
 # CONTENT HASHER
 # =============================================================================
+
 
 class ContentHasher:
     """
@@ -197,9 +205,10 @@ class ContentHasher:
             "policy": cls.hash_policy,
         }
 
-        hasher = hashers.get(doc_type, lambda d: hashlib.sha256(
-            json.dumps(d, sort_keys=True).encode()
-        ).hexdigest()[:16])
+        hasher = hashers.get(
+            doc_type,
+            lambda d: hashlib.sha256(json.dumps(d, sort_keys=True).encode()).hexdigest()[:16],
+        )
 
         return hasher(document)
 
@@ -207,6 +216,7 @@ class ContentHasher:
 # =============================================================================
 # EMBEDDING VERSION MANAGER
 # =============================================================================
+
 
 class EmbeddingVersionManager:
     """
@@ -288,6 +298,7 @@ class EmbeddingVersionManager:
         N'indexe que les documents qui ont changé.
         """
         import time
+
         start_time = time.perf_counter()
 
         result = SyncResult(
@@ -343,7 +354,7 @@ class EmbeddingVersionManager:
         result.total_indexed_docs = result.added + result.updated + result.skipped
 
         logger.info(
-            f"Incremental sync completed",
+            "Incremental sync completed",
             extra={
                 "tenant_id": tenant_id,
                 "doc_type": doc_type,
@@ -352,7 +363,7 @@ class EmbeddingVersionManager:
                 "deleted": result.deleted,
                 "skipped": result.skipped,
                 "duration_ms": result.duration_ms,
-            }
+            },
         )
 
         return result
@@ -377,11 +388,13 @@ class EmbeddingVersionManager:
             logger.info(f"No documents to migrate for {tenant_id}/{doc_type}")
             return result
 
-        logger.info(f"Migrating {len(outdated)} documents to embedding version {CURRENT_EMBEDDING_VERSION}")
+        logger.info(
+            f"Migrating {len(outdated)} documents to embedding version {CURRENT_EMBEDDING_VERSION}"
+        )
 
         # Migrer par batch
         for i in range(0, len(outdated), batch_size):
-            batch = outdated[i:i + batch_size]
+            batch = outdated[i : i + batch_size]
 
             try:
                 # Re-indexer avec nouveau modèle
@@ -408,17 +421,17 @@ class EmbeddingVersionManager:
             cached = await self._redis.get(cache_key)
             if cached:
                 import json
+
                 data = json.loads(cached)
                 return {
-                    doc_id: DocumentVersion.from_metadata(meta)
-                    for doc_id, meta in data.items()
+                    doc_id: DocumentVersion.from_metadata(meta) for doc_id, meta in data.items()
                 }
 
         # Sinon, récupérer depuis ChromaDB
         versions = {}
 
         try:
-            from app.domain.services.shared.rag_service_v2 import DocumentType, COLLECTION_NAMES
+            from app.domain.services.shared.rag_service_v2 import COLLECTION_NAMES, DocumentType
 
             client = self._rag._get_client()
             collection_name = COLLECTION_NAMES[DocumentType(doc_type)]
@@ -437,10 +450,7 @@ class EmbeddingVersionManager:
 
             # Cache
             if self._redis and versions:
-                cache_data = {
-                    doc_id: ver.to_metadata()
-                    for doc_id, ver in versions.items()
-                }
+                cache_data = {doc_id: ver.to_metadata() for doc_id, ver in versions.items()}
                 await self._redis.set(
                     cache_key,
                     json.dumps(cache_data),
@@ -461,7 +471,8 @@ class EmbeddingVersionManager:
         versions = await self._get_indexed_versions(tenant_id, doc_type)
 
         return [
-            doc_id for doc_id, ver in versions.items()
+            doc_id
+            for doc_id, ver in versions.items()
             if ver.embedding_version != CURRENT_EMBEDDING_VERSION
         ]
 
@@ -521,4 +532,3 @@ __all__ = [
     "ContentHasher",
     "EmbeddingVersionManager",
 ]
-

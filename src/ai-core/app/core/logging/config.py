@@ -3,9 +3,9 @@ Logging Configuration
 Structured JSON logging for production
 """
 
+import json
 import logging
 import sys
-import json
 from datetime import datetime
 from typing import Any, Dict
 
@@ -30,20 +30,38 @@ class JSONFormatter(logging.Formatter):
         log_data["location"] = {
             "file": record.filename,
             "line": record.lineno,
-            "function": record.funcName
+            "function": record.funcName,
         }
 
         # Add extra fields
         if hasattr(record, "__dict__"):
             extra_fields = {
-                k: v for k, v in record.__dict__.items()
-                if k not in (
-                    "name", "msg", "args", "created", "filename",
-                    "funcName", "levelname", "levelno", "lineno",
-                    "module", "msecs", "pathname", "process",
-                    "processName", "relativeCreated", "stack_info",
-                    "exc_info", "exc_text", "thread", "threadName",
-                    "message", "asctime"
+                k: v
+                for k, v in record.__dict__.items()
+                if k
+                not in (
+                    "name",
+                    "msg",
+                    "args",
+                    "created",
+                    "filename",
+                    "funcName",
+                    "levelname",
+                    "levelno",
+                    "lineno",
+                    "module",
+                    "msecs",
+                    "pathname",
+                    "process",
+                    "processName",
+                    "relativeCreated",
+                    "stack_info",
+                    "exc_info",
+                    "exc_text",
+                    "thread",
+                    "threadName",
+                    "message",
+                    "asctime",
                 )
             }
             if extra_fields:
@@ -62,11 +80,11 @@ class ConsoleFormatter(logging.Formatter):
     """
 
     COLORS = {
-        "DEBUG": "\033[36m",    # Cyan
-        "INFO": "\033[32m",     # Green
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Green
         "WARNING": "\033[33m",  # Yellow
-        "ERROR": "\033[31m",    # Red
-        "CRITICAL": "\033[35m", # Magenta
+        "ERROR": "\033[31m",  # Red
+        "CRITICAL": "\033[35m",  # Magenta
     }
     RESET = "\033[0m"
 
@@ -82,12 +100,28 @@ class ConsoleFormatter(logging.Formatter):
         if hasattr(record, "__dict__"):
             for k, v in record.__dict__.items():
                 if k not in (
-                    "name", "msg", "args", "created", "filename",
-                    "funcName", "levelname", "levelno", "lineno",
-                    "module", "msecs", "pathname", "process",
-                    "processName", "relativeCreated", "stack_info",
-                    "exc_info", "exc_text", "thread", "threadName",
-                    "message", "asctime"
+                    "name",
+                    "msg",
+                    "args",
+                    "created",
+                    "filename",
+                    "funcName",
+                    "levelname",
+                    "levelno",
+                    "lineno",
+                    "module",
+                    "msecs",
+                    "pathname",
+                    "process",
+                    "processName",
+                    "relativeCreated",
+                    "stack_info",
+                    "exc_info",
+                    "exc_text",
+                    "thread",
+                    "threadName",
+                    "message",
+                    "asctime",
                 ):
                     extra_parts.append(f"{k}={v}")
 
@@ -143,7 +177,6 @@ def setup_logging() -> None:
         extra={
             "level": settings.monitoring.log_level,
             "environment": settings.environment,
-            "format": "json" if settings.is_production else "console"
-        }
+            "format": "json" if settings.is_production else "console",
+        },
     )
-

@@ -3,12 +3,10 @@ RAG Service - Retrieval Augmented Generation partagé
 Gère la recherche de documents pertinents via ChromaDB
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Optional, Dict, Any, List
-from uuid import UUID
-from enum import Enum
 import logging
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -17,17 +15,20 @@ logger = logging.getLogger(__name__)
 # TYPES
 # =============================================================================
 
+
 class DocumentType(str, Enum):
     """Types de documents indexés"""
+
     PRODUCT = "product"
     FAQ = "faq"
-    POLICY = "policy"          # Retours, livraison, etc.
+    POLICY = "policy"  # Retours, livraison, etc.
     CONVERSATION = "conversation"  # Historique pour contexte
 
 
 @dataclass
 class Document:
     """Document récupéré par RAG"""
+
     id: str
     content: str
     document_type: DocumentType
@@ -43,6 +44,7 @@ class Document:
 @dataclass
 class RAGQuery:
     """Requête de recherche RAG"""
+
     query: str
     tenant_id: str
     document_types: List[DocumentType] = field(default_factory=list)
@@ -54,6 +56,7 @@ class RAGQuery:
 @dataclass
 class RAGResult:
     """Résultat de recherche RAG"""
+
     documents: List[Document]
     query: str
     total_found: int
@@ -63,6 +66,7 @@ class RAGResult:
 # =============================================================================
 # RAG SERVICE
 # =============================================================================
+
 
 class RAGService:
     """
@@ -86,6 +90,7 @@ class RAGService:
         """Lazy initialization du client ChromaDB"""
         if self._client is None:
             import chromadb
+
             self._client = chromadb.HttpClient(
                 host=self.chroma_host,
                 port=self.chroma_port,
@@ -105,6 +110,7 @@ class RAGService:
         Recherche des documents pertinents.
         """
         import time
+
         start_time = time.perf_counter()
 
         if not self._llm_gateway:
@@ -141,15 +147,17 @@ class RAGService:
                         if score >= query.min_relevance:
                             metadata = results["metadatas"][0][i] if results["metadatas"] else {}
 
-                            all_documents.append(Document(
-                                id=results["ids"][0][i],
-                                content=doc_content,
-                                document_type=doc_type,
-                                metadata=metadata,
-                                relevance_score=score,
-                                title=metadata.get("title"),
-                                category=metadata.get("category"),
-                            ))
+                            all_documents.append(
+                                Document(
+                                    id=results["ids"][0][i],
+                                    content=doc_content,
+                                    document_type=doc_type,
+                                    metadata=metadata,
+                                    relevance_score=score,
+                                    title=metadata.get("title"),
+                                    category=metadata.get("category"),
+                                )
+                            )
 
             except Exception as e:
                 logger.warning(f"Error searching {doc_type.value}: {e}")
@@ -159,7 +167,7 @@ class RAGService:
         all_documents.sort(key=lambda d: d.relevance_score, reverse=True)
 
         # Limiter au top_k total
-        all_documents = all_documents[:query.top_k]
+        all_documents = all_documents[: query.top_k]
 
         search_time_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -170,7 +178,7 @@ class RAGService:
                 "query_length": len(query.query),
                 "documents_found": len(all_documents),
                 "search_time_ms": search_time_ms,
-            }
+            },
         )
 
         return RAGResult(
@@ -192,13 +200,15 @@ class RAGService:
         if category:
             filters["category"] = category
 
-        result = await self.search(RAGQuery(
-            query=query,
-            tenant_id=tenant_id,
-            document_types=[DocumentType.PRODUCT],
-            top_k=top_k,
-            filters=filters,
-        ))
+        result = await self.search(
+            RAGQuery(
+                query=query,
+                tenant_id=tenant_id,
+                document_types=[DocumentType.PRODUCT],
+                top_k=top_k,
+                filters=filters,
+            )
+        )
 
         return result.documents
 
@@ -209,12 +219,14 @@ class RAGService:
         top_k: int = 3,
     ) -> List[Document]:
         """Recherche spécifique de FAQs"""
-        result = await self.search(RAGQuery(
-            query=query,
-            tenant_id=tenant_id,
-            document_types=[DocumentType.FAQ],
-            top_k=top_k,
-        ))
+        result = await self.search(
+            RAGQuery(
+                query=query,
+                tenant_id=tenant_id,
+                document_types=[DocumentType.FAQ],
+                top_k=top_k,
+            )
+        )
 
         return result.documents
 
@@ -225,12 +237,14 @@ class RAGService:
         top_k: int = 2,
     ) -> List[Document]:
         """Recherche de politiques (retour, livraison, etc.)"""
-        result = await self.search(RAGQuery(
-            query=query,
-            tenant_id=tenant_id,
-            document_types=[DocumentType.POLICY],
-            top_k=top_k,
-        ))
+        result = await self.search(
+            RAGQuery(
+                query=query,
+                tenant_id=tenant_id,
+                document_types=[DocumentType.POLICY],
+                top_k=top_k,
+            )
+        )
 
         return result.documents
 
@@ -258,8 +272,7 @@ class RAGService:
 
         # Créer ou récupérer la collection
         collection = client.get_or_create_collection(
-            name=collection_name,
-            metadata={"tenant_id": tenant_id, "type": doc_type.value}
+            name=collection_name, metadata={"tenant_id": tenant_id, "type": doc_type.value}
         )
 
         # Préparer les textes pour embedding
@@ -272,7 +285,9 @@ class RAGService:
 
             # Construire le texte à indexer selon le type
             if doc_type == DocumentType.PRODUCT:
-                text = f"{doc.get('name', '')} {doc.get('description', '')} {doc.get('category', '')}"
+                text = (
+                    f"{doc.get('name', '')} {doc.get('description', '')} {doc.get('category', '')}"
+                )
             elif doc_type == DocumentType.FAQ:
                 text = f"{doc.get('question', '')} {doc.get('answer', '')}"
             elif doc_type == DocumentType.POLICY:
@@ -282,10 +297,13 @@ class RAGService:
 
             texts.append(text)
             ids.append(doc_id)
-            metadatas.append({
-                k: v for k, v in doc.items()
-                if k not in ("id", "embedding") and isinstance(v, (str, int, float, bool))
-            })
+            metadatas.append(
+                {
+                    k: v
+                    for k, v in doc.items()
+                    if k not in ("id", "embedding") and isinstance(v, (str, int, float, bool))
+                }
+            )
 
         # Générer les embeddings
         embeddings = await self._llm_gateway.generate_embeddings(texts)
@@ -299,8 +317,7 @@ class RAGService:
         )
 
         logger.info(
-            f"Indexed {len(documents)} {doc_type.value} documents",
-            extra={"tenant_id": tenant_id}
+            f"Indexed {len(documents)} {doc_type.value} documents", extra={"tenant_id": tenant_id}
         )
 
         return len(documents)
@@ -321,7 +338,7 @@ class RAGService:
 
             logger.info(
                 f"Deleted {len(document_ids)} documents",
-                extra={"tenant_id": tenant_id, "type": doc_type.value}
+                extra={"tenant_id": tenant_id, "type": doc_type.value},
             )
 
             return len(document_ids)
@@ -347,4 +364,3 @@ class RAGService:
                 stats[doc_type.value] = 0
 
         return stats
-

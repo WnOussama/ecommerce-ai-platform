@@ -3,13 +3,13 @@ Security Service - Service de sécurité partagé
 Gère la sanitization, détection d'injection, et validation
 """
 
+import hashlib
+import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Tuple
 from enum import Enum
-import re
-import logging
-import hashlib
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +18,10 @@ logger = logging.getLogger(__name__)
 # TYPES
 # =============================================================================
 
+
 class ThreatLevel(str, Enum):
     """Niveau de menace détecté"""
+
     NONE = "none"
     LOW = "low"
     MEDIUM = "medium"
@@ -29,6 +31,7 @@ class ThreatLevel(str, Enum):
 
 class ThreatType(str, Enum):
     """Type de menace détectée"""
+
     PROMPT_INJECTION = "prompt_injection"
     JAILBREAK_ATTEMPT = "jailbreak_attempt"
     DATA_EXTRACTION = "data_extraction"
@@ -41,6 +44,7 @@ class ThreatType(str, Enum):
 @dataclass
 class SecurityCheckResult:
     """Résultat d'une vérification de sécurité"""
+
     is_safe: bool
     threat_level: ThreatLevel = ThreatLevel.NONE
     threats_detected: List[ThreatType] = field(default_factory=list)
@@ -53,6 +57,7 @@ class SecurityCheckResult:
 @dataclass
 class OutputValidationResult:
     """Résultat de validation d'output"""
+
     is_valid: bool
     filtered_output: str = ""
     violations: List[str] = field(default_factory=list)
@@ -62,6 +67,7 @@ class OutputValidationResult:
 # =============================================================================
 # SECURITY SERVICE
 # =============================================================================
+
 
 class SecurityService:
     """
@@ -82,30 +88,44 @@ class SecurityService:
     # Patterns de prompt injection (CRITIQUE)
     INJECTION_PATTERNS = [
         # Override instructions
-        (r"ignore\s+(all\s+)?(previous|prior|above|earlier)\s+instructions?", ThreatType.PROMPT_INJECTION),
-        (r"disregard\s+(all\s+)?(previous|prior|your)\s+(instructions?|rules?|guidelines?)", ThreatType.PROMPT_INJECTION),
-        (r"forget\s+(everything|all|what)\s+(you|i)\s+(told|said|instructed)", ThreatType.PROMPT_INJECTION),
+        (
+            r"ignore\s+(all\s+)?(previous|prior|above|earlier)\s+instructions?",
+            ThreatType.PROMPT_INJECTION,
+        ),
+        (
+            r"disregard\s+(all\s+)?(previous|prior|your)\s+(instructions?|rules?|guidelines?)",
+            ThreatType.PROMPT_INJECTION,
+        ),
+        (
+            r"forget\s+(everything|all|what)\s+(you|i)\s+(told|said|instructed)",
+            ThreatType.PROMPT_INJECTION,
+        ),
         (r"new\s+instructions?:\s*", ThreatType.PROMPT_INJECTION),
         (r"override\s+(previous\s+)?instructions?", ThreatType.PROMPT_INJECTION),
-
         # System prompt extraction
-        (r"(show|reveal|display|print|output)\s+(me\s+)?(your|the)\s+system\s+prompt", ThreatType.DATA_EXTRACTION),
+        (
+            r"(show|reveal|display|print|output)\s+(me\s+)?(your|the)\s+system\s+prompt",
+            ThreatType.DATA_EXTRACTION,
+        ),
         (r"what\s+(are|is)\s+your\s+(initial\s+)?instructions?", ThreatType.DATA_EXTRACTION),
         (r"repeat\s+(your\s+)?(system\s+)?(prompt|instructions?)", ThreatType.DATA_EXTRACTION),
-        (r"tell\s+me\s+(your|the)\s+(system\s+)?(prompt|instructions?)", ThreatType.DATA_EXTRACTION),
-
+        (
+            r"tell\s+me\s+(your|the)\s+(system\s+)?(prompt|instructions?)",
+            ThreatType.DATA_EXTRACTION,
+        ),
         # Jailbreak attempts
         (r"(DAN|STAN|DUDE)\s*(mode)?", ThreatType.JAILBREAK_ATTEMPT),
         (r"jailbreak(ed)?", ThreatType.JAILBREAK_ATTEMPT),
         (r"developer\s+mode", ThreatType.JAILBREAK_ATTEMPT),
         (r"god\s+mode", ThreatType.JAILBREAK_ATTEMPT),
         (r"no\s+(rules?|restrictions?|limitations?)", ThreatType.JAILBREAK_ATTEMPT),
-
         # Roleplay attacks
-        (r"(you\s+are|act\s+as|pretend\s+(to\s+be|you\'?re)|roleplay\s+as)\s+[a-z]+", ThreatType.ROLEPLAY_ATTACK),
+        (
+            r"(you\s+are|act\s+as|pretend\s+(to\s+be|you\'?re)|roleplay\s+as)\s+[a-z]+",
+            ThreatType.ROLEPLAY_ATTACK,
+        ),
         (r"from\s+now\s+on\s+(you|your)", ThreatType.ROLEPLAY_ATTACK),
         (r"let\'?s\s+play\s+a\s+game", ThreatType.ROLEPLAY_ATTACK),
-
         # Encoding attacks
         (r"base64[\s:]+[A-Za-z0-9+/=]{20,}", ThreatType.ENCODING_ATTACK),
         (r"\\x[0-9a-fA-F]{2}", ThreatType.ENCODING_ATTACK),
@@ -136,11 +156,9 @@ class SecurityService:
         (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "email"),  # Emails
         (r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b", "credit_card"),  # Cartes
         (r"\b(mot\s+de\s+passe|password)[\s:]+\S+", "password"),  # Passwords
-
         # System info leakage
         (r"(system|initial)\s+prompt", "system_info"),
         (r"(my|the)\s+instructions?\s+(are|is)", "system_info"),
-
         # Comportement inapproprié
         (r"\b(idiot|stupide|imbécile)\b", "insult"),
     ]
@@ -156,15 +174,9 @@ class SecurityService:
             for pattern, threat_type in self.INJECTION_PATTERNS
         ]
 
-        self._sql_patterns = [
-            re.compile(pattern, re.IGNORECASE)
-            for pattern in self.SQL_PATTERNS
-        ]
+        self._sql_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in self.SQL_PATTERNS]
 
-        self._xss_patterns = [
-            re.compile(pattern, re.IGNORECASE)
-            for pattern in self.XSS_PATTERNS
-        ]
+        self._xss_patterns = [re.compile(pattern, re.IGNORECASE) for pattern in self.XSS_PATTERNS]
 
         self._output_patterns = [
             (re.compile(pattern, re.IGNORECASE), name)
@@ -197,7 +209,7 @@ class SecurityService:
 
         # 1. Vérification longueur
         if len(text) > self.MAX_INPUT_LENGTH:
-            text = text[:self.MAX_INPUT_LENGTH]
+            text = text[: self.MAX_INPUT_LENGTH]
             details["truncated"] = True
 
         # 2. Normalisation (enlever caractères de contrôle)
@@ -262,16 +274,16 @@ class SecurityService:
     def _normalize_text(self, text: str) -> str:
         """Normalise le texte (supprime caractères dangereux)"""
         # Supprimer caractères de contrôle (sauf newline, tab)
-        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
+        text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
 
         # Normaliser les espaces
-        text = re.sub(r'\s+', ' ', text)
+        text = re.sub(r"\s+", " ", text)
 
         return text.strip()
 
     def _strip_html(self, text: str) -> str:
         """Supprime les balises HTML"""
-        return re.sub(r'<[^>]+>', '', text)
+        return re.sub(r"<[^>]+>", "", text)
 
     def _calculate_threat_level(self, threats: List[ThreatType]) -> ThreatLevel:
         """Calcule le niveau de menace global"""
@@ -327,7 +339,7 @@ class SecurityService:
 
         # 1. Vérification longueur
         if len(output) > self.MAX_OUTPUT_LENGTH:
-            filtered = output[:self.MAX_OUTPUT_LENGTH] + "..."
+            filtered = output[: self.MAX_OUTPUT_LENGTH] + "..."
             warnings.append("output_truncated")
 
         # 2. Vérification patterns interdits
@@ -375,10 +387,7 @@ class SecurityService:
         if re.search(r"\b(tu |ton |ta |tes )\b", text, re.IGNORECASE):
             issues.append("informal_tone")
 
-        return {
-            "is_appropriate": len(issues) == 0,
-            "issues": issues
-        }
+        return {"is_appropriate": len(issues) == 0, "issues": issues}
 
     # =========================================================================
     # JSON VALIDATION (Pour Admin Agent)
@@ -414,9 +423,9 @@ class SecurityService:
 
         # 3. Vérifier les champs obligatoires pour Admin
         required_fields = ["action_type", "status"]
-        for field in required_fields:
-            if field not in parsed:
-                errors.append(f"missing_required_field: {field}")
+        for field_name in required_fields:
+            if field_name not in parsed:
+                errors.append(f"missing_required_field: {field_name}")
 
         return len(errors) == 0, parsed, errors
 
@@ -428,12 +437,12 @@ class SecurityService:
         """Validation simple de schéma"""
         errors = []
 
-        for field, field_type in schema.items():
-            if field not in data:
-                if not field.startswith("?"):  # ? = optionnel
-                    errors.append(f"missing_field: {field}")
-            elif not isinstance(data[field], field_type):
-                errors.append(f"wrong_type: {field} should be {field_type.__name__}")
+        for field_name, field_type in schema.items():
+            if field_name not in data:
+                if not field_name.startswith("?"):  # ? = optionnel
+                    errors.append(f"missing_field: {field_name}")
+            elif not isinstance(data[field_name], field_type):
+                errors.append(f"wrong_type: {field_name} should be {field_type.__name__}")
 
         return errors
 
@@ -455,7 +464,7 @@ class SecurityService:
                 "tenant_id": tenant_id,
                 "timestamp": datetime.utcnow().isoformat(),
                 **kwargs,
-            }
+            },
         )
 
     # =========================================================================
@@ -471,6 +480,5 @@ class SecurityService:
     def validate_api_key_format(api_key: str) -> bool:
         """Valide le format d'une API key"""
         # Format: sk_live_xxx ou sk_test_xxx
-        pattern = r'^sk_(live|test)_[A-Za-z0-9]{32,}$'
+        pattern = r"^sk_(live|test)_[A-Za-z0-9]{32,}$"
         return bool(re.match(pattern, api_key))
-

@@ -2,9 +2,9 @@
 Métriques Prometheus pour l'observabilité IA
 """
 
-from prometheus_client import Counter, Histogram, Gauge, Info
 from typing import Optional
 
+from prometheus_client import Counter, Gauge, Histogram
 
 # ============================================================================
 # MÉTRIQUES LLM
@@ -12,51 +12,41 @@ from typing import Optional
 
 # Requêtes LLM
 llm_requests_total = Counter(
-    'llm_requests_total',
-    'Total LLM requests',
-    ['provider', 'model', 'status', 'tenant_id']
+    "llm_requests_total", "Total LLM requests", ["provider", "model", "status", "tenant_id"]
 )
 
 # Latence LLM
 llm_request_duration_seconds = Histogram(
-    'llm_request_duration_seconds',
-    'LLM request duration in seconds',
-    ['provider', 'model'],
-    buckets=[0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 15.0, 30.0]
+    "llm_request_duration_seconds",
+    "LLM request duration in seconds",
+    ["provider", "model"],
+    buckets=[0.5, 1.0, 2.0, 3.0, 5.0, 10.0, 15.0, 30.0],
 )
 
 # Tokens utilisés
 llm_tokens_total = Counter(
-    'llm_tokens_total',
-    'Total tokens used',
-    ['provider', 'model', 'type', 'tenant_id']  # type: input/output
+    "llm_tokens_total",
+    "Total tokens used",
+    ["provider", "model", "type", "tenant_id"],  # type: input/output
 )
 
 # Coût LLM
 llm_cost_usd_total = Counter(
-    'llm_cost_usd_total',
-    'Total LLM cost in USD',
-    ['provider', 'model', 'tenant_id']
+    "llm_cost_usd_total", "Total LLM cost in USD", ["provider", "model", "tenant_id"]
 )
 
 # Cache hits
-llm_cache_hits_total = Counter(
-    'llm_cache_hits_total',
-    'LLM semantic cache hits',
-    ['tenant_id']
-)
+llm_cache_hits_total = Counter("llm_cache_hits_total", "LLM semantic cache hits", ["tenant_id"])
 
 llm_cache_misses_total = Counter(
-    'llm_cache_misses_total',
-    'LLM semantic cache misses',
-    ['tenant_id']
+    "llm_cache_misses_total", "LLM semantic cache misses", ["tenant_id"]
 )
 
 # Circuit breaker
 llm_circuit_breaker_state = Gauge(
-    'llm_circuit_breaker_state',
-    'LLM circuit breaker state (0=closed, 1=open, 2=half_open)',
-    ['provider']
+    "llm_circuit_breaker_state",
+    "LLM circuit breaker state (0=closed, 1=open, 2=half_open)",
+    ["provider"],
 )
 
 
@@ -66,46 +56,42 @@ llm_circuit_breaker_state = Gauge(
 
 # Recherches RAG
 rag_searches_total = Counter(
-    'rag_searches_total',
-    'Total RAG searches',
-    ['collection', 'tenant_id']
+    "rag_searches_total", "Total RAG searches", ["collection", "tenant_id"]
 )
 
 # Latence RAG
 rag_search_duration_seconds = Histogram(
-    'rag_search_duration_seconds',
-    'RAG search duration',
-    ['collection'],
-    buckets=[0.05, 0.1, 0.2, 0.5, 1.0, 2.0]
+    "rag_search_duration_seconds",
+    "RAG search duration",
+    ["collection"],
+    buckets=[0.05, 0.1, 0.2, 0.5, 1.0, 2.0],
 )
 
 # Documents récupérés
 rag_documents_retrieved = Histogram(
-    'rag_documents_retrieved',
-    'Number of documents retrieved per search',
-    ['collection'],
-    buckets=[1, 2, 3, 5, 10, 20]
+    "rag_documents_retrieved",
+    "Number of documents retrieved per search",
+    ["collection"],
+    buckets=[1, 2, 3, 5, 10, 20],
 )
 
 # Score de pertinence
 rag_relevance_score = Histogram(
-    'rag_relevance_score',
-    'RAG relevance score (similarity)',
-    ['collection'],
-    buckets=[0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
+    "rag_relevance_score",
+    "RAG relevance score (similarity)",
+    ["collection"],
+    buckets=[0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95],
 )
 
 # Embeddings générés
 embedding_generations_total = Counter(
-    'embedding_generations_total',
-    'Total embeddings generated',
-    ['tenant_id']
+    "embedding_generations_total", "Total embeddings generated", ["tenant_id"]
 )
 
 embedding_generation_duration_seconds = Histogram(
-    'embedding_generation_duration_seconds',
-    'Embedding generation duration',
-    buckets=[0.05, 0.1, 0.2, 0.5, 1.0]
+    "embedding_generation_duration_seconds",
+    "Embedding generation duration",
+    buckets=[0.05, 0.1, 0.2, 0.5, 1.0],
 )
 
 
@@ -114,15 +100,13 @@ embedding_generation_duration_seconds = Histogram(
 # ============================================================================
 
 guardrail_checks_total = Counter(
-    'guardrail_checks_total',
-    'Total guardrail checks',
-    ['layer', 'category', 'result']  # layer: input/context/output, result: pass/warn/block
+    "guardrail_checks_total",
+    "Total guardrail checks",
+    ["layer", "category", "result"],  # layer: input/context/output, result: pass/warn/block
 )
 
 guardrail_blocks_total = Counter(
-    'guardrail_blocks_total',
-    'Total guardrail blocks',
-    ['layer', 'category', 'tenant_id']
+    "guardrail_blocks_total", "Total guardrail blocks", ["layer", "category", "tenant_id"]
 )
 
 
@@ -131,29 +115,21 @@ guardrail_blocks_total = Counter(
 # ============================================================================
 
 # Conversations
-conversations_total = Counter(
-    'conversations_total',
-    'Total conversations started',
-    ['tenant_id']
-)
+conversations_total = Counter("conversations_total", "Total conversations started", ["tenant_id"])
 
 conversations_active = Gauge(
-    'conversations_active',
-    'Currently active conversations',
-    ['tenant_id']
+    "conversations_active", "Currently active conversations", ["tenant_id"]
 )
 
 conversation_duration_seconds = Histogram(
-    'conversation_duration_seconds',
-    'Conversation duration',
-    ['tenant_id', 'resolution'],  # resolution: ai_resolved/escalated/abandoned
-    buckets=[60, 120, 300, 600, 1200, 1800]
+    "conversation_duration_seconds",
+    "Conversation duration",
+    ["tenant_id", "resolution"],  # resolution: ai_resolved/escalated/abandoned
+    buckets=[60, 120, 300, 600, 1200, 1800],
 )
 
 conversation_messages_total = Histogram(
-    'conversation_messages_total',
-    'Messages per conversation',
-    buckets=[1, 2, 3, 5, 10, 15, 20, 30]
+    "conversation_messages_total", "Messages per conversation", buckets=[1, 2, 3, 5, 10, 15, 20, 30]
 )
 
 
@@ -162,16 +138,14 @@ conversation_messages_total = Histogram(
 # ============================================================================
 
 intent_classifications_total = Counter(
-    'intent_classifications_total',
-    'Total intent classifications',
-    ['intent', 'tenant_id']
+    "intent_classifications_total", "Total intent classifications", ["intent", "tenant_id"]
 )
 
 intent_confidence_score = Histogram(
-    'intent_confidence_score',
-    'Intent classification confidence',
-    ['intent'],
-    buckets=[0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0]
+    "intent_confidence_score",
+    "Intent classification confidence",
+    ["intent"],
+    buckets=[0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0],
 )
 
 
@@ -181,43 +155,32 @@ intent_confidence_score = Histogram(
 
 # Recommandations
 recommendations_generated_total = Counter(
-    'recommendations_generated_total',
-    'Total recommendations generated',
-    ['tenant_id']
+    "recommendations_generated_total", "Total recommendations generated", ["tenant_id"]
 )
 
 recommendations_clicked_total = Counter(
-    'recommendations_clicked_total',
-    'Total recommendations clicked',
-    ['tenant_id']
+    "recommendations_clicked_total", "Total recommendations clicked", ["tenant_id"]
 )
 
 # Coupons
 coupons_generated_total = Counter(
-    'coupons_generated_total',
-    'Total coupons generated by AI',
-    ['reason', 'tenant_id']  # reason: loyalty/cart_abandonment/complaint/request
+    "coupons_generated_total",
+    "Total coupons generated by AI",
+    ["reason", "tenant_id"],  # reason: loyalty/cart_abandonment/complaint/request
 )
 
 coupons_used_total = Counter(
-    'coupons_used_total',
-    'Total AI-generated coupons used',
-    ['reason', 'tenant_id']
+    "coupons_used_total", "Total AI-generated coupons used", ["reason", "tenant_id"]
 )
 
 # Satisfaction
 user_satisfaction_score = Histogram(
-    'user_satisfaction_score',
-    'User satisfaction rating',
-    ['tenant_id'],
-    buckets=[1, 2, 3, 4, 5]
+    "user_satisfaction_score", "User satisfaction rating", ["tenant_id"], buckets=[1, 2, 3, 4, 5]
 )
 
 # Escalations
 escalations_total = Counter(
-    'escalations_total',
-    'Total escalations to human',
-    ['reason', 'tenant_id']
+    "escalations_total", "Total escalations to human", ["reason", "tenant_id"]
 )
 
 
@@ -226,22 +189,21 @@ escalations_total = Counter(
 # ============================================================================
 
 admin_actions_total = Counter(
-    'admin_actions_total',
-    'Total admin AI actions',
-    ['action_type', 'status', 'tenant_id']
+    "admin_actions_total", "Total admin AI actions", ["action_type", "status", "tenant_id"]
 )
 
 admin_action_duration_seconds = Histogram(
-    'admin_action_duration_seconds',
-    'Admin action execution duration',
-    ['action_type'],
-    buckets=[1, 2, 5, 10, 30, 60]
+    "admin_action_duration_seconds",
+    "Admin action execution duration",
+    ["action_type"],
+    buckets=[1, 2, 5, 10, 30, 60],
 )
 
 
 # ============================================================================
 # HELPER CLASS
 # ============================================================================
+
 
 class MetricsCollector:
     """
@@ -257,68 +219,43 @@ class MetricsCollector:
         duration_seconds: float,
         input_tokens: int,
         output_tokens: int,
-        cost_usd: float
+        cost_usd: float,
     ):
         """Enregistre une requête LLM complète"""
         llm_requests_total.labels(
-            provider=provider,
-            model=model,
-            status=status,
-            tenant_id=tenant_id
+            provider=provider, model=model, status=status, tenant_id=tenant_id
         ).inc()
 
-        llm_request_duration_seconds.labels(
-            provider=provider,
-            model=model
-        ).observe(duration_seconds)
+        llm_request_duration_seconds.labels(provider=provider, model=model).observe(
+            duration_seconds
+        )
 
         llm_tokens_total.labels(
-            provider=provider,
-            model=model,
-            type="input",
-            tenant_id=tenant_id
+            provider=provider, model=model, type="input", tenant_id=tenant_id
         ).inc(input_tokens)
 
         llm_tokens_total.labels(
-            provider=provider,
-            model=model,
-            type="output",
-            tenant_id=tenant_id
+            provider=provider, model=model, type="output", tenant_id=tenant_id
         ).inc(output_tokens)
 
-        llm_cost_usd_total.labels(
-            provider=provider,
-            model=model,
-            tenant_id=tenant_id
-        ).inc(cost_usd)
+        llm_cost_usd_total.labels(provider=provider, model=model, tenant_id=tenant_id).inc(cost_usd)
 
     @staticmethod
-    def record_llm_success(
-        provider: str,
-        latency_ms: int,
-        tokens: int
-    ):
+    def record_llm_success(provider: str, latency_ms: int, tokens: int):
         """Enregistre un succès LLM (version simplifiée)"""
         llm_requests_total.labels(
-            provider=provider,
-            model="unknown",
-            status="success",
-            tenant_id="unknown"
+            provider=provider, model="unknown", status="success", tenant_id="unknown"
         ).inc()
 
-        llm_request_duration_seconds.labels(
-            provider=provider,
-            model="unknown"
-        ).observe(latency_ms / 1000)
+        llm_request_duration_seconds.labels(provider=provider, model="unknown").observe(
+            latency_ms / 1000
+        )
 
     @staticmethod
     def record_llm_failure(provider: str):
         """Enregistre un échec LLM"""
         llm_requests_total.labels(
-            provider=provider,
-            model="unknown",
-            status="error",
-            tenant_id="unknown"
+            provider=provider, model="unknown", status="error", tenant_id="unknown"
         ).inc()
 
     @staticmethod
@@ -327,47 +264,27 @@ class MetricsCollector:
         tenant_id: str,
         duration_seconds: float,
         docs_count: int,
-        avg_relevance: float
+        avg_relevance: float,
     ):
         """Enregistre une recherche RAG"""
-        rag_searches_total.labels(
-            collection=collection,
-            tenant_id=tenant_id
-        ).inc()
+        rag_searches_total.labels(collection=collection, tenant_id=tenant_id).inc()
 
-        rag_search_duration_seconds.labels(
-            collection=collection
-        ).observe(duration_seconds)
+        rag_search_duration_seconds.labels(collection=collection).observe(duration_seconds)
 
-        rag_documents_retrieved.labels(
-            collection=collection
-        ).observe(docs_count)
+        rag_documents_retrieved.labels(collection=collection).observe(docs_count)
 
         if avg_relevance > 0:
-            rag_relevance_score.labels(
-                collection=collection
-            ).observe(avg_relevance)
+            rag_relevance_score.labels(collection=collection).observe(avg_relevance)
 
     @staticmethod
     def record_guardrail_check(
-        layer: str,
-        category: str,
-        result: str,
-        tenant_id: Optional[str] = None
+        layer: str, category: str, result: str, tenant_id: Optional[str] = None
     ):
         """Enregistre une vérification guardrail"""
-        guardrail_checks_total.labels(
-            layer=layer,
-            category=category,
-            result=result
-        ).inc()
+        guardrail_checks_total.labels(layer=layer, category=category, result=result).inc()
 
         if result == "block" and tenant_id:
-            guardrail_blocks_total.labels(
-                layer=layer,
-                category=category,
-                tenant_id=tenant_id
-            ).inc()
+            guardrail_blocks_total.labels(layer=layer, category=category, tenant_id=tenant_id).inc()
 
     @staticmethod
     def record_conversation_start(tenant_id: str):
@@ -377,36 +294,23 @@ class MetricsCollector:
 
     @staticmethod
     def record_conversation_end(
-        tenant_id: str,
-        resolution: str,
-        duration_seconds: float,
-        message_count: int
+        tenant_id: str, resolution: str, duration_seconds: float, message_count: int
     ):
         """Enregistre la fin d'une conversation"""
         conversations_active.labels(tenant_id=tenant_id).dec()
 
-        conversation_duration_seconds.labels(
-            tenant_id=tenant_id,
-            resolution=resolution
-        ).observe(duration_seconds)
+        conversation_duration_seconds.labels(tenant_id=tenant_id, resolution=resolution).observe(
+            duration_seconds
+        )
 
         conversation_messages_total.observe(message_count)
 
     @staticmethod
-    def record_intent(
-        intent: str,
-        confidence: float,
-        tenant_id: str
-    ):
+    def record_intent(intent: str, confidence: float, tenant_id: str):
         """Enregistre une classification d'intention"""
-        intent_classifications_total.labels(
-            intent=intent,
-            tenant_id=tenant_id
-        ).inc()
+        intent_classifications_total.labels(intent=intent, tenant_id=tenant_id).inc()
 
-        intent_confidence_score.labels(
-            intent=intent
-        ).observe(confidence)
+        intent_confidence_score.labels(intent=intent).observe(confidence)
 
     @staticmethod
     def record_satisfaction(tenant_id: str, rating: int):
@@ -416,10 +320,7 @@ class MetricsCollector:
     @staticmethod
     def record_escalation(tenant_id: str, reason: str):
         """Enregistre une escalation"""
-        escalations_total.labels(
-            reason=reason,
-            tenant_id=tenant_id
-        ).inc()
+        escalations_total.labels(reason=reason, tenant_id=tenant_id).inc()
 
     @staticmethod
     def set_circuit_breaker_state(provider: str, state: str):
@@ -430,4 +331,3 @@ class MetricsCollector:
 
 # Export singleton
 metrics = MetricsCollector()
-

@@ -15,19 +15,18 @@ Caractéristiques:
 - Logging structuré
 """
 
+import hashlib
 import logging
 import time
-import hashlib
 from dataclasses import dataclass, field
 from datetime import datetime
-from decimal import Decimal
 from enum import Enum
-from typing import Optional, List, Dict, Any, Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
 from app.services.catalog.repository import (
-    ProductRepositoryProtocol,
     ProductData,
     ProductFilter,
+    ProductRepositoryProtocol,
 )
 from app.services.rag.embedding_service import EmbeddingServiceProtocol
 
@@ -38,8 +37,10 @@ logger = logging.getLogger(__name__)
 # DATA MODELS
 # =============================================================================
 
+
 class IndexStatus(str, Enum):
     """Statut d'une indexation."""
+
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
@@ -50,6 +51,7 @@ class IndexStatus(str, Enum):
 @dataclass
 class IndexingError:
     """Erreur survenue pendant l'indexation."""
+
     product_id: Optional[int] = None
     product_name: Optional[str] = None
     error_type: str = ""
@@ -73,6 +75,7 @@ class IndexResult:
 
     Contient toutes les métriques et informations sur l'indexation.
     """
+
     tenant_id: str
     status: IndexStatus = IndexStatus.PENDING
 
@@ -134,6 +137,7 @@ class IndexResult:
 # VECTOR STORE PROTOCOL
 # =============================================================================
 
+
 class VectorStoreProtocol(Protocol):
     """
     Protocol pour le vector store.
@@ -179,6 +183,7 @@ class VectorStoreProtocol(Protocol):
 # CHROMA VECTOR STORE ADAPTER
 # =============================================================================
 
+
 class ChromaVectorStore:
     """
     Adaptateur ChromaDB pour le vector store.
@@ -198,16 +203,17 @@ class ChromaVectorStore:
             import chromadb
             from chromadb.config import Settings as ChromaSettings
 
-            self._client = chromadb.Client(ChromaSettings(
-                chroma_db_impl="duckdb+parquet",
-                persist_directory=persist_directory,
-                anonymized_telemetry=False,
-            ))
+            self._client = chromadb.Client(
+                ChromaSettings(
+                    chroma_db_impl="duckdb+parquet",
+                    persist_directory=persist_directory,
+                    anonymized_telemetry=False,
+                )
+            )
             self._collections: Dict[str, Any] = {}
 
             logger.info(
-                "ChromaVectorStore initialized",
-                extra={"persist_directory": persist_directory}
+                "ChromaVectorStore initialized", extra={"persist_directory": persist_directory}
             )
         except ImportError:
             logger.error("chromadb not installed")
@@ -284,6 +290,7 @@ class ChromaVectorStore:
 # =============================================================================
 # IN-MEMORY VECTOR STORE (FOR TESTING)
 # =============================================================================
+
 
 class InMemoryVectorStore:
     """
@@ -369,6 +376,7 @@ class InMemoryVectorStore:
 # =============================================================================
 # PRODUCT INDEXER
 # =============================================================================
+
 
 class ProductIndexer:
     """
@@ -523,7 +531,7 @@ class ProductIndexer:
                 "delete_missing": delete_missing,
                 "skip_unchanged": skip_unchanged,
                 "batch_size": self._batch_size,
-            }
+            },
         )
 
         start_time = time.monotonic()
@@ -578,7 +586,7 @@ class ProductIndexer:
                         "batch_size": len(products),
                         "indexed": len(batch_indexed_ids),
                         "skipped": batch_skipped,
-                    }
+                    },
                 )
 
                 # Vérifier si on doit s'arrêter (trop d'erreurs)
@@ -588,7 +596,7 @@ class ProductIndexer:
                         extra={
                             "tenant_id": tenant_id,
                             "errors_count": len(result.errors),
-                        }
+                        },
                     )
                     result.status = IndexStatus.PARTIAL
                     break
@@ -602,10 +610,7 @@ class ProductIndexer:
 
             # Log si aucun produit trouvé
             if result.total_products == 0:
-                logger.info(
-                    "No products to index",
-                    extra={"tenant_id": tenant_id}
-                )
+                logger.info("No products to index", extra={"tenant_id": tenant_id})
 
             # Supprimer les documents obsolètes
             if delete_missing and indexed_doc_ids:
@@ -617,15 +622,14 @@ class ProductIndexer:
                 result.total_deleted = deleted
 
         except Exception as e:
-            logger.exception(
-                "Unexpected error during indexation",
-                extra={"tenant_id": tenant_id}
-            )
+            logger.exception("Unexpected error during indexation", extra={"tenant_id": tenant_id})
             result.status = IndexStatus.FAILED
-            result.errors.append(IndexingError(
-                error_type="unexpected_error",
-                error_message=str(e),
-            ))
+            result.errors.append(
+                IndexingError(
+                    error_type="unexpected_error",
+                    error_message=str(e),
+                )
+            )
 
         finally:
             result.completed_at = datetime.utcnow()
@@ -638,10 +642,7 @@ class ProductIndexer:
                 else:
                     result.status = IndexStatus.COMPLETED
 
-            logger.info(
-                "Product indexation completed",
-                extra=result.to_dict()
-            )
+            logger.info("Product indexation completed", extra=result.to_dict())
 
         return result
 
@@ -657,7 +658,7 @@ class ProductIndexer:
         """
         try:
             # Pour InMemoryVectorStore et ChromaDB compatible
-            existing_ids = await self._vector_store.get_ids(collection_name)
+            await self._vector_store.get_ids(collection_name)
 
             # Note: Pour une implémentation complète, il faudrait récupérer
             # les métadonnées. Ici on retourne un dict vide qui sera rempli
@@ -666,8 +667,7 @@ class ProductIndexer:
 
         except Exception as e:
             logger.warning(
-                "Failed to get existing hashes, will re-index all",
-                extra={"error": str(e)}
+                "Failed to get existing hashes, will re-index all", extra={"error": str(e)}
             )
             return {}
 
@@ -723,15 +723,17 @@ class ProductIndexer:
                         "tenant_id": tenant_id,
                         "product_id": product.external_id,
                         "error": str(e),
-                    }
+                    },
                 )
                 result.total_failed += 1
-                result.errors.append(IndexingError(
-                    product_id=product.external_id,
-                    product_name=product.name,
-                    error_type="prepare_error",
-                    error_message=str(e),
-                ))
+                result.errors.append(
+                    IndexingError(
+                        product_id=product.external_id,
+                        product_name=product.name,
+                        error_type="prepare_error",
+                        error_message=str(e),
+                    )
+                )
 
         if not to_index_ids:
             return indexed_ids, skipped_count
@@ -749,13 +751,15 @@ class ProductIndexer:
                     "tenant_id": tenant_id,
                     "batch_size": len(to_index_texts),
                     "error": str(e),
-                }
+                },
             )
             result.total_failed += len(to_index_ids)
-            result.errors.append(IndexingError(
-                error_type="embedding_error",
-                error_message=str(e),
-            ))
+            result.errors.append(
+                IndexingError(
+                    error_type="embedding_error",
+                    error_message=str(e),
+                )
+            )
             return indexed_ids, skipped_count
 
         # Stocker dans le vector store
@@ -778,13 +782,15 @@ class ProductIndexer:
                     "tenant_id": tenant_id,
                     "batch_size": len(to_index_ids),
                     "error": str(e),
-                }
+                },
             )
             result.total_failed += len(to_index_ids)
-            result.errors.append(IndexingError(
-                error_type="storage_error",
-                error_message=str(e),
-            ))
+            result.errors.append(
+                IndexingError(
+                    error_type="storage_error",
+                    error_message=str(e),
+                )
+            )
 
         return indexed_ids, skipped_count
 
@@ -826,15 +832,17 @@ class ProductIndexer:
                         "tenant_id": tenant_id,
                         "product_id": product.external_id,
                         "error": str(e),
-                    }
+                    },
                 )
                 result.total_failed += 1
-                result.errors.append(IndexingError(
-                    product_id=product.external_id,
-                    product_name=product.name,
-                    error_type="prepare_error",
-                    error_message=str(e),
-                ))
+                result.errors.append(
+                    IndexingError(
+                        product_id=product.external_id,
+                        product_name=product.name,
+                        error_type="prepare_error",
+                        error_message=str(e),
+                    )
+                )
 
         if not ids:
             return []
@@ -852,13 +860,15 @@ class ProductIndexer:
                     "tenant_id": tenant_id,
                     "batch_size": len(texts),
                     "error": str(e),
-                }
+                },
             )
             result.total_failed += len(ids)
-            result.errors.append(IndexingError(
-                error_type="embedding_error",
-                error_message=str(e),
-            ))
+            result.errors.append(
+                IndexingError(
+                    error_type="embedding_error",
+                    error_message=str(e),
+                )
+            )
             return []
 
         # Stocker dans le vector store
@@ -879,7 +889,7 @@ class ProductIndexer:
                 extra={
                     "tenant_id": tenant_id,
                     "batch_size": len(ids),
-                }
+                },
             )
 
         except Exception as e:
@@ -889,13 +899,15 @@ class ProductIndexer:
                     "tenant_id": tenant_id,
                     "batch_size": len(ids),
                     "error": str(e),
-                }
+                },
             )
             result.total_failed += len(ids)
-            result.errors.append(IndexingError(
-                error_type="storage_error",
-                error_message=str(e),
-            ))
+            result.errors.append(
+                IndexingError(
+                    error_type="storage_error",
+                    error_message=str(e),
+                )
+            )
 
         return indexed_ids
 
@@ -922,7 +934,7 @@ class ProductIndexer:
                     extra={
                         "tenant_id": tenant_id,
                         "deleted_count": len(to_delete),
-                    }
+                    },
                 )
 
             return len(to_delete)
@@ -933,7 +945,7 @@ class ProductIndexer:
                 extra={
                     "tenant_id": tenant_id,
                     "error": str(e),
-                }
+                },
             )
             return 0
 
@@ -981,7 +993,7 @@ class ProductIndexer:
                     "tenant_id": tenant_id,
                     "product_id": product.external_id,
                     "product_name": product.name,
-                }
+                },
             )
 
             return True
@@ -993,7 +1005,7 @@ class ProductIndexer:
                     "tenant_id": tenant_id,
                     "product_id": product.external_id,
                     "error": str(e),
-                }
+                },
             )
             return False
 
@@ -1023,7 +1035,7 @@ class ProductIndexer:
                 extra={
                     "tenant_id": tenant_id,
                     "product_id": external_id,
-                }
+                },
             )
 
             return True
@@ -1035,7 +1047,7 @@ class ProductIndexer:
                     "tenant_id": tenant_id,
                     "product_id": external_id,
                     "error": str(e),
-                }
+                },
             )
             return False
 
@@ -1066,8 +1078,7 @@ class ProductIndexer:
 
         except Exception as e:
             logger.error(
-                "Failed to get index stats",
-                extra={"tenant_id": tenant_id, "error": str(e)}
+                "Failed to get index stats", extra={"tenant_id": tenant_id, "error": str(e)}
             )
             return {
                 "tenant_id": tenant_id,
@@ -1075,8 +1086,3 @@ class ProductIndexer:
                 "total_indexed": 0,
                 "error": str(e),
             }
-
-
-
-
-

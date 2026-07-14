@@ -8,17 +8,18 @@ Usage:
     setup_metrics(app)
 """
 
-from fastapi import FastAPI, Request, Response
+import logging
+import time
+
+from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.routing import Match
-import time
-import logging
 
 from app.core.monitoring.ai_metrics import (
+    api_request_duration_seconds,
+    api_requests_total,
     get_metrics_collector,
     get_metrics_endpoint,
-    api_requests_total,
-    api_request_duration_seconds,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ class MetricsMiddleware(BaseHTTPMiddleware):
             response = await call_next(request)
             status_code = str(response.status_code)
             return response
-        except Exception as e:
+        except Exception:
             status_code = "500"
             raise
         finally:
@@ -128,6 +129,7 @@ def setup_metrics(app: FastAPI, exclude_paths: list = None):
 # DECORATOR FOR LLM CALLS
 # =============================================================================
 
+
 def track_llm_call(model: str = "unknown", operation: str = "chat"):
     """
     Décorateur pour tracker automatiquement les appels LLM.
@@ -137,6 +139,7 @@ def track_llm_call(model: str = "unknown", operation: str = "chat"):
         async def generate_response(tenant_id: str, prompt: str):
             ...
     """
+
     def decorator(func):
         async def wrapper(*args, **kwargs):
             # Extract tenant_id from kwargs or first arg
@@ -161,6 +164,7 @@ def track_llm_call(model: str = "unknown", operation: str = "chat"):
             return result
 
         return wrapper
+
     return decorator
 
 
@@ -173,6 +177,7 @@ def track_rag_query(doc_type: str = "unknown"):
         async def search_products(tenant_id: str, query: str):
             ...
     """
+
     def decorator(func):
         async def wrapper(*args, **kwargs):
             tenant_id = kwargs.get("tenant_id", "unknown")
@@ -193,6 +198,7 @@ def track_rag_query(doc_type: str = "unknown"):
             return result
 
         return wrapper
+
     return decorator
 
 
@@ -206,4 +212,3 @@ __all__ = [
     "track_llm_call",
     "track_rag_query",
 ]
-

@@ -3,25 +3,38 @@ Modèles SQLAlchemy - Multi-tenant avec isolation logique
 Compatible PostgreSQL
 """
 
-from datetime import datetime
-from typing import Optional
-from uuid import uuid4
 import uuid
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Boolean, Text, JSON,
-    DateTime, ForeignKey, Enum as SQLEnum, Index, BigInteger
+    JSON,
+    BigInteger,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
 )
+from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
-from app.infrastructure.database.base import Base
 from app.domain.entities.models import (
-    TenantPlan, TenantStatus, CustomerSegment,
-    ConversationStatus, MessageRole, IntentType,
-    CouponStatus, AdminActionType, AdminActionStatus
+    AdminActionStatus,
+    AdminActionType,
+    ConversationStatus,
+    CouponStatus,
+    CustomerSegment,
+    IntentType,
+    MessageRole,
+    TenantPlan,
+    TenantStatus,
 )
+from app.infrastructure.database.base import Base
 
 
 def generate_uuid():
@@ -32,11 +45,13 @@ def generate_uuid():
 # TENANT
 # ============================================================================
 
+
 class TenantModel(Base):
     """
     Table des tenants (locataires SaaS).
     Chaque boutique e-commerce = 1 tenant.
     """
+
     __tablename__ = "tenants"
     __table_args__ = {"extend_existing": True}
 
@@ -72,14 +87,21 @@ class TenantModel(Base):
 
     # Relations
     customers = relationship("CustomerModel", back_populates="tenant", lazy="dynamic")
-    conversations = relationship("ConversationModel", back_populates="tenant", lazy="dynamic", overlaps="tenant,conversations")
-    coupons = relationship("CouponModel", back_populates="tenant", lazy="dynamic", overlaps="tenant,coupons")
+    conversations = relationship(
+        "ConversationModel",
+        back_populates="tenant",
+        lazy="dynamic",
+        overlaps="tenant,conversations",
+    )
+    coupons = relationship(
+        "CouponModel", back_populates="tenant", lazy="dynamic", overlaps="tenant,coupons"
+    )
     admin_actions = relationship("AdminActionModel", back_populates="tenant", lazy="dynamic")
 
     __table_args__ = (
         Index("idx_tenant_status", "status"),
         Index("idx_tenant_platform", "platform"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
 
@@ -87,15 +109,19 @@ class TenantModel(Base):
 # CUSTOMER
 # ============================================================================
 
+
 class CustomerModel(Base):
     """
     Table des clients finaux.
     Synchronisée depuis PrestaShop/Shopify.
     """
+
     __tablename__ = "customers"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
 
     # ID externe (dans le système e-commerce)
     external_id = Column(String(100), nullable=False)
@@ -137,7 +163,7 @@ class CustomerModel(Base):
         Index("idx_customer_email", "tenant_id", "email"),
         Index("idx_customer_segment", "tenant_id", "segment"),
         Index("idx_customer_loyalty", "tenant_id", "loyalty_score"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
 
@@ -145,15 +171,21 @@ class CustomerModel(Base):
 # CONVERSATION
 # ============================================================================
 
+
 class ConversationModel(Base):
     """
     Table des conversations chatbot.
     """
+
     __tablename__ = "conversations"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
-    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    customer_id = Column(
+        UUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Session
     session_id = Column(String(100), nullable=False, index=True)
@@ -165,7 +197,9 @@ class ConversationModel(Base):
 
     # Contexte (page, produit, etc.)
     context = Column(JSON, default=dict)
-    conversation_metadata = Column(JSON, default=dict)  # Renamed from 'metadata' (reserved by SQLAlchemy)
+    conversation_metadata = Column(
+        JSON, default=dict
+    )  # Renamed from 'metadata' (reserved by SQLAlchemy)
 
     # Métriques
     message_count = Column(Integer, default=0)
@@ -182,16 +216,23 @@ class ConversationModel(Base):
     resolved_at = Column(DateTime, nullable=True)
 
     # Relations
-    tenant = relationship("TenantModel", back_populates="conversations", overlaps="tenant,conversations")
+    tenant = relationship(
+        "TenantModel", back_populates="conversations", overlaps="tenant,conversations"
+    )
     customer = relationship("CustomerModel", back_populates="conversations")
-    messages = relationship("MessageModel", back_populates="conversation", lazy="dynamic",
-                          order_by="MessageModel.created_at", overlaps="conversation,messages")
+    messages = relationship(
+        "MessageModel",
+        back_populates="conversation",
+        lazy="dynamic",
+        order_by="MessageModel.created_at",
+        overlaps="conversation,messages",
+    )
 
     __table_args__ = (
         Index("idx_conv_tenant_session", "tenant_id", "session_id"),
         Index("idx_conv_tenant_status", "tenant_id", "status"),
         Index("idx_conv_tenant_date", "tenant_id", "created_at"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
 
@@ -199,14 +240,18 @@ class ConversationModel(Base):
 # MESSAGE
 # ============================================================================
 
+
 class MessageModel(Base):
     """
     Table des messages individuels.
     """
+
     __tablename__ = "messages"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False)
+    conversation_id = Column(
+        UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
+    )
 
     # Contenu
     role = Column(SQLEnum(MessageRole), nullable=False)
@@ -229,11 +274,13 @@ class MessageModel(Base):
     created_at = Column(DateTime, default=func.now())
 
     # Relations
-    conversation = relationship("ConversationModel", back_populates="messages", overlaps="conversation,messages")
+    conversation = relationship(
+        "ConversationModel", back_populates="messages", overlaps="conversation,messages"
+    )
 
     __table_args__ = (
         Index("idx_message_conv_date", "conversation_id", "created_at"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
 
@@ -241,15 +288,21 @@ class MessageModel(Base):
 # COUPON
 # ============================================================================
 
+
 class CouponModel(Base):
     """
     Table des coupons générés par l'IA.
     """
+
     __tablename__ = "coupons"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
-    customer_id = Column(UUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
+    customer_id = Column(
+        UUID(as_uuid=True), ForeignKey("customers.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Code et valeur
     code = Column(String(50), nullable=False, unique=True)
@@ -262,7 +315,9 @@ class CouponModel(Base):
     # Génération IA
     generation_reason = Column(String(100), nullable=False)
     ai_generated = Column(Boolean, default=True)
-    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
+    conversation_id = Column(
+        UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True
+    )
 
     # Validité
     valid_from = Column(DateTime, nullable=False)
@@ -279,30 +334,31 @@ class CouponModel(Base):
     tenant = relationship("TenantModel", back_populates="coupons", overlaps="tenant,coupons")
     customer = relationship("CustomerModel", back_populates="coupons")
 
-<<<<<<< HEAD
-=======
     __table_args__ = (
         Index("idx_coupon_code", "code"),
         Index("idx_coupon_tenant_status", "tenant_id", "status"),
         Index("idx_coupon_customer", "customer_id"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
->>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
 
 
 # ============================================================================
 # ADMIN ACTION (Audit Log)
 # ============================================================================
 
+
 class AdminActionModel(Base):
     """
     Table d'audit des actions administrateur.
     Critique pour la traçabilité et compliance.
     """
+
     __tablename__ = "admin_actions"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
 
     # Type et statut
     action_type = Column(SQLEnum(AdminActionType), nullable=False)
@@ -340,7 +396,7 @@ class AdminActionModel(Base):
         Index("idx_admin_tenant_type", "tenant_id", "action_type"),
         Index("idx_admin_tenant_status", "tenant_id", "status"),
         Index("idx_admin_tenant_date", "tenant_id", "created_at"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
 
@@ -348,14 +404,18 @@ class AdminActionModel(Base):
 # LLM USAGE (Cost Tracking)
 # ============================================================================
 
+
 class LLMUsageModel(Base):
     """
     Table de suivi des usages LLM pour facturation.
     """
+
     __tablename__ = "llm_usage"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
 
     # Usage
     model = Column(String(100), nullable=False)
@@ -375,7 +435,7 @@ class LLMUsageModel(Base):
     __table_args__ = (
         Index("idx_usage_tenant_date", "tenant_id", "created_at"),
         Index("idx_usage_tenant_model", "tenant_id", "model"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
 
@@ -383,14 +443,18 @@ class LLMUsageModel(Base):
 # PRODUCT EMBEDDING METADATA
 # ============================================================================
 
+
 class ProductEmbeddingModel(Base):
     """
     Metadata des embeddings produits (le vecteur est dans ChromaDB).
     """
+
     __tablename__ = "product_embeddings"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=generate_uuid)
-    tenant_id = Column(UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False)
+    tenant_id = Column(
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False
+    )
 
     # Produit
     product_external_id = Column(String(100), nullable=False)
@@ -410,6 +474,5 @@ class ProductEmbeddingModel(Base):
     __table_args__ = (
         Index("idx_embed_tenant_product", "tenant_id", "product_external_id", unique=True),
         Index("idx_embed_hash", "content_hash"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
-

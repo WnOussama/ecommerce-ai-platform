@@ -12,23 +12,23 @@ Architecture:
 # Base et mixins
 from app.infrastructure.database.base import (
     Base,
-    UUIDMixin,
-    TimestampMixin,
     SoftDeleteMixin,
+    TimestampMixin,
+    UUIDMixin,
     generate_uuid,
 )
-
-# Modèles principaux (nouveaux, propres)
-from app.infrastructure.database.models.tenant import Tenant
-from app.infrastructure.database.models.conversation import Conversation, ConversationStatus
-from app.infrastructure.database.models.message import Message, MessageRole
-from app.infrastructure.database.models.rule import Rule
-from app.infrastructure.database.models.coupon import Coupon, CouponStatus
 from app.infrastructure.database.models.analytics import AnalyticsEvent
+from app.infrastructure.database.models.conversation import Conversation, ConversationStatus
+from app.infrastructure.database.models.coupon import Coupon, CouponStatus
+from app.infrastructure.database.models.message import Message, MessageRole
 
 # Legacy models (à migrer progressivement)
 # Ces modèles seront dépréciés et remplacés par les nouveaux
 from app.infrastructure.database.models.product import ProductModel
+from app.infrastructure.database.models.rule import Rule
+
+# Modèles principaux (nouveaux, propres)
+from app.infrastructure.database.models.tenant import Tenant
 
 __all__ = [
     # Base
@@ -37,7 +37,6 @@ __all__ = [
     "TimestampMixin",
     "SoftDeleteMixin",
     "generate_uuid",
-
     # New models
     "Tenant",
     "Conversation",
@@ -48,8 +47,6 @@ __all__ = [
     "Coupon",
     "CouponStatus",
     "AnalyticsEvent",
-
     # Legacy (deprecated)
     "ProductModel",
 ]
-

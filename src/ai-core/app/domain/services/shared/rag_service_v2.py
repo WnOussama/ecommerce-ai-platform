@@ -24,11 +24,11 @@ Architecture SCALABLE pour multi-tenant:
 └─────────────────────────────────────────────────────────────────────────────────┘
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Dict, Any, List
 from enum import Enum
-import logging
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +37,10 @@ logger = logging.getLogger(__name__)
 # TYPES
 # =============================================================================
 
+
 class DocumentType(str, Enum):
     """Types de documents indexés"""
+
     PRODUCT = "product"
     FAQ = "faq"
     POLICY = "policy"
@@ -57,6 +59,7 @@ COLLECTION_NAMES = {
 @dataclass
 class Document:
     """Document récupéré par RAG"""
+
     id: str
     content: str
     document_type: DocumentType
@@ -70,6 +73,7 @@ class Document:
 @dataclass
 class RAGQuery:
     """Requête de recherche RAG"""
+
     query: str
     tenant_id: str  # OBLIGATOIRE - filtre automatique
     document_types: List[DocumentType] = field(default_factory=list)
@@ -81,6 +85,7 @@ class RAGQuery:
 @dataclass
 class RAGResult:
     """Résultat de recherche RAG"""
+
     documents: List[Document]
     query: str
     total_found: int
@@ -91,6 +96,7 @@ class RAGResult:
 # =============================================================================
 # RAG SERVICE V2 (SCALABLE)
 # =============================================================================
+
 
 class RAGServiceV2:
     """
@@ -119,6 +125,7 @@ class RAGServiceV2:
         """Lazy init du client ChromaDB"""
         if self._client is None:
             import chromadb
+
             self._client = chromadb.HttpClient(
                 host=self.chroma_host,
                 port=self.chroma_port,
@@ -141,7 +148,7 @@ class RAGServiceV2:
                 metadata={
                     "description": f"Global {doc_type.value} collection for all tenants",
                     "hnsw:space": "cosine",  # Cosine similarity
-                }
+                },
             )
             logger.info(f"Initialized collection: {collection_name}")
 
@@ -157,6 +164,7 @@ class RAGServiceV2:
         Le tenant_id est TOUJOURS inclus dans le filtre.
         """
         import time
+
         start_time = time.perf_counter()
 
         if not query.tenant_id:
@@ -212,20 +220,22 @@ class RAGServiceV2:
                                         "expected_tenant": query.tenant_id,
                                         "actual_tenant": doc_tenant,
                                         "doc_id": results["ids"][0][i],
-                                    }
+                                    },
                                 )
                                 continue  # Skip ce document
 
-                            all_documents.append(Document(
-                                id=results["ids"][0][i],
-                                content=doc_content,
-                                document_type=doc_type,
-                                tenant_id=query.tenant_id,
-                                metadata=metadata,
-                                relevance_score=score,
-                                title=metadata.get("title") or metadata.get("name"),
-                                category=metadata.get("category"),
-                            ))
+                            all_documents.append(
+                                Document(
+                                    id=results["ids"][0][i],
+                                    content=doc_content,
+                                    document_type=doc_type,
+                                    tenant_id=query.tenant_id,
+                                    metadata=metadata,
+                                    relevance_score=score,
+                                    title=metadata.get("title") or metadata.get("name"),
+                                    category=metadata.get("category"),
+                                )
+                            )
 
             except Exception as e:
                 logger.warning(f"Error searching {doc_type.value}: {e}")
@@ -233,7 +243,7 @@ class RAGServiceV2:
 
         # Trier par relevance
         all_documents.sort(key=lambda d: d.relevance_score, reverse=True)
-        all_documents = all_documents[:query.top_k]
+        all_documents = all_documents[: query.top_k]
 
         search_time_ms = int((time.perf_counter() - start_time) * 1000)
 
@@ -245,7 +255,7 @@ class RAGServiceV2:
                 "documents_found": len(all_documents),
                 "search_time_ms": search_time_ms,
                 "doc_types": [dt.value for dt in doc_types],
-            }
+            },
         )
 
         return RAGResult(
@@ -269,13 +279,15 @@ class RAGServiceV2:
         if category:
             filters["category"] = category
 
-        result = await self.search(RAGQuery(
-            query=query,
-            tenant_id=tenant_id,
-            document_types=[DocumentType.PRODUCT],
-            top_k=top_k,
-            filters=filters,
-        ))
+        result = await self.search(
+            RAGQuery(
+                query=query,
+                tenant_id=tenant_id,
+                document_types=[DocumentType.PRODUCT],
+                top_k=top_k,
+                filters=filters,
+            )
+        )
         return result.documents
 
     async def search_faqs(
@@ -285,12 +297,14 @@ class RAGServiceV2:
         top_k: int = 3,
     ) -> List[Document]:
         """Recherche de FAQs"""
-        result = await self.search(RAGQuery(
-            query=query,
-            tenant_id=tenant_id,
-            document_types=[DocumentType.FAQ],
-            top_k=top_k,
-        ))
+        result = await self.search(
+            RAGQuery(
+                query=query,
+                tenant_id=tenant_id,
+                document_types=[DocumentType.FAQ],
+                top_k=top_k,
+            )
+        )
         return result.documents
 
     async def search_policies(
@@ -300,12 +314,14 @@ class RAGServiceV2:
         top_k: int = 2,
     ) -> List[Document]:
         """Recherche de politiques"""
-        result = await self.search(RAGQuery(
-            query=query,
-            tenant_id=tenant_id,
-            document_types=[DocumentType.POLICY],
-            top_k=top_k,
-        ))
+        result = await self.search(
+            RAGQuery(
+                query=query,
+                tenant_id=tenant_id,
+                document_types=[DocumentType.POLICY],
+                top_k=top_k,
+            )
+        )
         return result.documents
 
     # =========================================================================
@@ -343,7 +359,9 @@ class RAGServiceV2:
 
             # Construire le texte selon le type
             if doc_type == DocumentType.PRODUCT:
-                text = f"{doc.get('name', '')} {doc.get('description', '')} {doc.get('category', '')}"
+                text = (
+                    f"{doc.get('name', '')} {doc.get('description', '')} {doc.get('category', '')}"
+                )
             elif doc_type == DocumentType.FAQ:
                 text = f"{doc.get('question', '')} {doc.get('answer', '')}"
             elif doc_type == DocumentType.POLICY:
@@ -360,7 +378,9 @@ class RAGServiceV2:
 
             # Ajouter autres metadata (sauf tenant_id qui est déjà défini)
             for k, v in doc.items():
-                if k not in ("id", "embedding", "tenant_id") and isinstance(v, (str, int, float, bool)):
+                if k not in ("id", "embedding", "tenant_id") and isinstance(
+                    v, (str, int, float, bool)
+                ):
                     metadata[k] = v
 
             texts.append(text)
@@ -380,7 +400,7 @@ class RAGServiceV2:
 
         logger.info(
             f"Indexed {len(documents)} {doc_type.value} documents",
-            extra={"tenant_id": tenant_id, "count": len(documents)}
+            extra={"tenant_id": tenant_id, "count": len(documents)},
         )
 
         return len(documents)
@@ -404,7 +424,7 @@ class RAGServiceV2:
             collection.delete(ids=full_ids)
             logger.info(
                 f"Deleted {len(document_ids)} documents",
-                extra={"tenant_id": tenant_id, "doc_type": doc_type.value}
+                extra={"tenant_id": tenant_id, "doc_type": doc_type.value},
             )
             return len(document_ids)
         except Exception as e:
@@ -431,12 +451,9 @@ class RAGServiceV2:
 
             try:
                 # Supprimer par filtre metadata
-                collection.delete(
-                    where={"tenant_id": tenant_id}
-                )
+                collection.delete(where={"tenant_id": tenant_id})
                 logger.info(
-                    f"Deleted all {dt.value} documents for tenant",
-                    extra={"tenant_id": tenant_id}
+                    f"Deleted all {dt.value} documents for tenant", extra={"tenant_id": tenant_id}
                 )
                 total_deleted += 1  # ChromaDB ne retourne pas le count
             except Exception as e:
@@ -504,4 +521,3 @@ __all__ = [
     "DocumentType",
     "COLLECTION_NAMES",
 ]
-

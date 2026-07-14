@@ -38,21 +38,19 @@ Usage:
 import asyncio
 import logging
 import signal
-from typing import Dict, Any, Optional
-from datetime import datetime
+from typing import Any, Dict, Optional
 
 import redis.asyncio as redis
 
-from app.services.message_queue.reliable_queue import (
-    QueueWorker,
-    QueueConfig,
-    Job,
-    StreamName,
-    DLQManager,
-)
-from app.domain.services.shared.rag_service_v2 import RAGServiceV2, DocumentType
-from app.domain.services.shared.llm_gateway import LLMGateway
 from app.core.config.settings import settings
+from app.domain.services.shared.llm_gateway import LLMGateway
+from app.domain.services.shared.rag_service_v2 import DocumentType, RAGServiceV2
+from app.services.message_queue.reliable_queue import (
+    Job,
+    QueueConfig,
+    QueueWorker,
+    StreamName,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +58,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # JOB HANDLERS
 # =============================================================================
+
 
 class EmbeddingJobHandler:
     """Handler pour les jobs d'embedding"""
@@ -81,14 +80,14 @@ class EmbeddingJobHandler:
             return {"status": "skipped", "reason": "empty_documents"}
 
         logger.info(
-            f"Processing embedding job",
+            "Processing embedding job",
             extra={
                 "job_id": job.id,
                 "tenant_id": tenant_id,
                 "document_type": document_type.value,
                 "document_count": len(documents),
                 "operation": operation,
-            }
+            },
         )
 
         if operation == "upsert":
@@ -132,16 +131,15 @@ class CatalogSyncJobHandler:
 
         platform = payload.get("platform", "prestashop")
         sync_type = payload.get("sync_type", "incremental")
-        source_url = payload.get("source_url", "")
 
         logger.info(
-            f"Processing catalog sync job",
+            "Processing catalog sync job",
             extra={
                 "job_id": job.id,
                 "tenant_id": tenant_id,
                 "platform": platform,
                 "sync_type": sync_type,
-            }
+            },
         )
 
         # TODO: Implémenter la vraie synchronisation avec l'API PrestaShop/Shopify
@@ -173,13 +171,13 @@ class BulkOperationJobHandler:
         items = payload.get("items", [])
 
         logger.info(
-            f"Processing bulk operation job",
+            "Processing bulk operation job",
             extra={
                 "job_id": job.id,
                 "tenant_id": tenant_id,
                 "operation_type": operation_type,
                 "item_count": len(items),
-            }
+            },
         )
 
         # Dispatch selon le type d'opération
@@ -222,6 +220,7 @@ class BulkOperationJobHandler:
 # =============================================================================
 # MAIN WORKER
 # =============================================================================
+
 
 class SyncWorkerManager:
     """
@@ -339,6 +338,7 @@ class SyncWorkerManager:
 # ENTRYPOINT
 # =============================================================================
 
+
 async def main():
     """Point d'entrée du worker"""
     from app.core.logging.config import setup_logging
@@ -349,8 +349,8 @@ async def main():
     logger.info("=" * 60)
 
     # Configuration
-    redis_url = getattr(settings, 'redis', None)
-    if redis_url and hasattr(redis_url, 'url'):
+    redis_url = getattr(settings, "redis", None)
+    if redis_url and hasattr(redis_url, "url"):
         redis_url = redis_url.url
     else:
         redis_url = "redis://localhost:6379/0"
@@ -358,7 +358,6 @@ async def main():
     # Créer le LLM Gateway pour les embeddings
     llm_gateway = None
     try:
-        from app.core.config.settings import settings
         if settings.llm.openai_api_key:
             llm_gateway = LLMGateway(
                 openai_api_key=settings.llm.openai_api_key,
@@ -389,4 +388,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

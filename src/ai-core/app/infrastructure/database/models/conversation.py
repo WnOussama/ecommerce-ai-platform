@@ -5,20 +5,23 @@ Une conversation = une session de chat avec un utilisateur.
 Contient plusieurs messages.
 """
 
-from sqlalchemy import Column, String, ForeignKey, Index, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
 import enum
+
+from sqlalchemy import Column, ForeignKey, Index, String
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
 
 from app.infrastructure.database.base import (
     Base,
-    UUIDMixin,
     TimestampMixin,
+    UUIDMixin,
 )
 
 
 class ConversationStatus(enum.Enum):
     """Statut d'une conversation."""
+
     ACTIVE = "active"
     RESOLVED = "resolved"
     ESCALATED = "escalated"
@@ -40,6 +43,7 @@ class Conversation(Base, UUIDMixin, TimestampMixin):
         extra_data: Données contextuelles (JSONB)
         ended_at: Date de fin (null si active)
     """
+
     __tablename__ = "conversations"
 
     # Relation tenant
@@ -85,12 +89,10 @@ class Conversation(Base, UUIDMixin, TimestampMixin):
         Index("idx_conversation_user_identifier", "tenant_id", "user_identifier"),
         Index("idx_conversation_status", "tenant_id", "status"),
         Index("idx_conversation_created_at", "tenant_id", "created_at"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
-        return f"<Conversation(id={self.id}, tenant_id={self.tenant_id}, status={self.status.value})>"
-
-
-
-
+        return (
+            f"<Conversation(id={self.id}, tenant_id={self.tenant_id}, status={self.status.value})>"
+        )

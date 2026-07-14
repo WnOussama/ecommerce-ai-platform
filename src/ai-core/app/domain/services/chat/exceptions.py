@@ -6,7 +6,7 @@ Chaque exception contient les informations nécessaires pour le logging
 et la réponse API appropriée.
 """
 
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 
@@ -183,4 +183,3 @@ class PersistenceError(ChatServiceError):
         )
         self.operation = operation
         self.original_error = original_error
-

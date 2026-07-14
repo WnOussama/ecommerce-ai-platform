@@ -46,7 +46,7 @@ import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Dict, Any, List, Optional, Callable, Awaitable, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 logger = logging.getLogger(__name__)
@@ -56,17 +56,20 @@ logger = logging.getLogger(__name__)
 # TYPES
 # =============================================================================
 
+
 class RiskLevel(str, Enum):
     """Niveau de risque d'une action admin"""
-    LOW = "low"           # Analytics, reports (auto-execute)
-    MEDIUM = "medium"     # Suggestions, drafts (confirmation simple)
-    HIGH = "high"         # Bulk ops, prix (double confirmation + délai)
-    CRITICAL = "critical" # Suppressions massives (human approval obligatoire)
+
+    LOW = "low"  # Analytics, reports (auto-execute)
+    MEDIUM = "medium"  # Suggestions, drafts (confirmation simple)
+    HIGH = "high"  # Bulk ops, prix (double confirmation + délai)
+    CRITICAL = "critical"  # Suppressions massives (human approval obligatoire)
 
 
 class ActionStatus(str, Enum):
     """Statut d'une action admin"""
-    DRAFT = "draft"                     # Dry run créé
+
+    DRAFT = "draft"  # Dry run créé
     PENDING_CONFIRMATION = "pending_confirmation"
     PENDING_HUMAN_APPROVAL = "pending_human_approval"
     APPROVED = "approved"
@@ -80,19 +83,22 @@ class ActionStatus(str, Enum):
 
 class ApprovalType(str, Enum):
     """Type d'approbation requise"""
-    NONE = "none"           # Pas d'approbation (LOW risk)
-    SIMPLE = "simple"       # Confirmation simple (MEDIUM risk)
-    DOUBLE = "double"       # Double confirmation + délai (HIGH risk)
-    HUMAN = "human"         # Approbation humaine obligatoire (CRITICAL)
+
+    NONE = "none"  # Pas d'approbation (LOW risk)
+    SIMPLE = "simple"  # Confirmation simple (MEDIUM risk)
+    DOUBLE = "double"  # Double confirmation + délai (HIGH risk)
+    HUMAN = "human"  # Approbation humaine obligatoire (CRITICAL)
 
 
 # =============================================================================
 # ACTION DEFINITIONS
 # =============================================================================
 
+
 @dataclass
 class ActionDefinition:
     """Définition d'une action admin avec ses contraintes de sécurité"""
+
     name: str
     description: str
     risk_level: RiskLevel
@@ -129,7 +135,6 @@ ACTION_DEFINITIONS: Dict[str, ActionDefinition] = {
         approval_type=ApprovalType.NONE,
         supports_rollback=False,
     ),
-
     # MEDIUM RISK - Simple confirmation
     "suggest_marketing_strategy": ActionDefinition(
         name="suggest_marketing_strategy",
@@ -145,7 +150,6 @@ ACTION_DEFINITIONS: Dict[str, ActionDefinition] = {
         approval_type=ApprovalType.SIMPLE,
         max_affected_items=10000,
     ),
-
     # HIGH RISK - Double confirmation + délai
     "generate_bulk_coupons": ActionDefinition(
         name="generate_bulk_coupons",
@@ -167,7 +171,6 @@ ACTION_DEFINITIONS: Dict[str, ActionDefinition] = {
         max_value_change_percent=25.0,
         requires_reason=True,
     ),
-
     # CRITICAL RISK - Human approval obligatoire
     "delete_customer_data": ActionDefinition(
         name="delete_customer_data",
@@ -192,9 +195,11 @@ ACTION_DEFINITIONS: Dict[str, ActionDefinition] = {
 # DRY RUN RESULT
 # =============================================================================
 
+
 @dataclass
 class DryRunResult:
     """Résultat d'une simulation (dry run)"""
+
     action_id: str
     action_name: str
 
@@ -244,9 +249,11 @@ class DryRunResult:
 # PENDING ACTION
 # =============================================================================
 
+
 @dataclass
 class PendingAction:
     """Action en attente de confirmation/approbation"""
+
     id: str = field(default_factory=lambda: str(uuid4()))
     tenant_id: str = ""
 
@@ -287,6 +294,7 @@ class PendingAction:
 # =============================================================================
 # ADMIN AI SAFETY SYSTEM
 # =============================================================================
+
 
 class AdminAISafetySystem:
     """
@@ -363,7 +371,7 @@ class AdminAISafetySystem:
                 "initiated_by": initiated_by,
                 "affected_items": dry_run.affected_items_count,
                 "risk_level": dry_run.risk_level.value,
-            }
+            },
         )
 
         return dry_run
@@ -545,8 +553,10 @@ class AdminAISafetySystem:
                 "action_name": pending.action_name,
                 "tenant_id": tenant_id,
                 "approval_type": pending.approval_type.value,
-                "can_execute_at": pending.can_execute_at.isoformat() if pending.can_execute_at else None,
-            }
+                "can_execute_at": pending.can_execute_at.isoformat()
+                if pending.can_execute_at
+                else None,
+            },
         )
 
         return pending
@@ -589,7 +599,7 @@ class AdminAISafetySystem:
                     extra={
                         "action_id": action_id,
                         "confirmation_count": pending.confirmation_count,
-                    }
+                    },
                 )
                 return pending, None  # Attendre la 2ème confirmation
 
@@ -607,7 +617,7 @@ class AdminAISafetySystem:
                 "action_id": action_id,
                 "action_name": pending.action_name,
                 "confirmed_by": confirmed_by,
-            }
+            },
         )
 
         return pending, None
@@ -656,7 +666,7 @@ class AdminAISafetySystem:
                 "action_name": pending.action_name,
                 "approver_id": approver_id,
                 "initiated_by": pending.initiated_by,
-            }
+            },
         )
 
         return pending, None
@@ -690,7 +700,7 @@ class AdminAISafetySystem:
                 "action_name": pending.action_name,
                 "rejector_id": rejector_id,
                 "reason": rejection_reason,
-            }
+            },
         )
 
         return pending, None
@@ -700,8 +710,7 @@ class AdminAISafetySystem:
         return [
             self._pending_actions[aid]
             for aid in self._human_approval_queue
-            if self._pending_actions.get(aid) and
-               self._pending_actions[aid].tenant_id == tenant_id
+            if self._pending_actions.get(aid) and self._pending_actions[aid].tenant_id == tenant_id
         ]
 
     # =========================================================================
@@ -751,7 +760,7 @@ class AdminAISafetySystem:
                     "action_id": action_id,
                     "action_name": pending.action_name,
                     "tenant_id": pending.tenant_id,
-                }
+                },
             )
 
             return result, None
@@ -765,7 +774,7 @@ class AdminAISafetySystem:
                     "action_id": action_id,
                     "action_name": pending.action_name,
                     "error": str(e),
-                }
+                },
             )
 
             return None, str(e)
@@ -810,7 +819,7 @@ class AdminAISafetySystem:
                     "action_name": pending.action_name,
                     "rollback_by": rollback_by,
                     "reason": reason,
-                }
+                },
             )
 
             return True, None
@@ -855,7 +864,7 @@ class AdminAISafetySystem:
             extra={
                 "action_id": pending.id,
                 "tenant_id": pending.tenant_id,
-            }
+            },
         )
 
 
@@ -868,14 +877,11 @@ __all__ = [
     "RiskLevel",
     "ActionStatus",
     "ApprovalType",
-
     # Models
     "ActionDefinition",
     "DryRunResult",
     "PendingAction",
     "ACTION_DEFINITIONS",
-
     # System
     "AdminAISafetySystem",
 ]
-

@@ -346,15 +346,9 @@ class TestRepositoryQueries:
         call_args = mock_session.execute.call_args
         query = call_args[0][0]
 
-<<<<<<< HEAD
-        # Convertir en string et vérifier tenant_id
-        query_str = str(query.compile(compile_kwargs={"literal_binds": False}))
-        assert "tenant_id" in query_str.lower()
-=======
-        # Vérifier que tenant_id est dans la query (sans literal_binds pour éviter erreur UUID)
+        # Vérifier que tenant_id est dans la query
         query_str = str(query)
         assert "tenant_id" in query_str.lower(), "Query should include tenant_id filter"
->>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
 
     @pytest.mark.asyncio
     async def test_get_all_includes_tenant(self, mock_session, tenant_context, tenant_id):

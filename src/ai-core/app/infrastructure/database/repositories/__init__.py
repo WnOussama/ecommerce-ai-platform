@@ -15,10 +15,10 @@ Usage recommandé (UnitOfWork):
 """
 
 from app.infrastructure.database.repositories.base import (
+    CrossTenantAccessError,
     TenantAwareRepository,
     TenantContext,
     TenantIdMissingError,
-    CrossTenantAccessError,
     TenantIsolationError,
 )
 
@@ -27,8 +27,8 @@ from app.infrastructure.database.repositories.conversation_repo import (
     ConversationRepository,
 )
 from app.infrastructure.database.repositories.message_repo import (
-    MessageRepository,
     DuplicateMessageError,
+    MessageRepository,
 )
 
 __all__ = [
@@ -38,7 +38,6 @@ __all__ = [
     "TenantIdMissingError",
     "CrossTenantAccessError",
     "TenantIsolationError",
-
     # New repositories (recommended)
     "ConversationRepository",
     "MessageRepository",

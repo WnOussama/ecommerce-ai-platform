@@ -6,13 +6,19 @@ Multi-tenant avec index optimisés.
 Compatible PostgreSQL.
 """
 
-from datetime import datetime
-from uuid import uuid4
 import uuid
 
 from sqlalchemy import (
-    Column, String, Integer, Float, Boolean, Text, JSON,
-    DateTime, ForeignKey, Index, BigInteger
+    JSON,
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
@@ -33,6 +39,7 @@ class ProductModel(Base):
 
     La clé unique est (tenant_id, external_id) pour permettre l'UPSERT.
     """
+
     __tablename__ = "products"
 
     # Clé primaire
@@ -40,10 +47,7 @@ class ProductModel(Base):
 
     # Multi-tenant
     tenant_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("tenants.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True
+        UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
 
     # ID externe (dans PrestaShop/Shopify/etc)
@@ -89,12 +93,7 @@ class ProductModel(Base):
 
     __table_args__ = (
         # Clé unique pour UPSERT
-        Index(
-            "idx_product_tenant_external",
-            "tenant_id",
-            "external_id",
-            unique=True
-        ),
+        Index("idx_product_tenant_external", "tenant_id", "external_id", unique=True),
         # Recherche par catégorie
         Index("idx_product_tenant_category", "tenant_id", "category_id"),
         # Recherche par état
@@ -105,9 +104,8 @@ class ProductModel(Base):
         Index("idx_product_name", "name"),
         # Recherche par référence
         Index("idx_product_reference", "reference"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
         return f"<Product(id={self.id}, name={self.name}, tenant={self.tenant_id})>"
-

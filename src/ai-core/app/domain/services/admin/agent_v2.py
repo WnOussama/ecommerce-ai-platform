@@ -9,20 +9,22 @@ Caractéristiques STRICTES:
 - Audit logging MANDATORY
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List, Tuple, Union
-from uuid import UUID, uuid4
-from enum import Enum
 import json
 import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple, Union
+from uuid import uuid4
 
 from app.domain.services.shared.llm_gateway import (
-    LLMGateway, LLMRequest, LLMResponse, ResponseFormat
+    LLMGateway,
+    LLMRequest,
+    ResponseFormat,
 )
 from app.domain.services.shared.rag_service import RAGService
 from app.domain.services.shared.security_service import SecurityService
-from app.domain.services.shared.tenant_service import TenantService, Tenant, Feature
+from app.domain.services.shared.tenant_service import Feature, Tenant, TenantService
 
 logger = logging.getLogger(__name__)
 
@@ -31,8 +33,10 @@ logger = logging.getLogger(__name__)
 # TYPES - STRICT DEFINITIONS
 # =============================================================================
 
+
 class AdminCommandType(str, Enum):
     """Types de commandes admin PRÉDÉFINIES (pas d'exécution libre)"""
+
     # Analytics (Read-only, LOW risk)
     GET_SALES_ANALYTICS = "get_sales_analytics"
     GET_CUSTOMER_ANALYTICS = "get_customer_analytics"
@@ -65,14 +69,16 @@ class AdminCommandType(str, Enum):
 
 class RiskLevel(str, Enum):
     """Niveau de risque d'une action"""
-    LOW = "low"           # Analytics, reports
-    MEDIUM = "medium"     # Suggestions, drafts
-    HIGH = "high"         # Modifications prix, bulk ops
-    CRITICAL = "critical" # Suppressions (NON SUPPORTÉ)
+
+    LOW = "low"  # Analytics, reports
+    MEDIUM = "medium"  # Suggestions, drafts
+    HIGH = "high"  # Modifications prix, bulk ops
+    CRITICAL = "critical"  # Suppressions (NON SUPPORTÉ)
 
 
 class ActionStatus(str, Enum):
     """Statut d'une action admin"""
+
     PENDING_CONFIRMATION = "pending_confirmation"
     CONFIRMED = "confirmed"
     EXECUTING = "executing"
@@ -93,7 +99,7 @@ COMMAND_DEFINITIONS: Dict[AdminCommandType, Dict[str, Any]] = {
         "description": "Récupère les analytics de ventes",
         "parameters_schema": {
             "time_range": str,  # "7d", "30d", "90d"
-            "?group_by": str,   # Optional: "day", "week", "month"
+            "?group_by": str,  # Optional: "day", "week", "month"
         },
     },
     AdminCommandType.GET_CUSTOMER_ANALYTICS: {
@@ -177,9 +183,11 @@ COMMAND_DEFINITIONS: Dict[AdminCommandType, Dict[str, Any]] = {
 # RESPONSE SCHEMAS (JSON STRICT)
 # =============================================================================
 
+
 @dataclass
 class AdminCommandRequest:
     """Requête de commande admin - DOIT être structurée"""
+
     command_type: AdminCommandType
     parameters: Dict[str, Any]
 
@@ -193,6 +201,7 @@ class AdminResponse:
     Réponse STRUCTURÉE de l'Admin Agent.
     TOUJOURS en JSON, JAMAIS en texte libre.
     """
+
     # Identification
     action_id: str = field(default_factory=lambda: str(uuid4()))
     command_type: AdminCommandType = AdminCommandType.INVALID
@@ -224,7 +233,9 @@ class AdminResponse:
             "error": self.error,
             "requires_confirmation": self.requires_confirmation,
             "confirmation_token": self.confirmation_token,
-            "confirmation_expires_at": self.confirmation_expires_at.isoformat() if self.confirmation_expires_at else None,
+            "confirmation_expires_at": self.confirmation_expires_at.isoformat()
+            if self.confirmation_expires_at
+            else None,
             "confirmation_details": self.confirmation_details,
             "processing_time_ms": self.processing_time_ms,
         }
@@ -233,6 +244,7 @@ class AdminResponse:
 @dataclass
 class PendingAction:
     """Action en attente de confirmation"""
+
     action_id: str
     command_type: AdminCommandType
     parameters: Dict[str, Any]
@@ -247,6 +259,7 @@ class PendingAction:
 # =============================================================================
 # COMMAND PARSER (NO FREE-FORM EXECUTION)
 # =============================================================================
+
 
 class AdminCommandParser:
     """
@@ -348,6 +361,7 @@ class AdminCommandParser:
 # CONFIRMATION MANAGER
 # =============================================================================
 
+
 class ConfirmationManager:
     """
     Gère le workflow de confirmation OBLIGATOIRE.
@@ -392,17 +406,19 @@ class ConfirmationManager:
         if self._cache:
             await self._cache.set(
                 f"pending_action:{action_id}",
-                json.dumps({
-                    "action_id": action_id,
-                    "command_type": command.command_type.value,
-                    "parameters": command.parameters,
-                    "confirmation_token": confirmation_token,
-                    "expires_at": expires_at.isoformat(),
-                    "tenant_id": tenant_id,
-                    "created_by": admin_user_id,
-                    "risk_level": pending.risk_level.value,
-                    "estimated_impact": estimated_impact,
-                }),
+                json.dumps(
+                    {
+                        "action_id": action_id,
+                        "command_type": command.command_type.value,
+                        "parameters": command.parameters,
+                        "confirmation_token": confirmation_token,
+                        "expires_at": expires_at.isoformat(),
+                        "tenant_id": tenant_id,
+                        "created_by": admin_user_id,
+                        "risk_level": pending.risk_level.value,
+                        "estimated_impact": estimated_impact,
+                    }
+                ),
                 ex=self.CONFIRMATION_EXPIRY_MINUTES * 60,
             )
         else:
@@ -415,7 +431,7 @@ class ConfirmationManager:
                 "command_type": command.command_type.value,
                 "tenant_id": tenant_id,
                 "expires_at": expires_at.isoformat(),
-            }
+            },
         )
 
         return pending
@@ -438,10 +454,7 @@ class ConfirmationManager:
 
         # Vérifier le token
         if pending.confirmation_token != confirmation_token:
-            logger.warning(
-                "Invalid confirmation token",
-                extra={"action_id": action_id}
-            )
+            logger.warning("Invalid confirmation token", extra={"action_id": action_id})
             return None, "Invalid confirmation token"
 
         # Vérifier expiration
@@ -457,7 +470,7 @@ class ConfirmationManager:
                 "action_id": action_id,
                 "command_type": pending.command_type.value,
                 "confirmed_by": admin_user_id,
-            }
+            },
         )
 
         return pending, None
@@ -494,6 +507,7 @@ class ConfirmationManager:
 # AUDIT LOGGER
 # =============================================================================
 
+
 class AdminAuditLogger:
     """
     Logging d'audit MANDATORY pour toutes les actions admin.
@@ -524,13 +538,14 @@ class AdminAuditLogger:
                 "result": result,
                 "error": error,
                 "timestamp": datetime.utcnow().isoformat(),
-            }
+            },
         )
 
 
 # =============================================================================
 # ADMIN AGENT (MAIN CLASS)
 # =============================================================================
+
 
 class AdminAgent:
     """
@@ -604,6 +619,7 @@ RÉPONDS UNIQUEMENT avec ce format JSON:
         5. Log audit (TOUJOURS)
         """
         import time
+
         start_time = time.perf_counter()
 
         # 1. PARSE COMMAND (pas de texte libre!)
@@ -681,7 +697,9 @@ RÉPONDS UNIQUEMENT avec ce format JSON:
             )
 
             if error:
-                return self._create_error_response("confirmation_failed", error, command.command_type)
+                return self._create_error_response(
+                    "confirmation_failed", error, command.command_type
+                )
 
         # 6. EXECUTE COMMAND
         try:
@@ -880,7 +898,9 @@ RÉPONDS UNIQUEMENT avec ce format JSON:
         impacts = {
             AdminCommandType.GENERATE_BULK_COUPONS: {
                 "affected_customers": command.parameters.get("max_count", 0),
-                "estimated_discount_total": command.parameters.get("max_count", 0) * command.parameters.get("discount_percent", 0) * 10,
+                "estimated_discount_total": command.parameters.get("max_count", 0)
+                * command.parameters.get("discount_percent", 0)
+                * 10,
             },
             AdminCommandType.UPDATE_PRODUCT_PRICES: {
                 "affected_products": len(command.parameters.get("product_ids", [])),
@@ -904,4 +924,3 @@ RÉPONDS UNIQUEMENT avec ce format JSON:
             error=error_message,
             data={"error_code": error_code},
         )
-

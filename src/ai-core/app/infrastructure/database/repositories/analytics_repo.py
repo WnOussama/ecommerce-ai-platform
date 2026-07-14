@@ -6,11 +6,11 @@ Table append-only optimisée pour le tracking haute performance.
 """
 
 import logging
-from datetime import datetime, timezone
-from typing import Optional, List
+from datetime import datetime
+from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import select, and_, func
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database.models.analytics import AnalyticsEvent
@@ -87,7 +87,7 @@ class AnalyticsRepository:
                 "event_id": str(event.id),
                 "event_type": event_type,
                 "entity_type": entity_type,
-            }
+            },
         )
 
         return event
@@ -207,4 +207,3 @@ class AnalyticsRepository:
 
         result = await self._session.execute(stmt)
         return result.scalar() or 0
-

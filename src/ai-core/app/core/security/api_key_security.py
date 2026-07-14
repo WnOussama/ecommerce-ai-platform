@@ -32,17 +32,15 @@ Architecture de Sécurité des API Keys:
 └─────────────────────────────────────────────────────────────────────────────────┘
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List, Tuple
-from enum import Enum
-import hmac
 import hashlib
-import secrets
-import base64
-import json
+import hmac
 import logging
 import re
+import secrets
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -51,15 +49,18 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # =============================================================================
 
+
 class APIKeyType(str, Enum):
     """Types d'API keys"""
-    LIVE = "live"      # Production
-    TEST = "test"      # Sandbox/Test
-    ADMIN = "admin"    # Admin operations
+
+    LIVE = "live"  # Production
+    TEST = "test"  # Sandbox/Test
+    ADMIN = "admin"  # Admin operations
 
 
 class APIKeyStatus(str, Enum):
     """Statut d'une API key"""
+
     ACTIVE = "active"
     EXPIRED = "expired"
     REVOKED = "revoked"
@@ -69,15 +70,16 @@ class APIKeyStatus(str, Enum):
 @dataclass
 class APIKeyConfig:
     """Configuration de sécurité des API keys"""
+
     # Expiration
     default_expiry_days: int = 365
     max_expiry_days: int = 730  # 2 ans max
 
     # HMAC
     signature_window_seconds: int = 300  # ±5 min
-    required_headers: List[str] = field(default_factory=lambda: [
-        "X-Timestamp", "X-Signature", "X-API-Key"
-    ])
+    required_headers: List[str] = field(
+        default_factory=lambda: ["X-Timestamp", "X-Signature", "X-API-Key"]
+    )
 
     # Rate limiting
     default_rate_limit_rpm: int = 60
@@ -91,17 +93,19 @@ class APIKeyConfig:
 # API KEY MODEL
 # =============================================================================
 
+
 @dataclass
 class APIKey:
     """Modèle d'API Key sécurisée"""
+
     id: str
     tenant_id: str
     key_type: APIKeyType
 
     # Secrets (jamais stockés en clair)
     key_prefix: str  # Partie visible: sk_live_xxx...
-    key_hash: str    # SHA-256 hash de la clé complète
-    secret_hash: str # Hash du secret pour HMAC
+    key_hash: str  # SHA-256 hash de la clé complète
+    secret_hash: str  # Hash du secret pour HMAC
 
     # Status
     status: APIKeyStatus = APIKeyStatus.ACTIVE
@@ -132,10 +136,7 @@ class APIKey:
 
     @property
     def is_valid(self) -> bool:
-        return (
-            self.status == APIKeyStatus.ACTIVE and
-            not self.is_expired
-        )
+        return self.status == APIKeyStatus.ACTIVE and not self.is_expired
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -155,14 +156,16 @@ class APIKey:
 @dataclass
 class APIKeyWithSecret:
     """API Key avec le secret en clair (retourné uniquement à la création)"""
+
     api_key: APIKey
-    full_key: str      # Clé complète (affichée une seule fois)
-    secret: str        # Secret HMAC (affiché une seule fois)
+    full_key: str  # Clé complète (affichée une seule fois)
+    secret: str  # Secret HMAC (affiché une seule fois)
 
 
 # =============================================================================
 # API KEY GENERATOR
 # =============================================================================
+
 
 class APIKeyGenerator:
     """
@@ -234,7 +237,7 @@ class APIKeyGenerator:
                 "tenant_id": tenant_id,
                 "key_type": key_type.value,
                 "expires_at": expires_at.isoformat(),
-            }
+            },
         )
 
         return APIKeyWithSecret(
@@ -251,7 +254,7 @@ class APIKeyGenerator:
     @classmethod
     def validate_format(cls, key: str) -> Tuple[bool, Optional[str]]:
         """Valide le format d'une API key"""
-        pattern = r'^sk_(live|test|admin)_[a-zA-Z0-9]{2,10}_[a-f0-9]{12}_[A-Za-z0-9_-]{20,}$'
+        pattern = r"^sk_(live|test|admin)_[a-zA-Z0-9]{2,10}_[a-f0-9]{12}_[A-Za-z0-9_-]{20,}$"
 
         if not re.match(pattern, key):
             return False, "Invalid API key format"
@@ -262,6 +265,7 @@ class APIKeyGenerator:
 # =============================================================================
 # HMAC SIGNATURE VALIDATOR
 # =============================================================================
+
 
 class HMACSignatureValidator:
     """
@@ -294,11 +298,7 @@ class HMACSignatureValidator:
         """
         canonical = self._build_canonical_request(timestamp, method, path, body)
 
-        signature = hmac.new(
-            secret.encode(),
-            canonical.encode(),
-            hashlib.sha256
-        ).hexdigest()
+        signature = hmac.new(secret.encode(), canonical.encode(), hashlib.sha256).hexdigest()
 
         return signature
 
@@ -326,9 +326,7 @@ class HMACSignatureValidator:
             return False, f"Timestamp expired (diff: {time_diff}s)"
 
         # 2. Recalculer la signature
-        expected_signature = self.create_signature(
-            secret, timestamp, method, path, body
-        )
+        expected_signature = self.create_signature(secret, timestamp, method, path, body)
 
         # 3. Comparaison timing-safe
         if not hmac.compare_digest(provided_signature, expected_signature):
@@ -361,6 +359,7 @@ class HMACSignatureValidator:
 # =============================================================================
 # API KEY MANAGER
 # =============================================================================
+
 
 class APIKeyManager:
     """
@@ -424,7 +423,7 @@ class APIKeyManager:
                 "key_id": key_with_secret.api_key.id,
                 "tenant_id": tenant_id,
                 "created_by": created_by,
-            }
+            },
         )
 
         return key_with_secret
@@ -466,8 +465,7 @@ class APIKeyManager:
         if stored_key.ip_whitelist and client_ip:
             if client_ip not in stored_key.ip_whitelist:
                 logger.warning(
-                    "IP not in whitelist",
-                    extra={"key_id": stored_key.id, "client_ip": client_ip}
+                    "IP not in whitelist", extra={"key_id": stored_key.id, "client_ip": client_ip}
                 )
                 return None, "IP not authorized"
 
@@ -527,7 +525,7 @@ class APIKeyManager:
                 "new_key_id": new_key.api_key.id,
                 "tenant_id": old_key.tenant_id,
                 "rotated_by": rotated_by,
-            }
+            },
         )
 
         return new_key
@@ -559,7 +557,7 @@ class APIKeyManager:
                 "tenant_id": key.tenant_id,
                 "revoked_by": revoked_by,
                 "reason": reason,
-            }
+            },
         )
 
         return True
@@ -618,6 +616,7 @@ class APIKeyManager:
 # CLIENT SDK HELPER
 # =============================================================================
 
+
 class APIClientSigner:
     """
     Helper pour les clients API pour signer les requêtes.
@@ -671,15 +670,12 @@ __all__ = [
     "APIKeyType",
     "APIKeyStatus",
     "APIKeyConfig",
-
     # Models
     "APIKey",
     "APIKeyWithSecret",
-
     # Services
     "APIKeyGenerator",
     "HMACSignatureValidator",
     "APIKeyManager",
     "APIClientSigner",
 ]
-

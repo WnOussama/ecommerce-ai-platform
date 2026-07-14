@@ -12,10 +12,9 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, List, Dict, Any, Protocol, Sequence
-from enum import Enum
+from typing import Any, Dict, List, Optional, Protocol
 
-from sqlalchemy import select, update, delete, and_, or_, func
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +25,7 @@ logger = logging.getLogger(__name__)
 # DATA MODELS
 # =============================================================================
 
+
 @dataclass
 class ProductData:
     """
@@ -34,6 +34,7 @@ class ProductData:
     Utilisé comme DTO entre le service et le repository.
     Découplé du modèle PrestaShop et du modèle SQLAlchemy.
     """
+
     external_id: int
     name: str
     price: Decimal
@@ -79,6 +80,7 @@ class ProductData:
 @dataclass
 class ProductFilter:
     """Filtres pour la recherche de produits."""
+
     active_only: bool = True
     in_stock_only: bool = False
     category_id: Optional[int] = None
@@ -158,6 +160,7 @@ class ProductRepositoryProtocol(Protocol):
 # =============================================================================
 # SQLALCHEMY REPOSITORY
 # =============================================================================
+
 
 class ProductRepository:
     """
@@ -317,7 +320,7 @@ class ProductRepository:
                 "total": len(products),
                 "created": created_count,
                 "updated": updated_count,
-            }
+            },
         )
 
         return (created_count, updated_count)
@@ -333,10 +336,7 @@ class ProductRepository:
         external_ids = [str(p.external_id) for p in products]
 
         stmt = select(ProductModel.external_id).where(
-            and_(
-                ProductModel.tenant_id == tenant_id,
-                ProductModel.external_id.in_(external_ids)
-            )
+            and_(ProductModel.tenant_id == tenant_id, ProductModel.external_id.in_(external_ids))
         )
 
         result = await self._session.execute(stmt)
@@ -360,10 +360,7 @@ class ProductRepository:
         from app.infrastructure.database.models.product import ProductModel
 
         stmt = select(ProductModel).where(
-            and_(
-                ProductModel.tenant_id == tenant_id,
-                ProductModel.external_id == str(external_id)
-            )
+            and_(ProductModel.tenant_id == tenant_id, ProductModel.external_id == str(external_id))
         )
 
         result = await self._session.execute(stmt)
@@ -397,7 +394,7 @@ class ProductRepository:
 
         # Appliquer les filtres
         if filters.active_only:
-            stmt = stmt.where(ProductModel.active == True)
+            stmt = stmt.where(ProductModel.active.is_(True))
 
         if filters.in_stock_only:
             stmt = stmt.where(ProductModel.quantity > 0)
@@ -451,12 +448,10 @@ class ProductRepository:
 
         filters = filters or ProductFilter()
 
-        stmt = select(func.count(ProductModel.id)).where(
-            ProductModel.tenant_id == tenant_id
-        )
+        stmt = select(func.count(ProductModel.id)).where(ProductModel.tenant_id == tenant_id)
 
         if filters.active_only:
-            stmt = stmt.where(ProductModel.active == True)
+            stmt = stmt.where(ProductModel.active.is_(True))
 
         if filters.in_stock_only:
             stmt = stmt.where(ProductModel.quantity > 0)
@@ -495,7 +490,7 @@ class ProductRepository:
             # Si liste vide, ne rien supprimer (sécurité)
             logger.warning(
                 "delete_products_not_in_list called with empty list, skipping",
-                extra={"tenant_id": tenant_id}
+                extra={"tenant_id": tenant_id},
             )
             return 0
 
@@ -515,17 +510,14 @@ class ProductRepository:
                         "current_count": current_count,
                         "keep_count": keep_count,
                         "delete_ratio": round(delete_ratio * 100, 1),
-                    }
+                    },
                 )
                 return 0
 
         str_ids = [str(eid) for eid in external_ids]
 
         stmt = delete(ProductModel).where(
-            and_(
-                ProductModel.tenant_id == tenant_id,
-                ProductModel.external_id.notin_(str_ids)
-            )
+            and_(ProductModel.tenant_id == tenant_id, ProductModel.external_id.notin_(str_ids))
         )
 
         result = await self._session.execute(stmt)
@@ -539,7 +531,7 @@ class ProductRepository:
                 extra={
                     "tenant_id": tenant_id,
                     "deleted_count": deleted_count,
-                }
+                },
             )
 
         return deleted_count
@@ -552,9 +544,7 @@ class ProductRepository:
         """
         from app.infrastructure.database.models.product import ProductModel
 
-        stmt = select(ProductModel.external_id).where(
-            ProductModel.tenant_id == tenant_id
-        )
+        stmt = select(ProductModel.external_id).where(ProductModel.tenant_id == tenant_id)
 
         result = await self._session.execute(stmt)
         return [row[0] for row in result.fetchall()]
@@ -585,6 +575,7 @@ class ProductRepository:
 # =============================================================================
 # IN-MEMORY REPOSITORY (FOR TESTING)
 # =============================================================================
+
 
 class InMemoryProductRepository:
     """
@@ -669,7 +660,7 @@ class InMemoryProductRepository:
             products = [p for p in products if p.category_id == filters.category_id]
 
         # Pagination
-        products = products[filters.offset:filters.offset + filters.limit]
+        products = products[filters.offset : filters.offset + filters.limit]
 
         return products
 
@@ -710,10 +701,7 @@ class InMemoryProductRepository:
             return 0
 
         str_ids = {str(eid) for eid in external_ids}
-        to_delete = [
-            eid for eid in self._products[tenant_id]
-            if eid not in str_ids
-        ]
+        to_delete = [eid for eid in self._products[tenant_id] if eid not in str_ids]
 
         for eid in to_delete:
             del self._products[tenant_id][eid]
@@ -723,7 +711,3 @@ class InMemoryProductRepository:
     async def get_all_external_ids(self, tenant_id: str) -> List[str]:
         """Récupère tous les IDs externes."""
         return list(self._products.get(tenant_id, {}).keys())
-
-
-
-

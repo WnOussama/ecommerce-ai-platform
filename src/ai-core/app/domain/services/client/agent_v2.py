@@ -9,19 +9,21 @@ Caractéristiques:
 - Pas d'exécution libre - actions prédéfinies uniquement
 """
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Tuple
-from uuid import UUID, uuid4
 from enum import Enum
-import logging
+from typing import Any, Dict, List, Optional, Tuple
+from uuid import uuid4
 
 from app.domain.services.shared.llm_gateway import (
-    LLMGateway, LLMRequest, LLMResponse, ResponseFormat
+    LLMGateway,
+    LLMRequest,
+    ResponseFormat,
 )
-from app.domain.services.shared.rag_service import RAGService, RAGQuery, DocumentType
-from app.domain.services.shared.security_service import SecurityService, ThreatLevel
-from app.domain.services.shared.tenant_service import TenantService, Tenant, Feature
+from app.domain.services.shared.rag_service import RAGService
+from app.domain.services.shared.security_service import SecurityService
+from app.domain.services.shared.tenant_service import Feature, Tenant, TenantService
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +32,10 @@ logger = logging.getLogger(__name__)
 # TYPES
 # =============================================================================
 
+
 class ClientIntent(str, Enum):
     """Intentions détectables pour le client agent"""
+
     GREETING = "greeting"
     PRODUCT_SEARCH = "product_search"
     PRODUCT_INFO = "product_info"
@@ -49,17 +53,19 @@ class ClientIntent(str, Enum):
 
 class ClientActionType(str, Enum):
     """Actions que le Client Agent peut effectuer (LIMITÉES)"""
-    RESPOND = "respond"              # Répondre en texte
+
+    RESPOND = "respond"  # Répondre en texte
     SHOW_PRODUCTS = "show_products"  # Afficher des produits
-    SHOW_FAQ = "show_faq"            # Afficher une FAQ
+    SHOW_FAQ = "show_faq"  # Afficher une FAQ
     GENERATE_COUPON = "generate_coupon"  # Générer un coupon
-    REDIRECT = "redirect"            # Rediriger vers une page
-    ESCALATE = "escalate"            # Escalader à un humain
+    REDIRECT = "redirect"  # Rediriger vers une page
+    ESCALATE = "escalate"  # Escalader à un humain
 
 
 @dataclass
 class ClientAction:
     """Action à effectuer par le client frontend"""
+
     type: ClientActionType
     data: Dict[str, Any] = field(default_factory=dict)
     priority: int = 0  # 0=normal, 1=high
@@ -68,9 +74,10 @@ class ClientAction:
 @dataclass
 class ClientResponse:
     """Réponse complète du Client Agent"""
-    message: str                            # Réponse en langage naturel
-    intent: ClientIntent                    # Intention détectée
-    confidence: float                       # Confiance 0-1
+
+    message: str  # Réponse en langage naturel
+    intent: ClientIntent  # Intention détectée
+    confidence: float  # Confiance 0-1
     actions: List[ClientAction] = field(default_factory=list)
     suggestions: List[str] = field(default_factory=list)  # Suggestions de relance
 
@@ -87,6 +94,7 @@ class ClientResponse:
 @dataclass
 class ConversationContext:
     """Contexte de la conversation courante"""
+
     tenant_id: str
     conversation_id: str
     customer_id: Optional[str] = None
@@ -112,6 +120,7 @@ class ConversationContext:
 # INTENT CLASSIFIER
 # =============================================================================
 
+
 class ClientIntentClassifier:
     """
     Classifieur d'intention pour messages client.
@@ -119,43 +128,82 @@ class ClientIntentClassifier:
     """
 
     INTENT_PATTERNS = {
-        ClientIntent.GREETING: [
-            "bonjour", "salut", "hello", "hi", "bonsoir", "hey", "coucou"
-        ],
-        ClientIntent.GOODBYE: [
-            "au revoir", "bye", "merci", "à bientôt", "ciao", "goodbye"
-        ],
+        ClientIntent.GREETING: ["bonjour", "salut", "hello", "hi", "bonsoir", "hey", "coucou"],
+        ClientIntent.GOODBYE: ["au revoir", "bye", "merci", "à bientôt", "ciao", "goodbye"],
         ClientIntent.PRODUCT_SEARCH: [
-            "cherche", "recherche", "trouver", "avez-vous", "je veux",
-            "looking for", "find", "search"
+            "cherche",
+            "recherche",
+            "trouver",
+            "avez-vous",
+            "je veux",
+            "looking for",
+            "find",
+            "search",
         ],
         ClientIntent.ORDER_STATUS: [
-            "commande", "order", "suivi", "tracking", "livraison",
-            "où est", "statut", "expédié"
+            "commande",
+            "order",
+            "suivi",
+            "tracking",
+            "livraison",
+            "où est",
+            "statut",
+            "expédié",
         ],
         ClientIntent.RETURN_REQUEST: [
-            "retour", "rembours", "échange", "renvoyer", "return",
-            "refund", "défectueux", "ne fonctionne pas"
+            "retour",
+            "rembours",
+            "échange",
+            "renvoyer",
+            "return",
+            "refund",
+            "défectueux",
+            "ne fonctionne pas",
         ],
         ClientIntent.SHIPPING_INFO: [
-            "délai", "livraison", "frais de port", "shipping",
-            "expédition", "combien de temps"
+            "délai",
+            "livraison",
+            "frais de port",
+            "shipping",
+            "expédition",
+            "combien de temps",
         ],
         ClientIntent.RECOMMENDATION: [
-            "recommand", "suggér", "conseil", "meilleur", "populaire",
-            "similar", "comme", "alternative"
+            "recommand",
+            "suggér",
+            "conseil",
+            "meilleur",
+            "populaire",
+            "similar",
+            "comme",
+            "alternative",
         ],
         ClientIntent.COUPON_REQUEST: [
-            "code promo", "réduction", "coupon", "remise",
-            "discount", "promotion", "offre"
+            "code promo",
+            "réduction",
+            "coupon",
+            "remise",
+            "discount",
+            "promotion",
+            "offre",
         ],
         ClientIntent.COMPLAINT: [
-            "problème", "plainte", "mécontent", "déçu",
-            "inacceptable", "nul", "horrible"
+            "problème",
+            "plainte",
+            "mécontent",
+            "déçu",
+            "inacceptable",
+            "nul",
+            "horrible",
         ],
         ClientIntent.FAQ: [
-            "comment", "pourquoi", "qu'est-ce", "c'est quoi",
-            "how", "what is", "can i"
+            "comment",
+            "pourquoi",
+            "qu'est-ce",
+            "c'est quoi",
+            "how",
+            "what is",
+            "can i",
         ],
     }
 
@@ -202,6 +250,7 @@ class ClientIntentClassifier:
 # OUTPUT GUARDRAILS
 # =============================================================================
 
+
 class ClientOutputGuardrails:
     """
     Guardrails STRICTS pour les outputs du Client Agent.
@@ -245,17 +294,14 @@ class ClientOutputGuardrails:
         import re
 
         # 1. Valider le message
-        output_check = security_service.validate_output(
-            response.message,
-            agent_type="client"
-        )
+        output_check = security_service.validate_output(response.message, agent_type="client")
 
         if not output_check.is_valid:
             response.message = output_check.filtered_output
 
         # 2. Tronquer si trop long
         if len(response.message) > self.MAX_RESPONSE_LENGTH:
-            response.message = response.message[:self.MAX_RESPONSE_LENGTH] + "..."
+            response.message = response.message[: self.MAX_RESPONSE_LENGTH] + "..."
 
         # 3. Filtrer patterns interdits
         for pattern in self.FORBIDDEN_PATTERNS:
@@ -263,8 +309,7 @@ class ClientOutputGuardrails:
 
         # 4. Valider les actions
         response.actions = [
-            action for action in response.actions
-            if action.type in self.ALLOWED_ACTIONS
+            action for action in response.actions if action.type in self.ALLOWED_ACTIONS
         ]
 
         # 5. Limiter le nombre de produits affichés
@@ -272,11 +317,11 @@ class ClientOutputGuardrails:
             if action.type == ClientActionType.SHOW_PRODUCTS:
                 products = action.data.get("products", [])
                 if len(products) > self.MAX_PRODUCTS_SHOWN:
-                    action.data["products"] = products[:self.MAX_PRODUCTS_SHOWN]
+                    action.data["products"] = products[: self.MAX_PRODUCTS_SHOWN]
 
         # 6. Limiter les suggestions
         if len(response.suggestions) > self.MAX_SUGGESTIONS:
-            response.suggestions = response.suggestions[:self.MAX_SUGGESTIONS]
+            response.suggestions = response.suggestions[: self.MAX_SUGGESTIONS]
 
         # 7. S'assurer du vouvoiement (basique)
         response.message = self._ensure_formal_tone(response.message)
@@ -292,6 +337,7 @@ class ClientOutputGuardrails:
             (r"\btes\b", "vos"),
         ]
         import re
+
         for pattern, replacement in replacements:
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
         return text
@@ -300,6 +346,7 @@ class ClientOutputGuardrails:
 # =============================================================================
 # CLIENT AGENT (MAIN CLASS)
 # =============================================================================
+
 
 class ClientAgent:
     """
@@ -365,6 +412,7 @@ Propose des suggestions pertinentes quand approprié.
         Traite un message client et génère une réponse.
         """
         import time
+
         start_time = time.perf_counter()
 
         # 1. SECURITY CHECK (obligatoire)
@@ -380,7 +428,7 @@ Propose des suggestions pertinentes quand approprié.
                 extra={
                     "tenant_id": context.tenant_id,
                     "threat_level": security_check.threat_level.value,
-                }
+                },
             )
             return self._create_blocked_response(context)
 
@@ -399,7 +447,11 @@ Propose des suggestions pertinentes quand approprié.
         products_context = ""
         policies_context = ""
 
-        if intent in [ClientIntent.PRODUCT_SEARCH, ClientIntent.RECOMMENDATION, ClientIntent.PRODUCT_INFO]:
+        if intent in [
+            ClientIntent.PRODUCT_SEARCH,
+            ClientIntent.RECOMMENDATION,
+            ClientIntent.PRODUCT_INFO,
+        ]:
             products = await self.rag.search_products(
                 tenant_id=context.tenant_id,
                 query=safe_message,
@@ -474,7 +526,7 @@ Propose des suggestions pertinentes quand approprié.
                 "intent": intent.value,
                 "confidence": confidence,
                 "processing_time_ms": response.processing_time_ms,
-            }
+            },
         )
 
         return response
@@ -541,37 +593,51 @@ Propose des suggestions pertinentes quand approprié.
         actions = []
 
         # Action de base: toujours répondre
-        actions.append(ClientAction(
-            type=ClientActionType.RESPOND,
-            data={"text": response_text},
-        ))
+        actions.append(
+            ClientAction(
+                type=ClientActionType.RESPOND,
+                data={"text": response_text},
+            )
+        )
 
         # Actions contextuelles selon l'intent
         if intent == ClientIntent.PRODUCT_SEARCH:
-            actions.append(ClientAction(
-                type=ClientActionType.SHOW_PRODUCTS,
-                data={"query": context.recent_messages[-1]["content"] if context.recent_messages else ""},
-            ))
+            actions.append(
+                ClientAction(
+                    type=ClientActionType.SHOW_PRODUCTS,
+                    data={
+                        "query": context.recent_messages[-1]["content"]
+                        if context.recent_messages
+                        else ""
+                    },
+                )
+            )
 
         elif intent == ClientIntent.RECOMMENDATION:
-            actions.append(ClientAction(
-                type=ClientActionType.SHOW_PRODUCTS,
-                data={"type": "recommended"},
-            ))
+            actions.append(
+                ClientAction(
+                    type=ClientActionType.SHOW_PRODUCTS,
+                    data={"type": "recommended"},
+                )
+            )
 
         elif intent == ClientIntent.COUPON_REQUEST:
             if context.is_returning_customer:
-                actions.append(ClientAction(
-                    type=ClientActionType.GENERATE_COUPON,
-                    data={"reason": "loyalty"},
-                ))
+                actions.append(
+                    ClientAction(
+                        type=ClientActionType.GENERATE_COUPON,
+                        data={"reason": "loyalty"},
+                    )
+                )
 
         elif intent == ClientIntent.COMPLAINT:
-            actions.append(ClientAction(
-                type=ClientActionType.ESCALATE,
-                data={"reason": "complaint", "priority": 1},
-                priority=1,
-            ))
+            actions.append(
+                ClientAction(
+                    type=ClientActionType.ESCALATE,
+                    data={"reason": "complaint", "priority": 1},
+                    priority=1,
+                )
+            )
 
         return actions
 
@@ -585,29 +651,28 @@ Propose des suggestions pertinentes quand approprié.
             ClientIntent.GREETING: [
                 "Voir les nouveautés",
                 "Consulter les promotions",
-                "Besoin d'aide pour choisir?"
+                "Besoin d'aide pour choisir?",
             ],
             ClientIntent.PRODUCT_SEARCH: [
                 "Voir des produits similaires",
                 "Comparer les prix",
-                "Ajouter au panier"
+                "Ajouter au panier",
             ],
             ClientIntent.ORDER_STATUS: [
                 "Suivre une autre commande",
                 "Contacter le support",
-                "Voir mes commandes"
+                "Voir mes commandes",
             ],
             ClientIntent.RECOMMENDATION: [
                 "Voir plus de suggestions",
                 "Filtrer par prix",
-                "Filtrer par catégorie"
+                "Filtrer par catégorie",
             ],
         }
 
-        return suggestions_map.get(intent, [
-            "Poser une autre question",
-            "Voir les produits populaires"
-        ])[:3]
+        return suggestions_map.get(
+            intent, ["Poser une autre question", "Voir les produits populaires"]
+        )[:3]
 
     def _create_blocked_response(self, context: ConversationContext) -> ClientResponse:
         """Crée une réponse pour message bloqué"""
@@ -629,4 +694,3 @@ Propose des suggestions pertinentes quand approprié.
             actions=[ClientAction(type=ClientActionType.RESPOND, data={"error": error})],
             conversation_id=context.conversation_id,
         )
-

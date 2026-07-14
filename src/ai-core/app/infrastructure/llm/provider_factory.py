@@ -5,7 +5,7 @@ LLM Provider Factory - Abstraction multi-provider avec fallback automatique
 import logging
 import os
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any, Union
+from typing import Any, Dict, List, Optional
 
 from app.core.config.settings import settings
 from app.domain.entities.models import LLMUsage
@@ -22,18 +22,13 @@ class BaseLLMProvider(ABC):
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 1000,
-        **kwargs
+        **kwargs,
     ) -> Any:
         """Génère une réponse à partir des messages."""
         pass
 
     @abstractmethod
-    async def chat(
-        self,
-        message: str,
-        context: Optional[str] = None,
-        **kwargs
-    ) -> str:
+    async def chat(self, message: str, context: Optional[str] = None, **kwargs) -> str:
         """Interface simplifiée pour le chat."""
         pass
 
@@ -57,8 +52,8 @@ class OpenAILLMProvider(BaseLLMProvider):
     """Provider OpenAI avec support GPT-4."""
 
     def __init__(self, api_key: str, model: str = "gpt-4-turbo-preview"):
-        from openai import AsyncOpenAI
         import tiktoken
+        from openai import AsyncOpenAI
 
         self.client = AsyncOpenAI(api_key=api_key)
         self.model = model
@@ -76,7 +71,7 @@ class OpenAILLMProvider(BaseLLMProvider):
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 1000,
-        **kwargs
+        **kwargs,
     ) -> Any:
         import time
 
@@ -87,7 +82,7 @@ class OpenAILLMProvider(BaseLLMProvider):
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
-            **kwargs
+            **kwargs,
         )
 
         latency_ms = int((time.time() - start_time) * 1000)
@@ -97,19 +92,14 @@ class OpenAILLMProvider(BaseLLMProvider):
             "usage": LLMUsage(
                 input_tokens=response.usage.prompt_tokens,
                 output_tokens=response.usage.completion_tokens,
-                model=self.model
+                model=self.model,
             ),
             "model": self.model,
             "finish_reason": response.choices[0].finish_reason,
-            "latency_ms": latency_ms
+            "latency_ms": latency_ms,
         }
 
-    async def chat(
-        self,
-        message: str,
-        context: Optional[str] = None,
-        **kwargs
-    ) -> str:
+    async def chat(self, message: str, context: Optional[str] = None, **kwargs) -> str:
         messages = []
         if context:
             messages.append({"role": "system", "content": context})
@@ -181,6 +171,7 @@ class LLMProviderFactory:
     def _create_mock_provider(cls) -> BaseLLMProvider:
         """Crée un MockLLMProvider."""
         from app.infrastructure.llm.mock_provider import MockLLMProvider
+
         logger.info("Creating MockLLMProvider")
         return MockLLMProvider(simulate_latency=True)
 
@@ -215,7 +206,9 @@ class LLMProviderFactory:
             logger.warning(f"Invalid OpenAI configuration: {e}. Falling back to mock provider.")
             return cls._create_mock_provider()
         except (TypeError, AttributeError) as e:
-            logger.warning(f"OpenAI provider initialization error: {e}. Falling back to mock provider.")
+            logger.warning(
+                f"OpenAI provider initialization error: {e}. Falling back to mock provider."
+            )
             return cls._create_mock_provider()
 
     @classmethod
@@ -223,7 +216,11 @@ class LLMProviderFactory:
         """Vérifie si une clé OpenAI semble valide."""
         if not key:
             return False
-        if key.startswith("sk-fake") or key.startswith("sk-test") or key == "sk-your-openai-key-here":
+        if (
+            key.startswith("sk-fake")
+            or key.startswith("sk-test")
+            or key == "sk-your-openai-key-here"
+        ):
             return False
         if not key.startswith("sk-") or len(key) < 20:
             return False
@@ -244,5 +241,3 @@ def get_llm_provider() -> BaseLLMProvider:
         Instance de BaseLLMProvider
     """
     return LLMProviderFactory.get_provider()
-
-

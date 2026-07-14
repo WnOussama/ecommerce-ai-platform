@@ -9,15 +9,15 @@ Exemples:
 - Si client fidèle → message personnalisé
 """
 
-from sqlalchemy import Column, String, Boolean, Integer, ForeignKey, Index, Text
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Boolean, Column, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
 from app.infrastructure.database.base import (
     Base,
-    UUIDMixin,
-    TimestampMixin,
     SoftDeleteMixin,
+    TimestampMixin,
+    UUIDMixin,
 )
 
 
@@ -53,6 +53,7 @@ class Rule(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
             "message": "Voici un code promo..."
         }
     """
+
     __tablename__ = "rules"
 
     # Relation tenant
@@ -101,10 +102,8 @@ class Rule(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         Index("idx_rule_tenant_id", "tenant_id"),
         Index("idx_rule_tenant_active", "tenant_id", "is_active"),
         Index("idx_rule_priority", "tenant_id", "priority"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
         return f"<Rule(id={self.id}, name='{self.name}', is_active={self.is_active})>"
-
-

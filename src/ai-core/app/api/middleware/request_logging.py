@@ -3,8 +3,8 @@ Request Logging Middleware
 Logs all incoming requests and outgoing responses
 """
 
-import time
 import logging
+import time
 import uuid
 from typing import Callable
 
@@ -39,8 +39,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 "path": request.url.path,
                 "query": str(request.query_params),
                 "client_ip": self._get_client_ip(request),
-                "user_agent": request.headers.get("User-Agent", "")[:100]
-            }
+                "user_agent": request.headers.get("User-Agent", "")[:100],
+            },
         )
 
         # Process request
@@ -61,8 +61,8 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                 "method": request.method,
                 "path": request.url.path,
                 "status_code": response.status_code,
-                "duration_ms": round(duration_ms, 2)
-            }
+                "duration_ms": round(duration_ms, 2),
+            },
         )
 
         return response
@@ -83,4 +83,3 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             return request.client.host
 
         return "unknown"
-

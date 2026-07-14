@@ -2,12 +2,13 @@
 Tenants Endpoints - Tenant Management
 """
 
-from fastapi import APIRouter, Request, HTTPException
-from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any
+import logging
 from datetime import datetime
 from enum import Enum
-import logging
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,10 @@ router = APIRouter()
 # SCHEMAS
 # =============================================================================
 
+
 class TenantPlan(str, Enum):
     """Available tenant plans"""
+
     STARTER = "starter"
     PROFESSIONAL = "professional"
     ENTERPRISE = "enterprise"
@@ -27,6 +30,7 @@ class TenantPlan(str, Enum):
 
 class TenantCreate(BaseModel):
     """Request to create a new tenant"""
+
     name: str = Field(..., min_length=1, max_length=100)
     domain: str
     platform: str = "prestashop"
@@ -40,13 +44,14 @@ class TenantCreate(BaseModel):
                 "domain": "maboutique.com",
                 "platform": "prestashop",
                 "plan": "professional",
-                "contact_email": "admin@maboutique.com"
+                "contact_email": "admin@maboutique.com",
             }
         }
 
 
 class TenantResponse(BaseModel):
     """Tenant details response"""
+
     id: str
     name: str
     domain: str
@@ -60,6 +65,7 @@ class TenantResponse(BaseModel):
 
 class TenantUpdate(BaseModel):
     """Request to update a tenant"""
+
     name: Optional[str] = None
     plan: Optional[TenantPlan] = None
     contact_email: Optional[str] = None
@@ -68,6 +74,7 @@ class TenantUpdate(BaseModel):
 
 class APIKeyResponse(BaseModel):
     """API key response"""
+
     api_key: str
     created_at: datetime
     last_used: Optional[datetime] = None
@@ -78,23 +85,16 @@ class APIKeyResponse(BaseModel):
 # ENDPOINTS
 # =============================================================================
 
+
 @router.post("", response_model=TenantResponse)
 @router.post("/", response_model=TenantResponse)
-async def create_tenant(
-    request: Request,
-    body: TenantCreate
-):
+async def create_tenant(request: Request, body: TenantCreate):
     """
     Create a new tenant.
     Returns the tenant details and API key.
     """
     logger.info(
-        "Creating new tenant",
-        extra={
-            "name": body.name,
-            "domain": body.domain,
-            "plan": body.plan
-        }
+        "Creating new tenant", extra={"name": body.name, "domain": body.domain, "plan": body.plan}
     )
 
     # TODO: Implement tenant creation
@@ -107,11 +107,7 @@ async def create_tenant(
         status="active",
         created_at=datetime.utcnow(),
         features=["chatbot", "faq"],
-        limits={
-            "conversations_per_day": 500,
-            "products_indexed": 1000,
-            "api_calls_per_minute": 30
-        }
+        limits={"conversations_per_day": 500, "products_indexed": 1000, "api_calls_per_minute": 30},
     )
 
 
@@ -120,7 +116,7 @@ async def get_current_tenant(request: Request):
     """
     Get current tenant details (based on API key).
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    tenant_id = getattr(request.state, "tenant_id", None)
 
     if not tenant_id:
         raise HTTPException(status_code=401, detail="Tenant context required")
@@ -138,28 +134,22 @@ async def get_current_tenant(request: Request):
         limits={
             "conversations_per_day": 2000,
             "products_indexed": 10000,
-            "api_calls_per_minute": 100
-        }
+            "api_calls_per_minute": 100,
+        },
     )
 
 
 @router.put("/current", response_model=TenantResponse)
-async def update_current_tenant(
-    request: Request,
-    body: TenantUpdate
-):
+async def update_current_tenant(request: Request, body: TenantUpdate):
     """
     Update current tenant settings.
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    tenant_id = getattr(request.state, "tenant_id", None)
 
     if not tenant_id:
         raise HTTPException(status_code=401, detail="Tenant context required")
 
-    logger.info(
-        "Updating tenant",
-        extra={"tenant_id": tenant_id}
-    )
+    logger.info("Updating tenant", extra={"tenant_id": tenant_id})
 
     # TODO: Update tenant
     return TenantResponse(
@@ -171,7 +161,7 @@ async def update_current_tenant(
         status="active",
         created_at=datetime.utcnow(),
         features=["chatbot", "recommendations", "coupons", "faq"],
-        limits={}
+        limits={},
     )
 
 
@@ -180,7 +170,7 @@ async def get_tenant_usage(request: Request):
     """
     Get current tenant usage statistics.
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    tenant_id = getattr(request.state, "tenant_id", None)
 
     if not tenant_id:
         raise HTTPException(status_code=401, detail="Tenant context required")
@@ -194,17 +184,10 @@ async def get_tenant_usage(request: Request):
             "llm_tokens": 450000,
             "llm_cost_usd": 23.45,
             "products_indexed": 2300,
-            "storage_mb": 125
+            "storage_mb": 125,
         },
-        "limits": {
-            "conversations": 2000,
-            "products_indexed": 10000,
-            "api_calls_per_minute": 100
-        },
-        "usage_percentage": {
-            "conversations": 42.5,
-            "products_indexed": 23.0
-        }
+        "limits": {"conversations": 2000, "products_indexed": 10000, "api_calls_per_minute": 100},
+        "usage_percentage": {"conversations": 42.5, "products_indexed": 23.0},
     }
 
 
@@ -214,21 +197,16 @@ async def rotate_api_key(request: Request):
     Rotate the API key for the current tenant.
     Old key becomes invalid immediately.
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    tenant_id = getattr(request.state, "tenant_id", None)
 
     if not tenant_id:
         raise HTTPException(status_code=401, detail="Tenant context required")
 
-    logger.info(
-        "Rotating API key",
-        extra={"tenant_id": tenant_id}
-    )
+    logger.info("Rotating API key", extra={"tenant_id": tenant_id})
 
     # TODO: Generate new API key and invalidate old one
     return APIKeyResponse(
-        api_key="sk_new_placeholder_key",
-        created_at=datetime.utcnow(),
-        status="active"
+        api_key="sk_new_placeholder_key", created_at=datetime.utcnow(), status="active"
     )
 
 
@@ -237,7 +215,7 @@ async def get_tenant_settings(request: Request):
     """
     Get tenant configuration settings.
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    tenant_id = getattr(request.state, "tenant_id", None)
 
     if not tenant_id:
         raise HTTPException(status_code=401, detail="Tenant context required")
@@ -251,32 +229,22 @@ async def get_tenant_settings(request: Request):
             "default_language": "fr",
             "welcome_message": "Bonjour! Comment puis-je vous aider?",
             "llm_model": "gpt-4",
-            "max_response_tokens": 500
-        }
+            "max_response_tokens": 500,
+        },
     }
 
 
 @router.put("/current/settings")
-async def update_tenant_settings(
-    request: Request,
-    settings: Dict[str, Any]
-):
+async def update_tenant_settings(request: Request, settings: Dict[str, Any]):
     """
     Update tenant configuration settings.
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    tenant_id = getattr(request.state, "tenant_id", None)
 
     if not tenant_id:
         raise HTTPException(status_code=401, detail="Tenant context required")
 
-    logger.info(
-        "Updating tenant settings",
-        extra={"tenant_id": tenant_id}
-    )
+    logger.info("Updating tenant settings", extra={"tenant_id": tenant_id})
 
     # TODO: Validate and update settings
-    return {
-        "status": "updated",
-        "settings": settings
-    }
-
+    return {"status": "updated", "settings": settings}

@@ -22,12 +22,11 @@ Usage:
 """
 
 from app.core.monitoring.ai_metrics import (
+    REGISTRY,
     AIMetricsCollector,
     get_metrics_collector,
     get_metrics_endpoint,
-    REGISTRY,
 )
-
 from app.core.monitoring.metrics_middleware import (
     MetricsMiddleware,
     setup_metrics,
@@ -41,11 +40,9 @@ __all__ = [
     "get_metrics_collector",
     "get_metrics_endpoint",
     "REGISTRY",
-
     # Middleware
     "MetricsMiddleware",
     "setup_metrics",
     "track_llm_call",
     "track_rag_query",
 ]
-

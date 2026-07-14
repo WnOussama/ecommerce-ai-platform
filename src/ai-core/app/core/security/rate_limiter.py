@@ -40,13 +40,12 @@ Architecture:
 Algorithme: Sliding Window Log (précis) avec fallback Token Bucket (performant)
 """
 
+import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List, Tuple
 from enum import Enum
-import time
-import asyncio
-import logging
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -55,21 +54,24 @@ logger = logging.getLogger(__name__)
 # CONFIGURATION
 # =============================================================================
 
+
 class RateLimitTier(str, Enum):
     """Tiers de rate limiting"""
-    GLOBAL = "global"       # Par IP (protection DDoS)
-    TENANT = "tenant"       # Par tenant (plan)
-    ENDPOINT = "endpoint"   # Par endpoint
-    USER = "user"           # Par utilisateur (optionnel)
+
+    GLOBAL = "global"  # Par IP (protection DDoS)
+    TENANT = "tenant"  # Par tenant (plan)
+    ENDPOINT = "endpoint"  # Par endpoint
+    USER = "user"  # Par utilisateur (optionnel)
 
 
 @dataclass
 class RateLimitRule:
     """Règle de rate limiting"""
+
     tier: RateLimitTier
-    limit: int              # Requêtes autorisées
-    window_seconds: int     # Fenêtre de temps
-    burst_limit: int = 0    # Limite de burst (0 = pas de burst)
+    limit: int  # Requêtes autorisées
+    window_seconds: int  # Fenêtre de temps
+    burst_limit: int = 0  # Limite de burst (0 = pas de burst)
     burst_window_seconds: int = 10  # Fenêtre de burst
 
     @property
@@ -86,20 +88,24 @@ class RateLimitConfig:
     global_burst_limit: int = 100
 
     # Limites par plan tenant
-    tenant_limits: Dict[str, int] = field(default_factory=lambda: {
-        "starter": 30,       # 30 req/min
-        "professional": 100, # 100 req/min
-        "enterprise": 300,   # 300 req/min
-    })
+    tenant_limits: Dict[str, int] = field(
+        default_factory=lambda: {
+            "starter": 30,  # 30 req/min
+            "professional": 100,  # 100 req/min
+            "enterprise": 300,  # 300 req/min
+        }
+    )
 
     # Limites par endpoint (req/min)
-    endpoint_limits: Dict[str, int] = field(default_factory=lambda: {
-        "/api/v1/chat": 60,
-        "/api/v1/recommend": 30,
-        "/api/v1/admin/command": 10,
-        "/api/v1/admin/analytics": 30,
-        "/api/v1/sync": 5,
-    })
+    endpoint_limits: Dict[str, int] = field(
+        default_factory=lambda: {
+            "/api/v1/chat": 60,
+            "/api/v1/recommend": 30,
+            "/api/v1/admin/command": 10,
+            "/api/v1/admin/analytics": 30,
+            "/api/v1/sync": 5,
+        }
+    )
 
     # Burst
     burst_multiplier: float = 1.5
@@ -113,10 +119,11 @@ class RateLimitConfig:
 @dataclass
 class RateLimitResult:
     """Résultat d'une vérification de rate limit"""
+
     allowed: bool
-    remaining: int          # Requêtes restantes
-    limit: int              # Limite totale
-    reset_at: datetime      # Quand le compteur reset
+    remaining: int  # Requêtes restantes
+    limit: int  # Limite totale
+    reset_at: datetime  # Quand le compteur reset
     retry_after_seconds: int = 0  # Secondes avant retry (si bloqué)
     tier_exceeded: Optional[RateLimitTier] = None  # Quel tier a bloqué
 
@@ -137,6 +144,7 @@ class RateLimitResult:
 # =============================================================================
 # SLIDING WINDOW COUNTER
 # =============================================================================
+
 
 class SlidingWindowCounter:
     """
@@ -217,10 +225,7 @@ class SlidingWindowCounter:
             self._local_cache[key] = []
 
         # Nettoyer les anciennes entrées
-        self._local_cache[key] = [
-            ts for ts in self._local_cache[key]
-            if ts > window_start
-        ]
+        self._local_cache[key] = [ts for ts in self._local_cache[key] if ts > window_start]
 
         # Compter
         current_count = len(self._local_cache[key])
@@ -247,6 +252,7 @@ class SlidingWindowCounter:
 # =============================================================================
 # ADVANCED RATE LIMITER
 # =============================================================================
+
 
 class AdvancedRateLimiter:
     """
@@ -314,8 +320,8 @@ class AdvancedRateLimiter:
         # Retourner le résultat avec le remaining le plus bas
         remaining = min(
             global_result.remaining,
-            tenant_result.remaining if tenant_id else float('inf'),
-            endpoint_result.remaining if endpoint else float('inf'),
+            tenant_result.remaining if tenant_id else float("inf"),
+            endpoint_result.remaining if endpoint else float("inf"),
         )
 
         return RateLimitResult(
@@ -347,7 +353,7 @@ class AdvancedRateLimiter:
             if self._config.log_exceeded:
                 logger.warning(
                     "Global rate limit exceeded",
-                    extra={"client_ip": client_ip, "count": count, "limit": limit}
+                    extra={"client_ip": client_ip, "count": count, "limit": limit},
                 )
 
         return result
@@ -392,7 +398,7 @@ class AdvancedRateLimiter:
                         "plan": tenant_plan,
                         "count": count,
                         "limit": limit,
-                    }
+                    },
                 )
 
         return result
@@ -410,7 +416,7 @@ class AdvancedRateLimiter:
         if limit is None:
             # Chercher un match partiel
             for ep_pattern, ep_limit in self._config.endpoint_limits.items():
-                if endpoint.startswith(ep_pattern.rstrip('*')):
+                if endpoint.startswith(ep_pattern.rstrip("*")):
                     limit = ep_limit
                     break
 
@@ -428,7 +434,9 @@ class AdvancedRateLimiter:
             limit=limit,
             reset_at=datetime.utcnow() + timedelta(seconds=window),
             tier_exceeded=RateLimitTier.ENDPOINT if not allowed else None,
-            retry_after_seconds=self._calculate_retry_after(count, limit, window) if not allowed else 0,
+            retry_after_seconds=self._calculate_retry_after(count, limit, window)
+            if not allowed
+            else 0,
         )
 
     async def _check_user_limit(
@@ -505,6 +513,7 @@ class AdvancedRateLimiter:
 # =============================================================================
 # FASTAPI MIDDLEWARE
 # =============================================================================
+
 
 class RateLimitMiddleware:
     """
@@ -587,11 +596,13 @@ class RateLimitMiddleware:
         for key, value in result.to_headers().items():
             headers.append((key.lower().encode(), str(value).encode()))
 
-        await send({
-            "type": "http.response.start",
-            "status": 429,
-            "headers": headers,
-        })
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 429,
+                "headers": headers,
+            }
+        )
 
         body = {
             "error": "rate_limit_exceeded",
@@ -600,10 +611,13 @@ class RateLimitMiddleware:
         }
 
         import json
-        await send({
-            "type": "http.response.body",
-            "body": json.dumps(body).encode(),
-        })
+
+        await send(
+            {
+                "type": "http.response.body",
+                "body": json.dumps(body).encode(),
+            }
+        )
 
 
 # =============================================================================
@@ -616,12 +630,9 @@ __all__ = [
     "RateLimitRule",
     "RateLimitConfig",
     "RateLimitResult",
-
     # Core
     "SlidingWindowCounter",
     "AdvancedRateLimiter",
-
     # Middleware
     "RateLimitMiddleware",
 ]
-

@@ -12,32 +12,31 @@ L'API PrestaShop WebService utilise:
 Documentation: https://devdocs.prestashop-project.org/8/webservice/
 """
 
-import logging
 import base64
-from typing import Optional, List, Dict, Any
+import logging
 from dataclasses import dataclass
-from decimal import Decimal
 from datetime import datetime
+from decimal import Decimal
+from typing import Any, Dict, List, Optional
 
 import httpx
 
-from app.infrastructure.external.prestashop.models import (
-    Product,
-    ProductImage,
-    Category,
-    ProductListResponse,
-    CategoryListResponse,
-)
 from app.infrastructure.external.prestashop.exceptions import (
-    PrestaShopError,
-    PrestaShopConnectionError,
     PrestaShopAuthenticationError,
+    PrestaShopConnectionError,
+    PrestaShopError,
     PrestaShopNotFoundError,
     PrestaShopRateLimitError,
-    PrestaShopValidationError,
     PrestaShopServerError,
+    PrestaShopValidationError,
 )
-
+from app.infrastructure.external.prestashop.models import (
+    Category,
+    CategoryListResponse,
+    Product,
+    ProductImage,
+    ProductListResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +53,7 @@ class PrestaShopClientConfig:
         language_id: ID de la langue par défaut (1 = langue principale)
         verify_ssl: Vérifier le certificat SSL
     """
+
     shop_url: str
     api_key: str
     timeout: int = 30
@@ -111,7 +111,7 @@ class PrestaShopClient:
                 "tenant_id": tenant_id,
                 "shop_url": config.shop_url,
                 "timeout": config.timeout,
-            }
+            },
         )
 
     async def __aenter__(self) -> "PrestaShopClient":
@@ -179,7 +179,7 @@ class PrestaShopClient:
                 "url": url,
                 "params": params,
                 "tenant_id": self.tenant_id,
-            }
+            },
         )
 
         try:
@@ -191,7 +191,7 @@ class PrestaShopClient:
                 extra={
                     "status_code": response.status_code,
                     "tenant_id": self.tenant_id,
-                }
+                },
             )
 
             # Gestion des erreurs HTTP
@@ -324,7 +324,7 @@ class PrestaShopClient:
                 "limit": limit,
                 "offset": offset,
                 "active_only": active_only,
-            }
+            },
         )
 
         # Appel API
@@ -347,7 +347,7 @@ class PrestaShopClient:
                         "tenant_id": self.tenant_id,
                         "product_id": p.get("id"),
                         "error": str(e),
-                    }
+                    },
                 )
 
         # Note: L'API PrestaShop ne retourne pas toujours le total
@@ -362,7 +362,7 @@ class PrestaShopClient:
                 "tenant_id": self.tenant_id,
                 "count": len(products),
                 "offset": offset,
-            }
+            },
         )
 
         return ProductListResponse(
@@ -394,7 +394,7 @@ class PrestaShopClient:
             extra={
                 "tenant_id": self.tenant_id,
                 "product_id": product_id,
-            }
+            },
         )
 
         params = {"display": "full"}
@@ -419,7 +419,7 @@ class PrestaShopClient:
                     "tenant_id": self.tenant_id,
                     "product_id": product_id,
                     "product_name": product.name,
-                }
+                },
             )
 
             return product
@@ -482,7 +482,9 @@ class PrestaShopClient:
             description_short=description_short or None,
             price=price,
             price_tax_incl=price_tax_incl,
-            wholesale_price=Decimal(str(data.get("wholesale_price", 0))) if data.get("wholesale_price") else None,
+            wholesale_price=Decimal(str(data.get("wholesale_price", 0)))
+            if data.get("wholesale_price")
+            else None,
             quantity=quantity,
             minimal_quantity=int(data.get("minimal_quantity", 1)),
             category_id=category_id,
@@ -539,7 +541,7 @@ class PrestaShopClient:
 
         logger.info(
             "Fetching categories from PrestaShop",
-            extra={"tenant_id": self.tenant_id, "active_only": active_only}
+            extra={"tenant_id": self.tenant_id, "active_only": active_only},
         )
 
         data = await self._request("GET", "/categories", params=params)
@@ -565,7 +567,7 @@ class PrestaShopClient:
                         "tenant_id": self.tenant_id,
                         "category_id": c.get("id"),
                         "error": str(e),
-                    }
+                    },
                 )
 
         logger.info(
@@ -573,7 +575,7 @@ class PrestaShopClient:
             extra={
                 "tenant_id": self.tenant_id,
                 "count": len(categories),
-            }
+            },
         )
 
         return CategoryListResponse(
@@ -596,7 +598,7 @@ class PrestaShopClient:
         """
         logger.info(
             "Fetching single category",
-            extra={"tenant_id": self.tenant_id, "category_id": category_id}
+            extra={"tenant_id": self.tenant_id, "category_id": category_id},
         )
 
         params = {"display": "full"}
@@ -721,12 +723,14 @@ class PrestaShopClient:
             # Note: simplifié, l'URL réelle dépend de la config PrestaShop
             url = f"{self.config.shop_url}/img/p/{img_id}.jpg"
 
-            images.append(ProductImage(
-                id=int(img_id),
-                position=idx,
-                url=url,
-                is_cover=(idx == 0),
-            ))
+            images.append(
+                ProductImage(
+                    id=int(img_id),
+                    position=idx,
+                    url=url,
+                    is_cover=(idx == 0),
+                )
+            )
 
         return images
 
@@ -790,8 +794,6 @@ class PrestaShopClient:
         except PrestaShopError as e:
             logger.warning(
                 "PrestaShop connection check failed",
-                extra={"tenant_id": self.tenant_id, "error": str(e)}
+                extra={"tenant_id": self.tenant_id, "error": str(e)},
             )
             return False
-
-

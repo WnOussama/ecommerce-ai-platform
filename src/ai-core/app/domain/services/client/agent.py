@@ -3,19 +3,21 @@ Client AI Agent - Service principal pour les interactions client
 Architecture: Orchestrateur de services spécialisés avec pattern Strategy
 """
 
-from abc import ABC, abstractmethod
+import logging
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
-import logging
-import hashlib
 
-from app.domain.entities.models import (
-    Conversation, Message, MessageRole, IntentType,
-    Customer, CustomerSegment, LLMUsage, Coupon
-)
 from app.core.config.settings import settings
+from app.domain.entities.models import (
+    Conversation,
+    Customer,
+    IntentType,
+    LLMUsage,
+    Message,
+    MessageRole,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +26,11 @@ logger = logging.getLogger(__name__)
 # TYPES DE RÉPONSE
 # ============================================================================
 
+
 @dataclass
 class AIResponse:
     """Réponse structurée de l'agent IA"""
+
     message: str
     intent: IntentType
     confidence: float
@@ -39,6 +43,7 @@ class AIResponse:
 @dataclass
 class ConversationContext:
     """Contexte enrichi pour la conversation"""
+
     tenant_id: UUID
     conversation_id: UUID
     customer: Optional[Customer]
@@ -65,6 +70,7 @@ class ConversationContext:
 # INTENT CLASSIFIER
 # ============================================================================
 
+
 class IntentClassifier:
     """
     Classifieur d'intention avec approche hybride:
@@ -78,66 +84,99 @@ class IntentClassifier:
     #   (ex: "commande" matche dans "recommandez")
     INTENT_PATTERNS = {
         IntentType.ORDER_STATUS: [
-<<<<<<< HEAD
-            "ma commande", "mes commandes", "order", "livraison",
-            "suivi", "tracking", "où est", "statut", "expédié",
-            "envoyé", "colis", "arrivé", "shipped"
-=======
-            "ma commande", "order", "suivi", "tracking",
-            "où est", "statut", "expédié", "envoyé",
-            "colis", "pas arrivé", "pas reçu", "package", "parcel",
-            "ma livraison", "de ma commande"
->>>>>>> d04549b (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
+            "ma commande",
+            "mes commandes",
+            "order",
+            "suivi",
+            "tracking",
+            "où est",
+            "statut",
+            "expédié",
+            "envoyé",
+            "colis",
+            "pas arrivé",
+            "pas reçu",
+            "ma livraison",
+            "shipped",
         ],
         IntentType.RETURN_REQUEST: [
-            "retour", "rembours", "échange", "renvoyer", "return",
-            "refund", "ne fonctionne pas", "défectueux"
+            "retour",
+            "rembours",
+            "échange",
+            "renvoyer",
+            "return",
+            "refund",
+            "ne fonctionne pas",
+            "défectueux",
         ],
         IntentType.SHIPPING_INFO: [
-            "délai", "frais de port", "shipping",
-<<<<<<< HEAD
-            "combien de temps", "expédition"
+            "délai",
+            "frais de port",
+            "shipping",
+            "combien de temps",
+            "expédition",
+            "délai de livraison",
         ],
         IntentType.PRODUCT_SEARCH: [
-            "cherche", "recherche", "trouver", "avez-vous",
-            "produit", "article", "looking for", "cadeau"
+            "cherche",
+            "recherche",
+            "trouver",
+            "avez-vous",
+            "produit",
+            "article",
+            "looking for",
+            "cadeau",
         ],
         IntentType.RECOMMENDATION: [
-            "recommand", "suggé", "conseil", "similaire",
-            "meilleur", "populaire", "tendance",
-            "produits similaires", "que me recommand",
+            "recommand",
+            "suggé",
+            "conseil",
+            "similaire",
+            "meilleur",
+            "populaire",
+            "tendance",
+            "produits similaires",
+            "que me recommand",
         ],
         IntentType.COUPON_REQUEST: [
-            "code promo", "réduction", "coupon", "remise",
-            "discount", "promotions", "promotion", "offre", "promo"
-=======
-            "combien de temps", "expédition", "délai de livraison"
-        ],
-        IntentType.PRODUCT_SEARCH: [
-            "cherche", "recherche", "trouver", "avez-vous",
-            "article", "looking for"
-        ],
-        IntentType.RECOMMENDATION: [
-            "recommand", "suggé", "conseil", "similaire",
-            "meilleur", "populaire", "tendance", "produits similaires"
-        ],
-        IntentType.COUPON_REQUEST: [
-            "code promo", "réduction", "coupon", "remise",
-            "discount", "promotion", "offre", "avez-vous un code"
->>>>>>> d04549b (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
+            "code promo",
+            "réduction",
+            "coupon",
+            "remise",
+            "discount",
+            "promotions",
+            "promotion",
+            "offre",
+            "promo",
+            "avez-vous un code",
         ],
         IntentType.COMPLAINT: [
-            "problème", "plainte", "mécontent", "déçu",
-            "inacceptable", "scandaleux", "nul"
+            "problème",
+            "plainte",
+            "mécontent",
+            "déçu",
+            "inacceptable",
+            "scandaleux",
+            "nul",
         ],
         IntentType.PURCHASE: [
-            "acheter", "commander", "ajouter au panier",
-            "buy", "purchase", "add to cart"
+            "acheter",
+            "commander",
+            "ajouter au panier",
+            "buy",
+            "purchase",
+            "add to cart",
         ],
         IntentType.FAQ: [
-            "comment", "pourquoi", "qu'est-ce", "c'est quoi",
-            "expliquez", "how", "what", "why"
-        ]
+            "comment",
+            "pourquoi",
+            "qu'est-ce",
+            "c'est quoi",
+            "expliquez",
+            "how",
+            "what",
+            "why",
+        ],
     }
 
     def classify(self, message: str, context: ConversationContext) -> Tuple[IntentType, float]:
@@ -183,6 +222,7 @@ class IntentClassifier:
 # ============================================================================
 # PROMPT ENGINEERING
 # ============================================================================
+
 
 class PromptBuilder:
     """
@@ -245,12 +285,8 @@ FORMAT DE RÉPONSE:
         "act as",
         "roleplay",
         "jailbreak",
-<<<<<<< HEAD
         "dan mode",
-=======
-        "dan mode",  # DAN (Do Anything Now) jailbreak
-        "do anything now",  # Variante explicite
->>>>>>> b246289 (feat: DevOps foundation - CI/CD pipeline, Docker, Alembic)
+        "do anything now",
     ]
 
     def __init__(self, tenant_settings: Dict[str, Any]):
@@ -261,7 +297,7 @@ FORMAT DE RÉPONSE:
         self,
         context: ConversationContext,
         relevant_products: List[Dict] = None,
-        relevant_policies: List[Dict] = None
+        relevant_policies: List[Dict] = None,
     ) -> str:
         """Construit le prompt système avec contexte"""
 
@@ -272,30 +308,31 @@ FORMAT DE RÉPONSE:
                 segment=context.customer.segment.value,
                 loyalty_score=context.customer.loyalty_score,
                 total_orders=context.customer.total_orders,
-                preferences=", ".join(context.customer.preferred_categories[:3]) or "Non définies"
+                preferences=", ".join(context.customer.preferred_categories[:3]) or "Non définies",
             )
 
         # Format products
         products_text = "Aucun produit spécifique en contexte"
         if relevant_products:
-            products_text = "\n".join([
-                f"- {p['name']}: {p['price']}€ - {p['description'][:100]}..."
-                for p in relevant_products[:5]
-            ])
+            products_text = "\n".join(
+                [
+                    f"- {p['name']}: {p['price']}€ - {p['description'][:100]}..."
+                    for p in relevant_products[:5]
+                ]
+            )
 
         # Format policies
         policies_text = ""
         if relevant_policies:
-            policies_text = "\n".join([
-                f"- {p['title']}: {p['content'][:200]}..."
-                for p in relevant_policies[:3]
-            ])
+            policies_text = "\n".join(
+                [f"- {p['title']}: {p['content'][:200]}..." for p in relevant_policies[:3]]
+            )
 
         return self.SYSTEM_PROMPT_TEMPLATE.format(
             shop_name=self.shop_name,
             customer_context=customer_context,
             relevant_products=products_text,
-            relevant_policies=policies_text
+            relevant_policies=policies_text,
         )
 
     def sanitize_user_input(self, message: str) -> Tuple[str, bool]:
@@ -306,10 +343,7 @@ FORMAT DE RÉPONSE:
         message_lower = message.lower()
 
         # Détection d'injection
-        is_suspicious = any(
-            pattern in message_lower
-            for pattern in self.INJECTION_PATTERNS
-        )
+        is_suspicious = any(pattern in message_lower for pattern in self.INJECTION_PATTERNS)
 
         if is_suspicious:
             logger.warning(f"Potential prompt injection detected: {message[:100]}")
@@ -322,20 +356,14 @@ FORMAT DE RÉPONSE:
         return sanitized, is_suspicious
 
     def build_conversation_messages(
-        self,
-        system_prompt: str,
-        history: List[Message],
-        current_message: str
+        self, system_prompt: str, history: List[Message], current_message: str
     ) -> List[Dict[str, str]]:
         """Construit la liste de messages pour l'API LLM"""
         messages = [{"role": "system", "content": system_prompt}]
 
         # Historique récent (derniers N messages)
         for msg in history[-10:]:  # Limite pour contrôler les tokens
-            messages.append({
-                "role": msg.role.value,
-                "content": msg.content
-            })
+            messages.append({"role": msg.role.value, "content": msg.content})
 
         # Message actuel
         messages.append({"role": "user", "content": current_message})
@@ -346,6 +374,7 @@ FORMAT DE RÉPONSE:
 # ============================================================================
 # CLIENT AI AGENT - SERVICE PRINCIPAL
 # ============================================================================
+
 
 class ClientAIAgent:
     """
@@ -372,11 +401,7 @@ class ClientAIAgent:
         self.intent_classifier = IntentClassifier()
 
     async def process_message(
-        self,
-        tenant_id: UUID,
-        session_id: str,
-        message: str,
-        context: Dict[str, Any] = None
+        self, tenant_id: UUID, session_id: str, message: str, context: Dict[str, Any] = None
     ) -> AIResponse:
         """
         Point d'entrée principal pour traiter un message client.
@@ -406,7 +431,7 @@ class ClientAIAgent:
                 confidence=1.0,
                 actions=[],
                 suggestions=["Voir nos produits", "Contacter le support"],
-                metadata={"blocked": True, "reason": "suspicious_input"}
+                metadata={"blocked": True, "reason": "suspicious_input"},
             )
 
         # 2. Conversation
@@ -415,14 +440,10 @@ class ClientAIAgent:
         )
 
         # 3. Contexte enrichi
-        enriched_context = await self._build_context(
-            tenant_id, conversation, context
-        )
+        enriched_context = await self._build_context(tenant_id, conversation, context)
 
         # 4. Classification intention
-        intent, confidence = self.intent_classifier.classify(
-            sanitized_message, enriched_context
-        )
+        intent, confidence = self.intent_classifier.classify(sanitized_message, enriched_context)
 
         # 5. RAG - Récupération connaissances pertinentes
         relevant_docs = await self._retrieve_relevant_knowledge(
@@ -431,9 +452,7 @@ class ClientAIAgent:
 
         # 6. Génération réponse
         system_prompt = prompt_builder.build_system_prompt(
-            enriched_context,
-            relevant_docs.get("products"),
-            relevant_docs.get("policies")
+            enriched_context, relevant_docs.get("products"), relevant_docs.get("policies")
         )
 
         history = await self._get_conversation_history(conversation.id)
@@ -441,11 +460,7 @@ class ClientAIAgent:
             system_prompt, history, sanitized_message
         )
 
-        llm_response = await self.llm.generate(
-            messages,
-            tenant_id=tenant_id,
-            intent=intent
-        )
+        llm_response = await self.llm.generate(messages, tenant_id=tenant_id, intent=intent)
 
         # 7. Actions spécifiques selon l'intention
         actions = await self._handle_intent_actions(
@@ -453,18 +468,21 @@ class ClientAIAgent:
         )
 
         # 8. Sauvegarde
-        user_message = await self._save_message(
+        await self._save_message(
             conversation.id, MessageRole.USER, sanitized_message, intent, confidence
         )
         assistant_message = await self._save_message(
-            conversation.id, MessageRole.ASSISTANT, llm_response.content,
-            intent, confidence, llm_response.usage, actions
+            conversation.id,
+            MessageRole.ASSISTANT,
+            llm_response.content,
+            intent,
+            confidence,
+            llm_response.usage,
+            actions,
         )
 
         # 9. Mise à jour conversation
-        await self._update_conversation_metrics(
-            conversation, intent, llm_response.usage
-        )
+        await self._update_conversation_metrics(conversation, intent, llm_response.usage)
 
         return AIResponse(
             message=llm_response.content,
@@ -474,26 +492,20 @@ class ClientAIAgent:
             suggestions=self._generate_suggestions(intent, enriched_context),
             metadata={
                 "conversation_id": str(conversation.id),
-                "message_id": str(assistant_message.id)
+                "message_id": str(assistant_message.id),
             },
-            llm_usage=llm_response.usage
+            llm_usage=llm_response.usage,
         )
 
     async def _get_or_create_conversation(
-        self,
-        tenant_id: UUID,
-        session_id: str,
-        customer_id: Optional[str]
+        self, tenant_id: UUID, session_id: str, customer_id: Optional[str]
     ) -> Conversation:
         """Récupère ou crée une conversation"""
         # Implementation...
         pass
 
     async def _build_context(
-        self,
-        tenant_id: UUID,
-        conversation: Conversation,
-        raw_context: Dict[str, Any]
+        self, tenant_id: UUID, conversation: Conversation, raw_context: Dict[str, Any]
     ) -> ConversationContext:
         """Construit le contexte enrichi"""
         customer = None
@@ -512,22 +524,14 @@ class ClientAIAgent:
             current_product_id=raw_context.get("product_id"),
             cart_items=raw_context.get("cart_items", []),
             recent_messages=recent_messages,
-            customer_preferences=customer.preferred_categories if customer else None
+            customer_preferences=customer.preferred_categories if customer else None,
         )
 
     async def _retrieve_relevant_knowledge(
-        self,
-        tenant_id: UUID,
-        query: str,
-        intent: IntentType,
-        context: ConversationContext
+        self, tenant_id: UUID, query: str, intent: IntentType, context: ConversationContext
     ) -> Dict[str, List[Dict]]:
         """Récupère les connaissances pertinentes via RAG"""
-        results = {
-            "products": [],
-            "faqs": [],
-            "policies": []
-        }
+        results = {"products": [], "faqs": [], "policies": []}
 
         # Produits si recherche ou recommandation
         if intent in [IntentType.PRODUCT_SEARCH, IntentType.RECOMMENDATION, IntentType.PURCHASE]:
@@ -536,35 +540,25 @@ class ClientAIAgent:
                 collection="products",
                 query=query,
                 limit=5,
-                filters={"in_stock": True} if intent == IntentType.PURCHASE else None
+                filters={"in_stock": True} if intent == IntentType.PURCHASE else None,
             )
 
         # FAQs si question générale
         if intent in [IntentType.FAQ, IntentType.SHIPPING_INFO, IntentType.RETURN_REQUEST]:
             results["faqs"] = await self.vector_store.search(
-                tenant_id=tenant_id,
-                collection="faqs",
-                query=query,
-                limit=3
+                tenant_id=tenant_id, collection="faqs", query=query, limit=3
             )
 
         # Politiques si retour/réclamation
         if intent in [IntentType.RETURN_REQUEST, IntentType.COMPLAINT]:
             results["policies"] = await self.vector_store.search(
-                tenant_id=tenant_id,
-                collection="policies",
-                query=query,
-                limit=2
+                tenant_id=tenant_id, collection="policies", query=query, limit=2
             )
 
         return results
 
     async def _handle_intent_actions(
-        self,
-        intent: IntentType,
-        context: ConversationContext,
-        llm_response,
-        original_message: str
+        self, intent: IntentType, context: ConversationContext, llm_response, original_message: str
     ) -> List[Dict[str, Any]]:
         """Génère les actions spécifiques selon l'intention"""
         actions = []
@@ -572,15 +566,10 @@ class ClientAIAgent:
         if intent == IntentType.RECOMMENDATION and context.customer:
             # Générer des recommandations personnalisées
             recommendations = await self.recommendations.get_for_customer(
-                context.tenant_id,
-                context.customer.id,
-                limit=4
+                context.tenant_id, context.customer.id, limit=4
             )
             if recommendations:
-                actions.append({
-                    "type": "show_products",
-                    "products": recommendations
-                })
+                actions.append({"type": "show_products", "products": recommendations})
 
         elif intent == IntentType.COUPON_REQUEST and context.customer:
             # Vérifier éligibilité et générer coupon si approprié
@@ -589,35 +578,34 @@ class ClientAIAgent:
                     context.tenant_id,
                     context.customer.id,
                     reason="chatbot_request",
-                    conversation_id=context.conversation_id
+                    conversation_id=context.conversation_id,
                 )
                 if coupon:
-                    actions.append({
-                        "type": "coupon",
-                        "code": coupon.code,
-                        "discount": f"{coupon.discount_value}%"
-                    })
+                    actions.append(
+                        {
+                            "type": "coupon",
+                            "code": coupon.code,
+                            "discount": f"{coupon.discount_value}%",
+                        }
+                    )
 
         elif intent == IntentType.PRODUCT_SEARCH:
             # Ajouter bouton de recherche
-            actions.append({
-                "type": "search_link",
-                "query": original_message
-            })
+            actions.append({"type": "search_link", "query": original_message})
 
         return actions
 
-    def _generate_suggestions(
-        self,
-        intent: IntentType,
-        context: ConversationContext
-    ) -> List[str]:
+    def _generate_suggestions(self, intent: IntentType, context: ConversationContext) -> List[str]:
         """Génère des suggestions de réponses rapides"""
         base_suggestions = {
             IntentType.GENERAL: ["Voir les nouveautés", "Mes commandes", "Aide"],
             IntentType.PRODUCT_SEARCH: ["Voir plus de résultats", "Filtrer par prix", "Aide"],
             IntentType.ORDER_STATUS: ["Autre commande", "Problème de livraison", "Retour"],
-            IntentType.RECOMMENDATION: ["Plus de suggestions", "Autre catégorie", "Ajouter au panier"],
+            IntentType.RECOMMENDATION: [
+                "Plus de suggestions",
+                "Autre catégorie",
+                "Ajouter au panier",
+            ],
         }
 
         return base_suggestions.get(intent, ["Voir les produits", "Aide"])
@@ -628,9 +616,7 @@ class ClientAIAgent:
         return {"shop_name": "Ma Boutique", "tone": "professional"}
 
     async def _get_conversation_history(
-        self,
-        conversation_id: UUID,
-        limit: int = 10
+        self, conversation_id: UUID, limit: int = 10
     ) -> List[Message]:
         """Récupère l'historique des messages"""
         # Implementation via repository
@@ -644,27 +630,22 @@ class ClientAIAgent:
         intent: IntentType,
         confidence: float,
         llm_usage: LLMUsage = None,
-        actions: List[Dict] = None
+        actions: List[Dict] = None,
     ) -> Message:
         """Sauvegarde un message"""
         # Implementation via repository
         pass
 
     async def _update_conversation_metrics(
-        self,
-        conversation: Conversation,
-        intent: IntentType,
-        llm_usage: LLMUsage
+        self, conversation: Conversation, intent: IntentType, llm_usage: LLMUsage
     ):
         """Met à jour les métriques de la conversation"""
         conversation.message_count += 2  # User + Assistant
         if llm_usage:
             conversation.llm_tokens_used += llm_usage.total_tokens
             conversation.llm_cost += llm_usage.calculate_cost(
-                settings.llm.cost_per_1k_input_tokens,
-                settings.llm.cost_per_1k_output_tokens
+                settings.llm.cost_per_1k_input_tokens, settings.llm.cost_per_1k_output_tokens
             )
         conversation.primary_intent = intent
         conversation.updated_at = datetime.utcnow()
         # Save via repository
-

@@ -6,10 +6,10 @@ Validation via Pydantic pour garantir l'intégrité des données.
 """
 
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ChatRequest(BaseModel):
@@ -23,6 +23,7 @@ class ChatRequest(BaseModel):
         user_identifier: Identifiant utilisateur (session_id, customer_id, etc.)
         context: Contexte additionnel (page courante, produit consulté, etc.)
     """
+
     message: str = Field(..., min_length=1, max_length=4096)
     conversation_id: Optional[UUID] = None
     idempotency_key: UUID
@@ -44,6 +45,7 @@ class ChatMessage(BaseModel):
 
     Utilisé pour représenter l'historique des messages.
     """
+
     id: UUID
     role: str  # "user", "assistant", "system"
     content: str
@@ -65,6 +67,7 @@ class ChatResponse(BaseModel):
         latency_ms: Temps de traitement total en ms
         metadata: Informations additionnelles (produits trouvés, intent, etc.)
     """
+
     conversation_id: UUID
     message_id: UUID
     response: str
@@ -80,10 +83,7 @@ class ChatResponse(BaseModel):
                 "response": "Bonjour ! Comment puis-je vous aider ?",
                 "created": True,
                 "latency_ms": 250,
-                "metadata": {
-                    "intent": "greeting",
-                    "products_found": 0
-                }
+                "metadata": {"intent": "greeting", "products_found": 0},
             }
         }
     )
@@ -95,6 +95,7 @@ class ConversationHistory(BaseModel):
 
     Utilisé pour construire le contexte LLM.
     """
+
     conversation_id: UUID
     tenant_id: UUID
     user_identifier: str
@@ -120,10 +121,4 @@ class ConversationHistory(BaseModel):
         # Prendre les N derniers messages
         recent_messages = self.messages[-max_messages:]
 
-        return [
-            {"role": msg.role, "content": msg.content}
-            for msg in recent_messages
-        ]
-
-
-
+        return [{"role": msg.role, "content": msg.content} for msg in recent_messages]

@@ -8,12 +8,10 @@ Architecture: FastAPI est le SEUL owner de cette base de données.
 """
 
 import uuid
-from datetime import datetime
-from typing import Any
 
 from sqlalchemy import Column, DateTime
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import declarative_base, declared_attr
+from sqlalchemy.orm import declarative_base
 from sqlalchemy.sql import func
 
 # Base declarative commune pour tous les modèles
@@ -33,6 +31,7 @@ class TimestampMixin:
         class MyModel(Base, TimestampMixin):
             ...
     """
+
     created_at = Column(
         DateTime(timezone=True),
         default=func.now(),
@@ -55,6 +54,7 @@ class UUIDMixin:
         class MyModel(Base, UUIDMixin):
             ...
     """
+
     id = Column(
         UUID(as_uuid=True),
         primary_key=True,
@@ -71,6 +71,7 @@ class SoftDeleteMixin:
         class MyModel(Base, SoftDeleteMixin):
             ...
     """
+
     deleted_at = Column(
         DateTime(timezone=True),
         nullable=True,
@@ -80,5 +81,3 @@ class SoftDeleteMixin:
     @property
     def is_deleted(self) -> bool:
         return self.deleted_at is not None
-
-

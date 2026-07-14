@@ -31,21 +31,19 @@ Usage:
 
 # Import depuis le nouveau module thread-safe
 from app.core.health.checker import (
-    # Types
-    HealthStatus,
     ComponentHealth,
-    HealthReport,
-
     # Checker
     HealthChecker,
+    HealthReport,
+    # Types
+    HealthStatus,
+    create_chromadb_check,
     create_health_checker,
-    get_health_checker_dependency,
-
+    create_llm_check,
+    create_mysql_check,
     # Check factories
     create_redis_check,
-    create_mysql_check,
-    create_chromadb_check,
-    create_llm_check,
+    get_health_checker_dependency,
 )
 
 __all__ = [
@@ -53,17 +51,13 @@ __all__ = [
     "HealthStatus",
     "ComponentHealth",
     "HealthReport",
-
     # Checker
     "HealthChecker",
     "create_health_checker",
     "get_health_checker_dependency",
-
     # Check factories
     "create_redis_check",
     "create_mysql_check",
     "create_chromadb_check",
     "create_llm_check",
 ]
-
-

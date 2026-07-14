@@ -5,117 +5,7 @@
 # - PostgreSQL: Owned EXCLUSIVELY by FastAPI (AI Core)
 # - Laravel Dashboard: Communicates via REST API only (NO direct DB access)
 # - Migrations: Managed by Alembic (Python) only
-#
-  Parfait.
-  On fait une correction chirurgicale, propre, sans toucher au reste.
-
-Voici le prompt exact à envoyer à Claude Agent :
-
-  🔧 PRE-MERGE FIX — Docker Compose + CI Hardening
-  
-  Tu agis comme un Senior DevOps Engineer.
-
-Branche : feat/devops-foundation
-Statut : HOLD (corrections mineures requises)
-Score actuel : 82/100
-
-Objectif : corriger les points bloquants et améliorer légèrement le CI sans modifier l’architecture.
-  
-  🔥 1️⃣ Correction obligatoire — docker-compose.dev.yml
-
-Corriger le service ai-core :
-
-Actuellement :
-
-depends_on:
-  - postgres
-  - redis
-
-
-Corriger vers :
-
-depends_on:
-  postgres:
-    condition: service_healthy
-  redis:
-    condition: service_healthy
-
-
-⚠️ Vérifier que :
-
-  postgres a un healthcheck valide
-  
-  redis a un healthcheck valide
-
-version docker-compose supporte condition: service_healthy
-  
-  Ne rien modifier d’autre.
-  
-  🔥 2️⃣ Ajouter mypy au GitHub Actions
-  
-  Modifier .github/workflows/backend-ci.yml
-
-Dans le job lint / type-check :
-
-Ajouter étape :
-
-  - name: Type check
-    run: mypy app
-
-
-  ⚠️ Ne pas casser le pipeline.
-  ⚠️ Vérifier que mypy est installé via requirements-dev.txt ou installé explicitement.
-  
-  🧠 3️⃣ Bonus recommandé — .dockerignore
-
-Créer .dockerignore à la racine :
-
-Exclure :
-
-  .git
-  .gitignore
-  __pycache__
-  *.pyc
-  *.pyo
-  *.pyd
-  .env
-  .env.*
-  tests
-  migrations/__pycache__
-  node_modules
-  .vscode
-  .idea
-
-
-Objectif : optimiser build Docker.
-  
-  📦 Livrable attendu
-  
-  docker-compose corrigé
-  
-  workflow CI mis à jour avec mypy
-  
-  .dockerignore complet
-
-Confirmation que :
-
-  docker compose up fonctionne
-  
-  pipeline CI passe
-  
-  aucun warning critique
-  
-  🚫 Contraintes
-  
-  Ne pas modifier Dockerfile
-  
-  Ne pas modifier Alembic
-  
-  Ne pas modifier logique métier
-  
-  Ne pas ajouter nouvelles features
-
-On stabilise uniquement.# Services: FastAPI + PostgreSQL + Redis + ChromaDB
+# - Services: FastAPI + PostgreSQL + Redis + ChromaDB
 # =============================================================================
 
 services:
@@ -275,6 +165,4 @@ volumes:
     driver: local
   ai_core_logs:
     driver: local
-
-
 

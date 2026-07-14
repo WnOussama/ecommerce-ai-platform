@@ -17,34 +17,32 @@ Usage:
 
 from app.domain.services.chat.chat_service import ChatService, get_chat_service
 from app.domain.services.chat.dto import (
+    ChatMessage,
     ChatRequest,
     ChatResponse,
-    ChatMessage,
     ConversationHistory,
 )
 from app.domain.services.chat.exceptions import (
     ChatServiceError,
-    TenantNotFoundError,
     ConversationNotFoundError,
-    MessageAlreadyProcessedError,
     LLMError,
-    LLMTimeoutError,
     LLMRateLimitError,
-    RAGError,
+    LLMTimeoutError,
+    MessageAlreadyProcessedError,
     PersistenceError,
+    RAGError,
+    TenantNotFoundError,
 )
 
 __all__ = [
     # Service
     "ChatService",
     "get_chat_service",
-
     # DTOs
     "ChatRequest",
     "ChatResponse",
     "ChatMessage",
     "ConversationHistory",
-
     # Exceptions
     "ChatServiceError",
     "TenantNotFoundError",
@@ -56,4 +54,3 @@ __all__ = [
     "RAGError",
     "PersistenceError",
 ]
-

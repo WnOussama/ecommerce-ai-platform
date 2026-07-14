@@ -7,13 +7,13 @@ Endpoints Kubernetes:
 - /health/full  - État détaillé de toutes les dépendances
 """
 
+import asyncio
+import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Optional, Any, Callable, Awaitable
-import asyncio
-import time
-import logging
+from typing import Any, Awaitable, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +22,10 @@ logger = logging.getLogger(__name__)
 # TYPES
 # =============================================================================
 
+
 class HealthStatus(str, Enum):
     """Statut de santé d'un composant"""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
@@ -33,6 +35,7 @@ class HealthStatus(str, Enum):
 @dataclass
 class ComponentHealth:
     """État de santé d'un composant individuel"""
+
     name: str
     status: HealthStatus
     latency_ms: float = -1
@@ -54,6 +57,7 @@ class ComponentHealth:
 @dataclass
 class HealthReport:
     """Rapport de santé complet"""
+
     status: HealthStatus
     components: Dict[str, ComponentHealth]
     version: str
@@ -68,16 +72,14 @@ class HealthReport:
             "environment": self.environment,
             "uptime_seconds": round(self.uptime_seconds, 2),
             "timestamp": self.timestamp.isoformat(),
-            "components": {
-                name: comp.to_dict()
-                for name, comp in self.components.items()
-            },
+            "components": {name: comp.to_dict() for name, comp in self.components.items()},
         }
 
 
 # =============================================================================
 # HEALTH CHECKER
 # =============================================================================
+
 
 class HealthChecker:
     """
@@ -171,9 +173,7 @@ class HealthChecker:
 
         # Vérifier uniquement les composants critiques
         critical_checks = {
-            name: func
-            for name, func in self._checks.items()
-            if name in self._critical_components
+            name: func for name, func in self._checks.items() if name in self._critical_components
         }
 
         if not critical_checks:
@@ -187,7 +187,7 @@ class HealthChecker:
                 if health.status == HealthStatus.UNHEALTHY:
                     logger.warning(
                         f"Readiness check failed: {name} is unhealthy",
-                        extra={"component": name, "status": health.status.value}
+                        extra={"component": name, "status": health.status.value},
                     )
                     return False
 
@@ -224,7 +224,9 @@ class HealthChecker:
                     for name in self._critical_components
                     if name in components
                 )
-                overall_status = HealthStatus.UNHEALTHY if critical_unhealthy else HealthStatus.DEGRADED
+                overall_status = (
+                    HealthStatus.UNHEALTHY if critical_unhealthy else HealthStatus.DEGRADED
+                )
             else:
                 overall_status = HealthStatus.DEGRADED
 
@@ -244,10 +246,7 @@ class HealthChecker:
 
         async def run_single_check(name: str, func: Callable) -> ComponentHealth:
             try:
-                result = await asyncio.wait_for(
-                    func(),
-                    timeout=self._check_timeout
-                )
+                result = await asyncio.wait_for(func(), timeout=self._check_timeout)
                 self._last_results[name] = result
                 return result
             except asyncio.TimeoutError:
@@ -264,23 +263,17 @@ class HealthChecker:
                     message=str(e),
                 )
 
-        tasks = [
-            run_single_check(name, func)
-            for name, func in checks.items()
-        ]
+        tasks = [run_single_check(name, func) for name, func in checks.items()]
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        return {
-            check.name: check
-            for check in results
-            if isinstance(check, ComponentHealth)
-        }
+        return {check.name: check for check in results if isinstance(check, ComponentHealth)}
 
 
 # =============================================================================
 # CHECK FUNCTIONS FACTORY
 # =============================================================================
+
 
 def create_redis_check(redis_client) -> Callable[[], Awaitable[ComponentHealth]]:
     """
@@ -289,6 +282,7 @@ def create_redis_check(redis_client) -> Callable[[], Awaitable[ComponentHealth]]
     Args:
         redis_client: Client Redis (aioredis ou redis.asyncio)
     """
+
     async def check() -> ComponentHealth:
         start = time.perf_counter()
         try:
@@ -307,7 +301,7 @@ def create_redis_check(redis_client) -> Callable[[], Awaitable[ComponentHealth]]
                 details={
                     "version": info.get("redis_version"),
                     "connected_clients": info.get("connected_clients"),
-                }
+                },
             )
         except Exception as e:
             latency = (time.perf_counter() - start) * 1000
@@ -346,7 +340,7 @@ def create_mysql_check(session_factory) -> Callable[[], Awaitable[ComponentHealt
                     latency_ms=latency,
                     details={
                         "version": row.version if row else None,
-                    }
+                    },
                 )
         except Exception as e:
             latency = (time.perf_counter() - start) * 1000
@@ -367,6 +361,7 @@ def create_chromadb_check(chroma_client) -> Callable[[], Awaitable[ComponentHeal
     Args:
         chroma_client: Client ChromaDB
     """
+
     async def check() -> ComponentHealth:
         start = time.perf_counter()
         try:
@@ -385,7 +380,7 @@ def create_chromadb_check(chroma_client) -> Callable[[], Awaitable[ComponentHeal
                 details={
                     "heartbeat": heartbeat,
                     "collections_count": len(collections),
-                }
+                },
             )
         except Exception as e:
             latency = (time.perf_counter() - start) * 1000
@@ -408,6 +403,7 @@ def create_llm_check(llm_client, model: str = "gpt-4") -> Callable[[], Awaitable
         llm_client: Client OpenAI/Anthropic
         model: Modèle à vérifier
     """
+
     async def check() -> ComponentHealth:
         start = time.perf_counter()
         try:
@@ -422,7 +418,7 @@ def create_llm_check(llm_client, model: str = "gpt-4") -> Callable[[], Awaitable
                     name="llm",
                     status=HealthStatus.HEALTHY,
                     latency_ms=latency,
-                    details={"model": model, "available": True}
+                    details={"model": model, "available": True},
                 )
             else:
                 return ComponentHealth(
@@ -430,7 +426,7 @@ def create_llm_check(llm_client, model: str = "gpt-4") -> Callable[[], Awaitable
                     status=HealthStatus.DEGRADED,
                     latency_ms=latency,
                     message=f"Model {model} not found",
-                    details={"model": model, "available": False}
+                    details={"model": model, "available": False},
                 )
         except Exception as e:
             latency = (time.perf_counter() - start) * 1000
@@ -456,6 +452,7 @@ def get_health_checker() -> HealthChecker:
     global _health_checker
     if _health_checker is None:
         from app.core.config.settings import settings
+
         _health_checker = HealthChecker(
             version=settings.app_version,
             environment=settings.environment,
@@ -517,7 +514,7 @@ def init_health_checker(
         extra={
             "checks": list(_health_checker._checks.keys()),
             "critical": list(_health_checker._critical_components),
-        }
+        },
     )
 
     return _health_checker
@@ -532,16 +529,13 @@ __all__ = [
     "HealthStatus",
     "ComponentHealth",
     "HealthReport",
-
     # Checker
     "HealthChecker",
     "get_health_checker",
     "init_health_checker",
-
     # Check factories
     "create_redis_check",
     "create_mysql_check",
     "create_chromadb_check",
     "create_llm_check",
 ]
-

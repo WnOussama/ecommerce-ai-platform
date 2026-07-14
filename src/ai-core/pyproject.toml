@@ -2,7 +2,7 @@
 name = "ecommerce-ai-platform"
 version = "0.1.0"
 description = "AI SaaS Platform for E-commerce"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.15"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -10,10 +10,47 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks integration tests requiring external services",
+]
 filterwarnings = [
     "ignore::DeprecationWarning",
+    "ignore::pytest.PytestUnknownMarkWarning",
 ]
 addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "app/infrastructure/database/models/models.py",
+    "app/infrastructure/database/read_replica.py",
+    "app/infrastructure/cache/stateless_session.py",
+    "app/infrastructure/llm/gateway.py",
+    "app/infrastructure/llm/service.py",
+    "app/infrastructure/vector_store/service.py",
+    "app/infrastructure/database/repositories/repositories.py",
+    "app/infrastructure/external/prestashop/example.py",
+    "app/services/message_queue/*",
+    "app/services/sync_service.py",
+    "app/services/chat_service.py",
+    "app/services/admin_service.py",
+    "app/workers/*",
+    "app/domain/services/admin/agent_v2.py",
+    "app/domain/services/client/agent_v2.py",
+    "app/domain/services/shared/rag_service_v2.py",
+    "app/core/monitoring/*",
+    "app/core/health/health_checker.py",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+    "pass",
+]
+show_missing = true
 
 [tool.ruff]
 line-length = 100
@@ -23,7 +60,4 @@ target-version = "py311"
 select = ["E", "F", "I", "W"]
 ignore = ["E501"]
 
-[tool.black]
-line-length = 100
-target-version = ["py311"]
 

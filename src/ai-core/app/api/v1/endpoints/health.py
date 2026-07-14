@@ -12,8 +12,8 @@ Architecture:
 - Thread-safe
 """
 
-from datetime import datetime
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Request, Response, status
 
@@ -31,7 +31,7 @@ def _get_checker(request: Request) -> HealthChecker:
     Récupère le HealthChecker depuis app.state.
     Retourne un checker par défaut si non initialisé.
     """
-    checker = getattr(request.app.state, 'health_checker', None)
+    checker = getattr(request.app.state, "health_checker", None)
     if checker is None:
         # Fallback: créer un checker minimal
         # Cela ne devrait pas arriver en production
@@ -162,6 +162,3 @@ async def database_health_check(request: Request, response: Response):
         "timestamp": datetime.utcnow().isoformat(),
         **db_status,
     }
-
-
-

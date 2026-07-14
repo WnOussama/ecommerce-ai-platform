@@ -38,87 +38,87 @@ Architecture:
 └─────────────────────┘               └─────────────────────┘
 """
 
-from app.domain.services.shared.llm_gateway import (
-    LLMGateway,
-    LLMRequest,
-    LLMResponse,
-    LLMProvider,
-    ResponseFormat,
-    CostCalculator,
-)
-from app.domain.services.shared.rag_service import (
-    RAGService,
-    RAGQuery,
-    RAGResult,
-    Document,
-    DocumentType,
-)
-from app.domain.services.shared.rag_service_v2 import (
-    RAGServiceV2,
-    COLLECTION_NAMES,
-)
-from app.domain.services.shared.security_service import (
-    SecurityService,
-    SecurityCheckResult,
-    OutputValidationResult,
-    ThreatLevel,
-    ThreatType,
-)
-from app.domain.services.shared.tenant_service import (
-    TenantService,
-    Tenant,
-    TenantContext,
-    TenantPlan,
-    TenantStatus,
-    Feature,
-    TenantLimits,
-    TenantLLMConfig,
-)
 from app.domain.services.shared.context_manager import (
     ContextWindow,
-    WorkingMemory,
     MemoryType,
-)
-from app.domain.services.shared.prompt_registry import (
-    PromptRegistry,
-    PromptVersion,
-    PromptType,
-)
-
-# Reranker
-from app.domain.services.shared.reranker import (
-    RankedDocument,
-    RerankerConfig,
-    CrossEncoderReranker,
-    LLMReranker,
-    RerankingPipeline,
-    create_reranker,
+    WorkingMemory,
 )
 
 # Embedding Versioning
 from app.domain.services.shared.embedding_versioning import (
-    CURRENT_EMBEDDING_VERSION,
     CURRENT_EMBEDDING_MODEL,
-    SyncStatus,
-    DocumentVersion,
-    SyncResult,
+    CURRENT_EMBEDDING_VERSION,
     ContentHasher,
+    DocumentVersion,
     EmbeddingVersionManager,
+    SyncResult,
+    SyncStatus,
+)
+from app.domain.services.shared.llm_gateway import (
+    CostCalculator,
+    LLMGateway,
+    LLMProvider,
+    LLMRequest,
+    LLMResponse,
+    ResponseFormat,
 )
 
 # Prompt Injection Defense
 from app.domain.services.shared.prompt_defense import (
-    PromptInjectionDefense,
-    InputSanitizer,
-    PromptSegmentBuilder,
-    InstructionLocker,
+    ADMIN_AGENT_TOOLS,
+    CLIENT_AGENT_TOOLS,
     ContextIsolator,
+    DefenseLayer,
+    InputSanitizer,
+    InstructionLocker,
     OutputValidator,
+    PromptInjectionDefense,
+    PromptSegmentBuilder,
     ToolCallValidator,
     ToolSchema,
-    DefenseLayer,
-    CLIENT_AGENT_TOOLS,
-    ADMIN_AGENT_TOOLS,
+)
+from app.domain.services.shared.prompt_registry import (
+    PromptRegistry,
+    PromptType,
+    PromptVersion,
+)
+from app.domain.services.shared.rag_service import (
+    Document,
+    DocumentType,
+    RAGQuery,
+    RAGResult,
+    RAGService,
+)
+from app.domain.services.shared.rag_service_v2 import (
+    COLLECTION_NAMES,
+    RAGServiceV2,
+)
+
+# Reranker
+from app.domain.services.shared.reranker import (
+    CrossEncoderReranker,
+    LLMReranker,
+    RankedDocument,
+    RerankerConfig,
+    RerankingPipeline,
+    create_reranker,
+)
+from app.domain.services.shared.security_service import (
+    OutputValidationResult,
+    SecurityCheckResult,
+    SecurityService,
+    ThreatLevel,
+    ThreatType,
+)
+from app.domain.services.shared.tenant_service import (
+    Feature,
+    Tenant,
+    TenantContext,
+    TenantLimits,
+    TenantLLMConfig,
+    TenantPlan,
+    TenantService,
+    TenantStatus,
 )
 
 __all__ = [
@@ -129,7 +129,6 @@ __all__ = [
     "LLMProvider",
     "ResponseFormat",
     "CostCalculator",
-
     # RAG Service
     "RAGService",
     "RAGServiceV2",
@@ -138,14 +137,12 @@ __all__ = [
     "Document",
     "DocumentType",
     "COLLECTION_NAMES",
-
     # Security Service
     "SecurityService",
     "SecurityCheckResult",
     "OutputValidationResult",
     "ThreatLevel",
     "ThreatType",
-
     # Tenant Service
     "TenantService",
     "Tenant",
@@ -155,17 +152,14 @@ __all__ = [
     "Feature",
     "TenantLimits",
     "TenantLLMConfig",
-
     # Context Manager
     "ContextWindow",
     "WorkingMemory",
     "MemoryType",
-
     # Prompt Registry
     "PromptRegistry",
     "PromptVersion",
     "PromptType",
-
     # Reranker
     "RankedDocument",
     "RerankerConfig",
@@ -173,7 +167,6 @@ __all__ = [
     "LLMReranker",
     "RerankingPipeline",
     "create_reranker",
-
     # Embedding Versioning
     "CURRENT_EMBEDDING_VERSION",
     "CURRENT_EMBEDDING_MODEL",
@@ -182,7 +175,6 @@ __all__ = [
     "SyncResult",
     "ContentHasher",
     "EmbeddingVersionManager",
-
     # Prompt Injection Defense
     "PromptInjectionDefense",
     "InputSanitizer",
@@ -196,7 +188,3 @@ __all__ = [
     "CLIENT_AGENT_TOOLS",
     "ADMIN_AGENT_TOOLS",
 ]
-
-
-
-

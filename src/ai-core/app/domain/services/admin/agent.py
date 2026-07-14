@@ -3,20 +3,20 @@ Admin AI Agent - Agent pour les opérations administrateur
 Inclut validation stricte, audit logging, et confirmation des actions sensibles
 """
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List, Tuple
-from uuid import UUID, uuid4
-from enum import Enum
 import logging
-import json
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Dict, List, Optional, Tuple
+from uuid import UUID, uuid4
 
 from app.domain.entities.models import (
-    AdminAction, AdminActionType, AdminActionStatus,
-    Tenant, LLMUsage
+    AdminAction,
+    AdminActionStatus,
+    AdminActionType,
+    LLMUsage,
+    Tenant,
 )
-from app.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -25,16 +25,18 @@ logger = logging.getLogger(__name__)
 # TYPES
 # ============================================================================
 
+
 class RiskLevel(str, Enum):
-    LOW = "low"       # Analytics, rapports
-    MEDIUM = "medium" # Génération coupons, suggestions
-    HIGH = "high"     # Modifications prix, produits
+    LOW = "low"  # Analytics, rapports
+    MEDIUM = "medium"  # Génération coupons, suggestions
+    HIGH = "high"  # Modifications prix, produits
     CRITICAL = "critical"  # Suppressions, actions bulk
 
 
 @dataclass
 class AdminCommand:
     """Commande admin parsée et validée"""
+
     command_type: AdminActionType
     parameters: Dict[str, Any]
     risk_level: RiskLevel
@@ -46,6 +48,7 @@ class AdminCommand:
 @dataclass
 class AdminResponse:
     """Réponse structurée de l'agent admin"""
+
     success: bool
     action_id: UUID
     command_type: AdminActionType
@@ -68,6 +71,7 @@ class AdminResponse:
 # ============================================================================
 # COMMAND VALIDATOR
 # ============================================================================
+
 
 class AdminCommandValidator:
     """
@@ -100,10 +104,7 @@ class AdminCommandValidator:
     ]
 
     def validate(
-        self,
-        command_type: AdminActionType,
-        parameters: Dict[str, Any],
-        tenant: Tenant
+        self, command_type: AdminActionType, parameters: Dict[str, Any], tenant: Tenant
     ) -> Tuple[bool, List[str]]:
         """
         Valide une commande admin.
@@ -143,11 +144,7 @@ class AdminCommandValidator:
         required_feature = feature_map.get(action_type, "admin_ai")
         return tenant.can_use_feature(required_feature)
 
-    def _validate_price_update(
-        self,
-        params: Dict[str, Any],
-        limits: Dict
-    ) -> List[str]:
+    def _validate_price_update(self, params: Dict[str, Any], limits: Dict) -> List[str]:
         """Valide une demande de mise à jour de prix"""
         errors = []
 
@@ -163,11 +160,7 @@ class AdminCommandValidator:
 
         return errors
 
-    def _validate_coupon_generate(
-        self,
-        params: Dict[str, Any],
-        limits: Dict
-    ) -> List[str]:
+    def _validate_coupon_generate(self, params: Dict[str, Any], limits: Dict) -> List[str]:
         """Valide une demande de génération de coupons"""
         errors = []
 
@@ -185,11 +178,7 @@ class AdminCommandValidator:
 
         return errors
 
-    def _validate_product_update(
-        self,
-        params: Dict[str, Any],
-        limits: Dict
-    ) -> List[str]:
+    def _validate_product_update(self, params: Dict[str, Any], limits: Dict) -> List[str]:
         """Valide une demande de mise à jour de produits"""
         errors = []
 
@@ -220,6 +209,7 @@ class AdminCommandValidator:
 # AUDIT LOGGER
 # ============================================================================
 
+
 class AdminAuditLogger:
     """
     Logger d'audit pour toutes les actions admin.
@@ -238,7 +228,7 @@ class AdminAuditLogger:
         initiated_by: str,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
-        requires_approval: bool = False
+        requires_approval: bool = False,
     ) -> AdminAction:
         """Log une action admin et retourne l'entité créée"""
 
@@ -253,20 +243,20 @@ class AdminAuditLogger:
             initiated_by=initiated_by,
             ip_address=ip_address,
             user_agent=user_agent,
-            created_at=datetime.utcnow()
+            created_at=datetime.utcnow(),
         )
 
         await self.action_repo.save(action)
 
         logger.info(
-            f"Admin action logged",
+            "Admin action logged",
             extra={
                 "action_id": str(action.id),
                 "tenant_id": str(tenant_id),
                 "action_type": action_type.value,
                 "initiated_by": initiated_by,
-                "requires_approval": requires_approval
-            }
+                "requires_approval": requires_approval,
+            },
         )
 
         return action
@@ -276,7 +266,7 @@ class AdminAuditLogger:
         action_id: UUID,
         approved: bool,
         approved_by: str,
-        rejection_reason: Optional[str] = None
+        rejection_reason: Optional[str] = None,
     ):
         """Log l'approbation ou le rejet d'une action"""
         action = await self.action_repo.get(action_id)
@@ -295,11 +285,7 @@ class AdminAuditLogger:
 
         logger.info(
             f"Admin action {'approved' if approved else 'rejected'}",
-            extra={
-                "action_id": str(action_id),
-                "approved_by": approved_by,
-                "approved": approved
-            }
+            extra={"action_id": str(action_id), "approved_by": approved_by, "approved": approved},
         )
 
     async def log_execution(
@@ -308,7 +294,7 @@ class AdminAuditLogger:
         success: bool,
         result: Optional[Dict[str, Any]] = None,
         error_message: Optional[str] = None,
-        execution_time_ms: Optional[int] = None
+        execution_time_ms: Optional[int] = None,
     ):
         """Log l'exécution d'une action"""
         action = await self.action_repo.get(action_id)
@@ -332,14 +318,15 @@ class AdminAuditLogger:
             extra={
                 "action_id": str(action_id),
                 "success": success,
-                "execution_time_ms": execution_time_ms
-            }
+                "execution_time_ms": execution_time_ms,
+            },
         )
 
 
 # ============================================================================
 # ADMIN AI AGENT
 # ============================================================================
+
 
 class AdminAIAgent:
     """
@@ -361,7 +348,7 @@ class AdminAIAgent:
         campaign_service,
         pricing_service,
         tenant_repo,
-        action_repo
+        action_repo,
     ):
         self.llm = llm_service
         self.vector_store = vector_store
@@ -380,7 +367,7 @@ class AdminAIAgent:
         parameters: Dict[str, Any],
         user_id: str,
         ip_address: Optional[str] = None,
-        user_agent: Optional[str] = None
+        user_agent: Optional[str] = None,
     ) -> AdminResponse:
         """
         Point d'entrée principal pour exécuter une commande admin.
@@ -402,7 +389,7 @@ class AdminAIAgent:
                 action_id=uuid4(),
                 command_type=AdminActionType.ANALYTICS_QUERY,
                 status=AdminActionStatus.FAILED,
-                message="Tenant not found or inactive"
+                message="Tenant not found or inactive",
             )
 
         # 2. Parser la commande
@@ -410,9 +397,7 @@ class AdminAIAgent:
 
         # 3. Valider
         is_valid, errors = self.validator.validate(
-            parsed_command.command_type,
-            parsed_command.parameters,
-            tenant
+            parsed_command.command_type, parsed_command.parameters, tenant
         )
 
         if not is_valid:
@@ -421,7 +406,7 @@ class AdminAIAgent:
                 action_id=uuid4(),
                 command_type=parsed_command.command_type,
                 status=AdminActionStatus.REJECTED,
-                message=f"Validation failed: {'; '.join(errors)}"
+                message=f"Validation failed: {'; '.join(errors)}",
             )
 
         # 4. Log audit
@@ -433,7 +418,7 @@ class AdminAIAgent:
             initiated_by=user_id,
             ip_address=ip_address,
             user_agent=user_agent,
-            requires_approval=parsed_command.requires_confirmation
+            requires_approval=parsed_command.requires_confirmation,
         )
 
         # 5. Si confirmation requise
@@ -450,9 +435,9 @@ class AdminAIAgent:
                     "risk_level": parsed_command.risk_level.value,
                     "estimated_impact": parsed_command.estimated_impact,
                     "ai_reasoning": parsed_command.ai_reasoning,
-                    "parameters": parsed_command.parameters
+                    "parameters": parsed_command.parameters,
                 },
-                confirmation_expires_at=datetime.utcnow() + timedelta(hours=24)
+                confirmation_expires_at=datetime.utcnow() + timedelta(hours=24),
             )
 
         # 6. Exécution
@@ -462,10 +447,7 @@ class AdminAIAgent:
             execution_time = int((datetime.utcnow() - start_time).total_seconds() * 1000)
 
             await self.audit_logger.log_execution(
-                action.id,
-                success=True,
-                result=result,
-                execution_time_ms=execution_time
+                action.id, success=True, result=result, execution_time_ms=execution_time
             )
 
             return AdminResponse(
@@ -475,41 +457,28 @@ class AdminAIAgent:
                 status=AdminActionStatus.EXECUTED,
                 result=result,
                 message="Action executed successfully",
-                execution_time_ms=execution_time
+                execution_time_ms=execution_time,
             )
 
         except Exception as e:
             logger.error(f"Action execution failed: {str(e)}", exc_info=True)
 
-            await self.audit_logger.log_execution(
-                action.id,
-                success=False,
-                error_message=str(e)
-            )
+            await self.audit_logger.log_execution(action.id, success=False, error_message=str(e))
 
             return AdminResponse(
                 success=False,
                 action_id=action.id,
                 command_type=parsed_command.command_type,
                 status=AdminActionStatus.FAILED,
-                message=f"Execution failed: {str(e)}"
+                message=f"Execution failed: {str(e)}",
             )
 
     async def confirm_action(
-        self,
-        action_id: UUID,
-        approved: bool,
-        user_id: str,
-        rejection_reason: Optional[str] = None
+        self, action_id: UUID, approved: bool, user_id: str, rejection_reason: Optional[str] = None
     ) -> AdminResponse:
         """Confirme ou rejette une action en attente"""
 
-        await self.audit_logger.log_approval(
-            action_id,
-            approved,
-            user_id,
-            rejection_reason
-        )
+        await self.audit_logger.log_approval(action_id, approved, user_id, rejection_reason)
 
         if not approved:
             return AdminResponse(
@@ -517,7 +486,7 @@ class AdminAIAgent:
                 action_id=action_id,
                 command_type=AdminActionType.ANALYTICS_QUERY,  # Will be updated
                 status=AdminActionStatus.REJECTED,
-                message=f"Action rejected: {rejection_reason or 'No reason provided'}"
+                message=f"Action rejected: {rejection_reason or 'No reason provided'}",
             )
 
         # Récupérer et exécuter l'action
@@ -530,7 +499,7 @@ class AdminAIAgent:
             risk_level=self.validator.get_risk_level(action.action_type),
             requires_confirmation=False,  # Already confirmed
             estimated_impact={},
-            ai_reasoning=action.ai_reasoning
+            ai_reasoning=action.ai_reasoning,
         )
 
         tenant = await self.tenants.get(action.tenant_id)
@@ -538,11 +507,7 @@ class AdminAIAgent:
         try:
             result = await self._execute_action(parsed_command, tenant)
 
-            await self.audit_logger.log_execution(
-                action_id,
-                success=True,
-                result=result
-            )
+            await self.audit_logger.log_execution(action_id, success=True, result=result)
 
             return AdminResponse(
                 success=True,
@@ -550,29 +515,22 @@ class AdminAIAgent:
                 command_type=action.action_type,
                 status=AdminActionStatus.EXECUTED,
                 result=result,
-                message="Action executed successfully after confirmation"
+                message="Action executed successfully after confirmation",
             )
 
         except Exception as e:
-            await self.audit_logger.log_execution(
-                action_id,
-                success=False,
-                error_message=str(e)
-            )
+            await self.audit_logger.log_execution(action_id, success=False, error_message=str(e))
 
             return AdminResponse(
                 success=False,
                 action_id=action_id,
                 command_type=action.action_type,
                 status=AdminActionStatus.FAILED,
-                message=f"Execution failed: {str(e)}"
+                message=f"Execution failed: {str(e)}",
             )
 
     async def _parse_command(
-        self,
-        command: str,
-        parameters: Dict[str, Any],
-        tenant: Tenant
+        self, command: str, parameters: Dict[str, Any], tenant: Tenant
     ) -> AdminCommand:
         """Parse une commande en utilisant le LLM si nécessaire"""
 
@@ -598,7 +556,7 @@ class AdminAIAgent:
             risk_level=risk_level,
             requires_confirmation=requires_confirmation,
             estimated_impact=estimated_impact,
-            ai_reasoning=ai_reasoning
+            ai_reasoning=ai_reasoning,
         )
 
     async def _classify_command(self, command: str) -> AdminActionType:
@@ -607,20 +565,14 @@ class AdminAIAgent:
         return AdminActionType.ANALYTICS_QUERY
 
     async def _generate_reasoning(
-        self,
-        command: str,
-        command_type: AdminActionType,
-        parameters: Dict[str, Any]
+        self, command: str, command_type: AdminActionType, parameters: Dict[str, Any]
     ) -> str:
         """Génère une explication du raisonnement de l'IA"""
         # Implémentation avec LLM
         return f"Executing {command_type.value} based on request: {command[:100]}"
 
     async def _estimate_impact(
-        self,
-        command_type: AdminActionType,
-        parameters: Dict[str, Any],
-        tenant: Tenant
+        self, command_type: AdminActionType, parameters: Dict[str, Any], tenant: Tenant
     ) -> Dict[str, Any]:
         """Estime l'impact de l'action"""
 
@@ -630,23 +582,19 @@ class AdminAIAgent:
             return {
                 "products_affected": product_count,
                 "price_change": f"{change:+.1f}%",
-                "estimated_revenue_impact": "Requires analysis"
+                "estimated_revenue_impact": "Requires analysis",
             }
 
         elif command_type == AdminActionType.COUPON_GENERATE:
             return {
                 "coupons_to_create": parameters.get("count", 1),
                 "discount": f"{parameters.get('discount_percent', 0)}%",
-                "validity": f"{parameters.get('validity_days', 30)} days"
+                "validity": f"{parameters.get('validity_days', 30)} days",
             }
 
         return {}
 
-    async def _execute_action(
-        self,
-        command: AdminCommand,
-        tenant: Tenant
-    ) -> Dict[str, Any]:
+    async def _execute_action(self, command: AdminCommand, tenant: Tenant) -> Dict[str, Any]:
         """Exécute une action validée"""
 
         if command.command_type == AdminActionType.ANALYTICS_QUERY:
@@ -667,9 +615,7 @@ class AdminAIAgent:
         raise ValueError(f"Unknown command type: {command.command_type}")
 
     async def _execute_analytics(
-        self,
-        parameters: Dict[str, Any],
-        tenant: Tenant
+        self, parameters: Dict[str, Any], tenant: Tenant
     ) -> Dict[str, Any]:
         """Exécute une requête analytics"""
         query_type = parameters.get("query_type", "overview")
@@ -687,9 +633,7 @@ class AdminAIAgent:
         return {"error": "Unknown query type"}
 
     async def _execute_strategy_generation(
-        self,
-        parameters: Dict[str, Any],
-        tenant: Tenant
+        self, parameters: Dict[str, Any], tenant: Tenant
     ) -> Dict[str, Any]:
         """Génère une stratégie marketing via IA"""
         objective = parameters.get("objective", "increase_sales")
@@ -703,15 +647,13 @@ class AdminAIAgent:
             objective=objective,
             analytics=analytics_data,
             segments=segments_data,
-            tenant_settings=tenant.settings
+            tenant_settings=tenant.settings,
         )
 
         return strategy
 
     async def _execute_price_update(
-        self,
-        parameters: Dict[str, Any],
-        tenant: Tenant
+        self, parameters: Dict[str, Any], tenant: Tenant
     ) -> Dict[str, Any]:
         """Exécute une mise à jour de prix"""
         return await self.pricing.update_prices(
@@ -719,28 +661,23 @@ class AdminAIAgent:
             product_ids=parameters["product_ids"],
             change_percent=parameters.get("change_percent"),
             new_prices=parameters.get("new_prices"),
-            reason=parameters.get("reason", "admin_command")
+            reason=parameters.get("reason", "admin_command"),
         )
 
     async def _execute_coupon_generation(
-        self,
-        parameters: Dict[str, Any],
-        tenant: Tenant
+        self, parameters: Dict[str, Any], tenant: Tenant
     ) -> Dict[str, Any]:
         """Génère des coupons"""
         # Implémentation via coupon service
         return {"generated": parameters.get("count", 1)}
 
     async def _execute_campaign_creation(
-        self,
-        parameters: Dict[str, Any],
-        tenant: Tenant
+        self, parameters: Dict[str, Any], tenant: Tenant
     ) -> Dict[str, Any]:
         """Crée une campagne marketing"""
         return await self.campaigns.create(
             tenant_id=tenant.id,
             name=parameters["name"],
             campaign_type=parameters["type"],
-            settings=parameters.get("settings", {})
+            settings=parameters.get("settings", {}),
         )
-

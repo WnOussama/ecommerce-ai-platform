@@ -9,7 +9,6 @@ Pour exécuter cet exemple:
     python -m app.infrastructure.external.prestashop.example
 """
 
-import asyncio
 import os
 from decimal import Decimal
 
@@ -19,12 +18,12 @@ os.environ.setdefault("DB_PASSWORD", "test_password")
 os.environ.setdefault("SECURITY_JWT_SECRET_KEY", "test_secret_key_32_chars_minimum")
 
 from app.infrastructure.external.prestashop import (
+    Category,
     PrestaShopClient,
     PrestaShopClientConfig,
-    Product,
-    Category,
     PrestaShopError,
     PrestaShopNotFoundError,
+    Product,
 )
 
 
@@ -34,7 +33,7 @@ async def example_get_products():
     # Configuration par tenant (normalement stockée en base)
     config = PrestaShopClientConfig(
         shop_url="https://demo.prestashop.com",  # URL du shop PrestaShop
-        api_key="YOUR_API_KEY",                  # Clé WebService
+        api_key="YOUR_API_KEY",  # Clé WebService
         timeout=30,
         language_id=1,  # Français
     )
@@ -143,7 +142,9 @@ async def example_pagination():
             response = await client.get_products(limit=batch_size, offset=offset)
             all_products.extend(response.products)
 
-            print(f"📥 Batch récupéré: {len(response.products)} produits (total: {len(all_products)})")
+            print(
+                f"📥 Batch récupéré: {len(response.products)} produits (total: {len(all_products)})"
+            )
 
             if not response.has_more:
                 break
@@ -218,4 +219,3 @@ if __name__ == "__main__":
     print("   asyncio.run(example_get_products())")
     print("   asyncio.run(example_get_categories())")
     print("   asyncio.run(example_health_check())")
-

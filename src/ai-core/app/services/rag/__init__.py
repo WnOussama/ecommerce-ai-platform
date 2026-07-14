@@ -7,23 +7,23 @@ Ce module contient:
 - EmbeddingService: Service de génération d'embeddings
 """
 
-from app.services.rag.product_indexer import (
-    ProductIndexer,
-    IndexResult,
-    IndexStatus,
-    IndexingError,
-)
 from app.services.rag.embedding_service import (
     EmbeddingService,
     EmbeddingServiceProtocol,
     MockEmbeddingService,
 )
+from app.services.rag.product_indexer import (
+    IndexingError,
+    IndexResult,
+    IndexStatus,
+    ProductIndexer,
+)
 from app.services.rag.retrieval_service import (
+    ChromaSearchableVectorStore,
+    InMemorySearchableVectorStore,
     ProductRetrievalService,
     RetrievalResult,
     RetrievedProduct,
-    InMemorySearchableVectorStore,
-    ChromaSearchableVectorStore,
 )
 
 __all__ = [
@@ -43,5 +43,3 @@ __all__ = [
     "EmbeddingServiceProtocol",
     "MockEmbeddingService",
 ]
-
-

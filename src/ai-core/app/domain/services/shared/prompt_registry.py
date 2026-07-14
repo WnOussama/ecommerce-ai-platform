@@ -2,15 +2,14 @@
 Prompt Registry - Système de versioning et A/B testing des prompts
 """
 
+import hashlib
+import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Dict, Any, List
-from uuid import UUID, uuid4
 from enum import Enum
-import logging
-import hashlib
-import random
-import json
+from typing import Any, Dict, List, Optional
+from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +17,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # TYPES
 # ============================================================================
+
 
 class PromptType(str, Enum):
     SYSTEM = "system"
@@ -36,6 +36,7 @@ class PromptStatus(str, Enum):
 @dataclass
 class PromptVersion:
     """Version d'un prompt avec métadonnées"""
+
     id: UUID = field(default_factory=uuid4)
     prompt_id: UUID = field(default_factory=uuid4)
     version: str = "1.0.0"  # Semantic versioning
@@ -80,6 +81,7 @@ class PromptVersion:
 @dataclass
 class Prompt:
     """Définition d'un prompt avec ses versions"""
+
     id: UUID = field(default_factory=uuid4)
     name: str = ""  # Unique identifier, ex: "chatbot_system_v2"
     description: str = ""
@@ -97,6 +99,7 @@ class Prompt:
 @dataclass
 class ABTest:
     """Configuration d'un A/B test entre deux versions de prompt"""
+
     id: UUID = field(default_factory=uuid4)
     name: str = ""
     prompt_id: UUID = field(default_factory=uuid4)
@@ -125,6 +128,7 @@ class ABTest:
 # ============================================================================
 # PROMPT REGISTRY
 # ============================================================================
+
 
 class PromptRegistry:
     """
@@ -171,7 +175,6 @@ FORMAT DE RÉPONSE:
 - Utilise le vouvoiement
 - Propose des actions concrètes quand pertinent
 - Cite les sources quand tu mentionnes des informations spécifiques""",
-
         "intent_classifier": """Analyse le message suivant et détermine l'intention principale.
 
 Message: {message}
@@ -190,7 +193,6 @@ Intentions possibles:
 
 Réponds avec un JSON:
 {{"intent": "...", "confidence": 0.0-1.0, "entities": {{}}}}""",
-
         "recommendation_prompt": """En te basant sur le profil client et l'historique suivants, suggère des produits pertinents.
 
 PROFIL CLIENT:
@@ -210,7 +212,6 @@ CONTRAINTES:
 
 Réponds en JSON:
 {{"recommendations": [{{"product_id": "...", "reason": "..."}}]}}""",
-
         "admin_strategy_prompt": """Tu es un expert en stratégie marketing e-commerce.
 
 DONNÉES BUSINESS:
@@ -241,7 +242,7 @@ Réponds en JSON avec cette structure:
     "kpis_to_track": ["..."],
     "timeline": "...",
     "estimated_roi": "..."
-}}"""
+}}""",
     }
 
     def __init__(self, repository=None, cache=None):
@@ -262,7 +263,7 @@ Réponds en JSON avec cette structure:
         prompt_name: str,
         tenant_id: Optional[UUID] = None,
         user_id: Optional[str] = None,
-        variables: Dict[str, Any] = None
+        variables: Dict[str, Any] = None,
     ) -> str:
         """
         Récupère un prompt rendu avec ses variables.
@@ -288,10 +289,7 @@ Réponds en JSON avec cette structure:
         return version.render(variables)
 
     async def _get_version_with_ab_test(
-        self,
-        prompt_name: str,
-        tenant_id: Optional[UUID],
-        user_id: Optional[str]
+        self, prompt_name: str, tenant_id: Optional[UUID], user_id: Optional[str]
     ) -> Optional[PromptVersion]:
         """Récupère la version appropriée, tenant compte des A/B tests"""
 
@@ -348,7 +346,7 @@ Réponds en JSON avec cette structure:
                     await self.cache.set(
                         f"prompt:{prompt_name}:active",
                         json.dumps(version.__dict__, default=str),
-                        ex=300  # 5 min TTL
+                        ex=300,  # 5 min TTL
                     )
                 return version
 
@@ -368,12 +366,7 @@ Réponds en JSON avec cette structure:
             template = template.replace(placeholder, str(var_value))
         return template
 
-    async def _log_usage(
-        self,
-        version_id: UUID,
-        tenant_id: Optional[UUID],
-        user_id: Optional[str]
-    ):
+    async def _log_usage(self, version_id: UUID, tenant_id: Optional[UUID], user_id: Optional[str]):
         """Log l'utilisation d'une version pour métriques"""
         if self.repository:
             await self.repository.log_usage(version_id, tenant_id, user_id)
@@ -390,7 +383,7 @@ Réponds en JSON avec cette structure:
         created_by: str,
         change_reason: str = "",
         variables: List[str] = None,
-        model_constraints: Dict[str, Any] = None
+        model_constraints: Dict[str, Any] = None,
     ) -> PromptVersion:
         """Crée une nouvelle version d'un prompt"""
 
@@ -401,7 +394,7 @@ Réponds en JSON avec cette structure:
             model_constraints=model_constraints or {},
             status=PromptStatus.DRAFT,
             created_by=created_by,
-            change_reason=change_reason
+            change_reason=change_reason,
         )
 
         if self.repository:
@@ -411,16 +404,13 @@ Réponds en JSON avec cette structure:
 
         logger.info(
             f"Created new prompt version: {prompt_name} v{version}",
-            extra={"prompt_name": prompt_name, "version": version, "created_by": created_by}
+            extra={"prompt_name": prompt_name, "version": version, "created_by": created_by},
         )
 
         return new_version
 
     async def activate_version(
-        self,
-        prompt_name: str,
-        version_id: UUID,
-        rollout_percentage: int = 100
+        self, prompt_name: str, version_id: UUID, rollout_percentage: int = 100
     ):
         """Active une version de prompt"""
 
@@ -461,7 +451,7 @@ Réponds en JSON avec cette structure:
         control_version_id: UUID,
         treatment_version_id: UUID,
         traffic_split: float = 0.5,
-        duration_days: int = 14
+        duration_days: int = 14,
     ) -> ABTest:
         """Démarre un A/B test entre deux versions"""
 
@@ -471,7 +461,7 @@ Réponds en JSON avec cette structure:
             treatment_version_id=treatment_version_id,
             traffic_split=traffic_split,
             start_date=datetime.utcnow(),
-            is_active=True
+            is_active=True,
         )
 
         self._ab_tests[prompt_name] = ab_test
@@ -480,8 +470,7 @@ Réponds en JSON avec cette structure:
             await self.repository.save_ab_test(ab_test)
 
         logger.info(
-            f"Started A/B test '{name}' for {prompt_name}",
-            extra={"traffic_split": traffic_split}
+            f"Started A/B test '{name}' for {prompt_name}", extra={"traffic_split": traffic_split}
         )
 
         return ab_test
@@ -508,16 +497,12 @@ Réponds en JSON avec cette structure:
                 f"Ended A/B test for {prompt_name}, winner: {winner}",
                 extra={
                     "control_metrics": ab_test.control_metrics,
-                    "treatment_metrics": ab_test.treatment_metrics
-                }
+                    "treatment_metrics": ab_test.treatment_metrics,
+                },
             )
 
     async def record_ab_metric(
-        self,
-        prompt_name: str,
-        user_id: str,
-        metric_name: str,
-        metric_value: float
+        self, prompt_name: str, user_id: str, metric_name: str, metric_value: float
     ):
         """Enregistre une métrique pour un A/B test"""
         ab_test = self._ab_tests.get(prompt_name)
@@ -542,4 +527,3 @@ Réponds en JSON avec cette structure:
 
 # Singleton
 prompt_registry = PromptRegistry()
-

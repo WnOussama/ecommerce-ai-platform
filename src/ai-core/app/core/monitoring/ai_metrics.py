@@ -22,21 +22,20 @@ Métriques collectées:
 └─────────────────────────────────────────────────────────────────────────────────┘
 """
 
-from prometheus_client import (
-    Counter,
-    Histogram,
-    Gauge,
-    Summary,
-    Info,
-    CollectorRegistry,
-    generate_latest,
-    CONTENT_TYPE_LATEST,
-)
-from typing import Optional, Dict, Any
-from functools import wraps
-from contextlib import contextmanager
-import time
 import logging
+import time
+from contextlib import contextmanager
+from typing import Dict, Optional
+
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Histogram,
+    Summary,
+    generate_latest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -317,6 +316,7 @@ rate_limit_exceeded_total = Counter(
 # =============================================================================
 # METRICS COLLECTOR CLASS
 # =============================================================================
+
 
 class AIMetricsCollector:
     """
@@ -690,8 +690,8 @@ class AIMetricsCollector:
         status_code = "200"
 
         try:
-            yield lambda code: setattr(self, '_status_code', code)
-            status_code = getattr(self, '_status_code', "200")
+            yield lambda code: setattr(self, "_status_code", code)
+            status_code = getattr(self, "_status_code", "200")
         except Exception:
             status_code = "500"
             raise
@@ -742,6 +742,7 @@ def get_metrics_collector() -> AIMetricsCollector:
 # FASTAPI INTEGRATION
 # =============================================================================
 
+
 def get_metrics_endpoint():
     """Endpoint pour exposer les métriques Prometheus"""
     from fastapi import Response
@@ -763,11 +764,8 @@ __all__ = [
     # Collector
     "AIMetricsCollector",
     "get_metrics_collector",
-
     # FastAPI
     "get_metrics_endpoint",
-
     # Registry
     "REGISTRY",
 ]
-

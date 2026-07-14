@@ -2,21 +2,21 @@
 Service LLM - Abstraction multi-provider avec fallback, retry, et cost tracking
 """
 
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional, Dict, Any, List
-from uuid import UUID
 import asyncio
 import logging
 import time
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from openai import AsyncOpenAI
-from anthropic import AsyncAnthropic
 import tiktoken
+from anthropic import AsyncAnthropic
+from openai import AsyncOpenAI
 
-from app.domain.entities.models import LLMUsage, IntentType
 from app.core.config.settings import settings
+from app.domain.entities.models import IntentType, LLMUsage
 
 logger = logging.getLogger(__name__)
 
@@ -25,9 +25,11 @@ logger = logging.getLogger(__name__)
 # TYPES
 # ============================================================================
 
+
 @dataclass
 class LLMResponse:
     """Réponse standardisée du LLM"""
+
     content: str
     usage: LLMUsage
     model: str
@@ -38,6 +40,7 @@ class LLMResponse:
 @dataclass
 class LLMConfig:
     """Configuration pour un appel LLM"""
+
     temperature: float = 0.7
     max_tokens: int = 1000
     top_p: float = 1.0
@@ -50,15 +53,12 @@ class LLMConfig:
 # PROVIDER INTERFACE
 # ============================================================================
 
+
 class LLMProvider(ABC):
     """Interface abstraite pour les providers LLM"""
 
     @abstractmethod
-    async def generate(
-        self,
-        messages: List[Dict[str, str]],
-        config: LLMConfig
-    ) -> LLMResponse:
+    async def generate(self, messages: List[Dict[str, str]], config: LLMConfig) -> LLMResponse:
         """Génère une réponse à partir des messages"""
         pass
 
@@ -77,6 +77,7 @@ class LLMProvider(ABC):
 # OPENAI PROVIDER
 # ============================================================================
 
+
 class OpenAIProvider(LLMProvider):
     """Provider OpenAI avec support GPT-4"""
 
@@ -85,11 +86,7 @@ class OpenAIProvider(LLMProvider):
         self.model = model
         self._encoder = tiktoken.encoding_for_model("gpt-4")
 
-    async def generate(
-        self,
-        messages: List[Dict[str, str]],
-        config: LLMConfig
-    ) -> LLMResponse:
+    async def generate(self, messages: List[Dict[str, str]], config: LLMConfig) -> LLMResponse:
         start_time = time.time()
 
         response = await self.client.chat.completions.create(
@@ -100,7 +97,7 @@ class OpenAIProvider(LLMProvider):
             top_p=config.top_p,
             frequency_penalty=config.frequency_penalty,
             presence_penalty=config.presence_penalty,
-            stop=config.stop
+            stop=config.stop,
         )
 
         latency_ms = int((time.time() - start_time) * 1000)
@@ -108,7 +105,7 @@ class OpenAIProvider(LLMProvider):
         usage = LLMUsage(
             input_tokens=response.usage.prompt_tokens,
             output_tokens=response.usage.completion_tokens,
-            model=self.model
+            model=self.model,
         )
 
         return LLMResponse(
@@ -116,7 +113,7 @@ class OpenAIProvider(LLMProvider):
             usage=usage,
             model=self.model,
             finish_reason=response.choices[0].finish_reason,
-            latency_ms=latency_ms
+            latency_ms=latency_ms,
         )
 
     def count_tokens(self, text: str) -> int:
@@ -130,6 +127,7 @@ class OpenAIProvider(LLMProvider):
 # ANTHROPIC PROVIDER
 # ============================================================================
 
+
 class AnthropicProvider(LLMProvider):
     """Provider Anthropic avec support Claude"""
 
@@ -137,11 +135,7 @@ class AnthropicProvider(LLMProvider):
         self.client = AsyncAnthropic(api_key=api_key)
         self.model = model
 
-    async def generate(
-        self,
-        messages: List[Dict[str, str]],
-        config: LLMConfig
-    ) -> LLMResponse:
+    async def generate(self, messages: List[Dict[str, str]], config: LLMConfig) -> LLMResponse:
         start_time = time.time()
 
         # Convertir le format OpenAI vers Anthropic
@@ -152,16 +146,13 @@ class AnthropicProvider(LLMProvider):
             if msg["role"] == "system":
                 system_message = msg["content"]
             else:
-                formatted_messages.append({
-                    "role": msg["role"],
-                    "content": msg["content"]
-                })
+                formatted_messages.append({"role": msg["role"], "content": msg["content"]})
 
         response = await self.client.messages.create(
             model=self.model,
             max_tokens=config.max_tokens,
             system=system_message,
-            messages=formatted_messages
+            messages=formatted_messages,
         )
 
         latency_ms = int((time.time() - start_time) * 1000)
@@ -169,7 +160,7 @@ class AnthropicProvider(LLMProvider):
         usage = LLMUsage(
             input_tokens=response.usage.input_tokens,
             output_tokens=response.usage.output_tokens,
-            model=self.model
+            model=self.model,
         )
 
         return LLMResponse(
@@ -177,7 +168,7 @@ class AnthropicProvider(LLMProvider):
             usage=usage,
             model=self.model,
             finish_reason=response.stop_reason,
-            latency_ms=latency_ms
+            latency_ms=latency_ms,
         )
 
     def count_tokens(self, text: str) -> int:
@@ -191,6 +182,7 @@ class AnthropicProvider(LLMProvider):
 # ============================================================================
 # LLM SERVICE PRINCIPAL
 # ============================================================================
+
 
 class LLMService:
     """
@@ -208,7 +200,7 @@ class LLMService:
         primary_provider: LLMProvider,
         fallback_provider: Optional[LLMProvider] = None,
         rate_limiter=None,  # RedisRateLimiter
-        cost_tracker=None   # CostTracker
+        cost_tracker=None,  # CostTracker
     ):
         self.primary = primary_provider
         self.fallback = fallback_provider
@@ -216,8 +208,7 @@ class LLMService:
         self.cost_tracker = cost_tracker
 
         self.default_config = LLMConfig(
-            temperature=settings.llm.temperature,
-            max_tokens=settings.llm.max_tokens
+            temperature=settings.llm.temperature, max_tokens=settings.llm.max_tokens
         )
 
     async def generate(
@@ -225,7 +216,7 @@ class LLMService:
         messages: List[Dict[str, str]],
         tenant_id: UUID,
         intent: Optional[IntentType] = None,
-        config: Optional[LLMConfig] = None
+        config: Optional[LLMConfig] = None,
     ) -> LLMResponse:
         """
         Génère une réponse avec gestion complète des erreurs.
@@ -243,11 +234,7 @@ class LLMService:
 
         # Cost tracking
         if self.cost_tracker:
-            await self.cost_tracker.record(
-                tenant_id=tenant_id,
-                usage=response.usage,
-                intent=intent
-            )
+            await self.cost_tracker.record(tenant_id=tenant_id, usage=response.usage, intent=intent)
 
         # Métriques
         self._record_metrics(response, tenant_id, intent)
@@ -255,10 +242,7 @@ class LLMService:
         return response
 
     async def _generate_with_retry(
-        self,
-        messages: List[Dict[str, str]],
-        config: LLMConfig,
-        max_retries: int = 3
+        self, messages: List[Dict[str, str]], config: LLMConfig, max_retries: int = 3
     ) -> LLMResponse:
         """Génère avec retry et fallback"""
 
@@ -275,7 +259,7 @@ class LLMService:
                 )
 
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    await asyncio.sleep(2**attempt)  # Exponential backoff
 
         # Fallback vers provider secondaire
         if self.fallback:
@@ -289,20 +273,13 @@ class LLMService:
         raise LLMError(f"LLM generation failed after {max_retries} retries: {last_error}")
 
     async def generate_with_function_calling(
-        self,
-        messages: List[Dict[str, str]],
-        functions: List[Dict[str, Any]],
-        tenant_id: UUID
+        self, messages: List[Dict[str, str]], functions: List[Dict[str, Any]], tenant_id: UUID
     ) -> Dict[str, Any]:
         """Génération avec function calling pour actions structurées"""
         # Implémentation spécifique OpenAI function calling
         pass
 
-    async def generate_embedding(
-        self,
-        text: str,
-        tenant_id: UUID
-    ) -> List[float]:
+    async def generate_embedding(self, text: str, tenant_id: UUID) -> List[float]:
         """Génère un embedding pour un texte"""
         if not isinstance(self.primary, OpenAIProvider):
             raise NotImplementedError("Embeddings only supported with OpenAI")
@@ -312,8 +289,7 @@ class LLMService:
             await self.rate_limiter.check(str(tenant_id), "embedding_request")
 
         response = await self.primary.client.embeddings.create(
-            model=settings.llm.openai_embedding_model,
-            input=text
+            model=settings.llm.openai_embedding_model, input=text
         )
 
         return response.data[0].embedding
@@ -323,7 +299,7 @@ class LLMService:
         objective: str,
         analytics: Dict[str, Any],
         segments: Dict[str, Any],
-        tenant_settings: Dict[str, Any]
+        tenant_settings: Dict[str, Any],
     ) -> Dict[str, Any]:
         """Génère une stratégie marketing structurée"""
 
@@ -359,12 +335,13 @@ Génère une réponse JSON structurée avec:
 }}"""
 
         messages = [
-            {"role": "system", "content": system_prompt.format(
-                analytics=str(analytics),
-                segments=str(segments),
-                objective=objective
-            )},
-            {"role": "user", "content": f"Génère une stratégie pour: {objective}"}
+            {
+                "role": "system",
+                "content": system_prompt.format(
+                    analytics=str(analytics), segments=str(segments), objective=objective
+                ),
+            },
+            {"role": "user", "content": f"Génère une stratégie pour: {objective}"},
         ]
 
         config = LLMConfig(temperature=0.3, max_tokens=2000)
@@ -372,21 +349,14 @@ Génère une réponse JSON structurée avec:
 
         # Parser la réponse JSON
         import json
+
         try:
             return json.loads(response.content)
         except json.JSONDecodeError:
             # Fallback si pas de JSON valide
-            return {
-                "strategy_name": "Stratégie générée",
-                "raw_response": response.content
-            }
+            return {"strategy_name": "Stratégie générée", "raw_response": response.content}
 
-    def _record_metrics(
-        self,
-        response: LLMResponse,
-        tenant_id: UUID,
-        intent: Optional[IntentType]
-    ):
+    def _record_metrics(self, response: LLMResponse, tenant_id: UUID, intent: Optional[IntentType]):
         """Enregistre les métriques pour monitoring"""
         # Implémentation avec Prometheus
         logger.info(
@@ -397,8 +367,8 @@ Génère une réponse JSON structurée avec:
                 "input_tokens": response.usage.input_tokens,
                 "output_tokens": response.usage.output_tokens,
                 "latency_ms": response.latency_ms,
-                "intent": intent.value if intent else None
-            }
+                "intent": intent.value if intent else None,
+            },
         )
 
 
@@ -406,19 +376,23 @@ Génère une réponse JSON structurée avec:
 # EXCEPTIONS
 # ============================================================================
 
+
 class LLMError(Exception):
     """Erreur générique LLM"""
+
     pass
 
 
 class RateLimitExceeded(LLMError):
     """Rate limit dépassé"""
+
     pass
 
 
 # ============================================================================
 # COST TRACKER
 # ============================================================================
+
 
 class CostTracker:
     """
@@ -439,12 +413,7 @@ class CostTracker:
             "claude-3-opus-20240229": {"input": 0.015, "output": 0.075},
         }
 
-    async def record(
-        self,
-        tenant_id: UUID,
-        usage: LLMUsage,
-        intent: Optional[IntentType] = None
-    ):
+    async def record(self, tenant_id: UUID, usage: LLMUsage, intent: Optional[IntentType] = None):
         """Enregistre l'usage et le coût"""
 
         model_costs = self.costs.get(usage.model, {"input": 0.01, "output": 0.03})
@@ -452,14 +421,8 @@ class CostTracker:
 
         # Incrémenter le compteur Redis pour le suivi temps réel
         date_key = datetime.utcnow().strftime("%Y-%m-%d")
-        await self.redis.incrbyfloat(
-            f"llm_cost:{tenant_id}:{date_key}",
-            cost
-        )
-        await self.redis.incrby(
-            f"llm_tokens:{tenant_id}:{date_key}",
-            usage.total_tokens
-        )
+        await self.redis.incrbyfloat(f"llm_cost:{tenant_id}:{date_key}", cost)
+        await self.redis.incrby(f"llm_tokens:{tenant_id}:{date_key}", usage.total_tokens)
 
         # Vérifier les alertes de budget
         await self._check_budget_alerts(tenant_id, date_key)
@@ -489,12 +452,11 @@ class CostTracker:
         if daily_cost >= critical_threshold:
             logger.critical(
                 f"CRITICAL: Tenant {tenant_id} LLM cost exceeded ${critical_threshold}",
-                extra={"tenant_id": str(tenant_id), "daily_cost": daily_cost}
+                extra={"tenant_id": str(tenant_id), "daily_cost": daily_cost},
             )
             # Envoyer alerte
         elif daily_cost >= warning_threshold:
             logger.warning(
                 f"WARNING: Tenant {tenant_id} LLM cost approaching limit",
-                extra={"tenant_id": str(tenant_id), "daily_cost": daily_cost}
+                extra={"tenant_id": str(tenant_id), "daily_cost": daily_cost},
             )
-

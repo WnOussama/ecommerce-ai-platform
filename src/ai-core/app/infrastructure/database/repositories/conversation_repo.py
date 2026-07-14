@@ -7,10 +7,10 @@ Pas de logique métier - uniquement des opérations CRUD.
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import select, and_
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database.models.conversation import Conversation, ConversationStatus
@@ -204,7 +204,7 @@ class ConversationRepository:
                 "tenant_id": str(self._tenant_id),
                 "conversation_id": str(conversation.id),
                 "user_identifier": user_identifier,
-            }
+            },
         )
 
         return conversation
@@ -268,7 +268,7 @@ class ConversationRepository:
                 "tenant_id": str(self._tenant_id),
                 "conversation_id": str(conversation_id),
                 "new_status": status.value,
-            }
+            },
         )
 
         return conversation
@@ -307,7 +307,3 @@ class ConversationRepository:
         await self._session.flush()
 
         return conversation
-
-
-
-

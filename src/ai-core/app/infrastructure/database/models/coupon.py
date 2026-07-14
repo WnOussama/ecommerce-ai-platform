@@ -5,21 +5,24 @@ Les coupons sont générés par l'AI Agent ou les règles.
 Peuvent être synchronisés avec PrestaShop.
 """
 
-from datetime import datetime
-from sqlalchemy import Column, String, Integer, ForeignKey, Index, DateTime, Enum as SQLEnum
-from sqlalchemy.dialects.postgresql import UUID, JSONB
-from sqlalchemy.orm import relationship
 import enum
+from datetime import datetime
+
+from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import Enum as SQLEnum
+from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.orm import relationship
 
 from app.infrastructure.database.base import (
     Base,
-    UUIDMixin,
     TimestampMixin,
+    UUIDMixin,
 )
 
 
 class CouponStatus(enum.Enum):
     """Statut d'un coupon."""
+
     ACTIVE = "active"
     USED = "used"
     EXPIRED = "expired"
@@ -50,6 +53,7 @@ class Coupon(Base, UUIDMixin, TimestampMixin):
         used_at: Date d'utilisation
         extra_data: Données additionnelles
     """
+
     __tablename__ = "coupons"
 
     # Relations
@@ -77,8 +81,8 @@ class Coupon(Base, UUIDMixin, TimestampMixin):
 
     # Réduction
     discount_percent = Column(Integer, nullable=True)  # 1-100
-    discount_amount = Column(Integer, nullable=True)   # En centimes
-    min_purchase = Column(Integer, nullable=True)      # En centimes
+    discount_amount = Column(Integer, nullable=True)  # En centimes
+    min_purchase = Column(Integer, nullable=True)  # En centimes
 
     # Statut
     status = Column(
@@ -116,7 +120,7 @@ class Coupon(Base, UUIDMixin, TimestampMixin):
         Index("idx_coupon_status", "tenant_id", "status"),
         Index("idx_coupon_expires_at", "tenant_id", "expires_at"),
         Index("idx_coupon_created_at", "tenant_id", "created_at"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
@@ -130,6 +134,3 @@ class Coupon(Base, UUIDMixin, TimestampMixin):
         if self.expires_at and self.expires_at < datetime.utcnow():
             return False
         return True
-
-
-

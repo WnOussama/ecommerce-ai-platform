@@ -34,12 +34,11 @@ Architecture:
 └─────────────────────────────────────────────────────────────────────────────────┘
 """
 
+import asyncio
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
-import logging
-import asyncio
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,17 +47,19 @@ logger = logging.getLogger(__name__)
 # TYPES
 # =============================================================================
 
+
 @dataclass
 class RankedDocument:
     """Document avec scores de retrieval et reranking"""
+
     id: str
     content: str
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     # Scores
-    retrieval_score: float = 0.0   # Score bi-encoder (embedding similarity)
-    rerank_score: float = 0.0      # Score cross-encoder (reranking)
-    final_score: float = 0.0       # Score combiné
+    retrieval_score: float = 0.0  # Score bi-encoder (embedding similarity)
+    rerank_score: float = 0.0  # Score cross-encoder (reranking)
+    final_score: float = 0.0  # Score combiné
 
     # Ranking positions
     retrieval_rank: int = 0
@@ -68,18 +69,20 @@ class RankedDocument:
 @dataclass
 class RerankerConfig:
     """Configuration du reranker"""
+
     model_name: str = "BAAI/bge-reranker-base"  # Léger et efficace
-    top_k_retrieval: int = 20   # Candidats du bi-encoder
-    top_n_rerank: int = 5       # Résultats finaux après reranking
-    min_score: float = 0.1      # Score minimum pour garder un document
-    batch_size: int = 32        # Batch size pour le reranker
-    use_gpu: bool = False       # GPU pour le reranker
+    top_k_retrieval: int = 20  # Candidats du bi-encoder
+    top_n_rerank: int = 5  # Résultats finaux après reranking
+    min_score: float = 0.1  # Score minimum pour garder un document
+    batch_size: int = 32  # Batch size pour le reranker
+    use_gpu: bool = False  # GPU pour le reranker
     cache_enabled: bool = True  # Cache des scores
 
 
 # =============================================================================
 # RERANKER INTERFACE
 # =============================================================================
+
 
 class BaseReranker(ABC):
     """Interface abstraite pour les rerankers"""
@@ -98,6 +101,7 @@ class BaseReranker(ABC):
 # =============================================================================
 # CROSS-ENCODER RERANKER
 # =============================================================================
+
 
 class CrossEncoderReranker(BaseReranker):
     """
@@ -173,8 +177,7 @@ class CrossEncoderReranker(BaseReranker):
             # Run in thread pool car sentence-transformers est synchrone
             loop = asyncio.get_event_loop()
             scores = await loop.run_in_executor(
-                None,
-                lambda: self._model.predict(pairs, batch_size=self._config.batch_size)
+                None, lambda: self._model.predict(pairs, batch_size=self._config.batch_size)
             )
 
             # Assigner les scores
@@ -186,10 +189,7 @@ class CrossEncoderReranker(BaseReranker):
                     self._cache[cache_keys[idx]] = float(score)
 
         # Filtrer par score minimum
-        filtered_docs = [
-            doc for doc in documents
-            if doc.rerank_score >= self._config.min_score
-        ]
+        filtered_docs = [doc for doc in documents if doc.rerank_score >= self._config.min_score]
 
         # Trier par score de reranking
         filtered_docs.sort(key=lambda d: d.rerank_score, reverse=True)
@@ -208,7 +208,7 @@ class CrossEncoderReranker(BaseReranker):
             extra={
                 "query_length": len(query),
                 "top_score": result[0].rerank_score if result else 0,
-            }
+            },
         )
 
         return result
@@ -216,6 +216,7 @@ class CrossEncoderReranker(BaseReranker):
     def _get_cache_key(self, query: str, content: str) -> str:
         """Génère une clé de cache pour une paire query-doc"""
         import hashlib
+
         combined = f"{query[:100]}:{content[:200]}"
         return hashlib.md5(combined.encode()).hexdigest()
 
@@ -227,6 +228,7 @@ class CrossEncoderReranker(BaseReranker):
 # =============================================================================
 # LLM-BASED RERANKER (Alternative)
 # =============================================================================
+
 
 class LLMReranker(BaseReranker):
     """
@@ -259,10 +261,7 @@ Relevance score (0-1):"""
             return []
 
         # Score chaque document (en parallèle)
-        tasks = [
-            self._score_document(query, doc)
-            for doc in documents
-        ]
+        tasks = [self._score_document(query, doc) for doc in documents]
 
         await asyncio.gather(*tasks)
 
@@ -307,6 +306,7 @@ Relevance score (0-1):"""
 # RERANKING PIPELINE
 # =============================================================================
 
+
 class RerankingPipeline:
     """
     Pipeline complet de retrieval + reranking.
@@ -339,29 +339,33 @@ class RerankingPipeline:
         1. Retrieval: ChromaDB bi-encoder (top K=20)
         2. Reranking: Cross-encoder (top N=5)
         """
-        from app.domain.services.shared.rag_service_v2 import RAGQuery, DocumentType
+        from app.domain.services.shared.rag_service_v2 import DocumentType, RAGQuery
 
         # 1. RETRIEVAL - Top K candidats
         doc_types = [DocumentType(dt) for dt in (document_types or ["product", "faq"])]
 
-        rag_result = await self._rag.search(RAGQuery(
-            query=query,
-            tenant_id=tenant_id,
-            document_types=doc_types,
-            top_k=self._config.top_k_retrieval,
-            min_relevance=0.3,  # Seuil bas pour recall
-        ))
+        rag_result = await self._rag.search(
+            RAGQuery(
+                query=query,
+                tenant_id=tenant_id,
+                document_types=doc_types,
+                top_k=self._config.top_k_retrieval,
+                min_relevance=0.3,  # Seuil bas pour recall
+            )
+        )
 
         # Convertir en RankedDocument
         candidates = []
         for rank, doc in enumerate(rag_result.documents):
-            candidates.append(RankedDocument(
-                id=doc.id,
-                content=doc.content,
-                metadata=doc.metadata,
-                retrieval_score=doc.relevance_score,
-                retrieval_rank=rank + 1,
-            ))
+            candidates.append(
+                RankedDocument(
+                    id=doc.id,
+                    content=doc.content,
+                    metadata=doc.metadata,
+                    retrieval_score=doc.relevance_score,
+                    retrieval_rank=rank + 1,
+                )
+            )
 
         if not candidates:
             return []
@@ -378,7 +382,7 @@ class RerankingPipeline:
             extra={
                 "tenant_id": tenant_id,
                 "query_length": len(query),
-            }
+            },
         )
 
         return reranked
@@ -388,10 +392,11 @@ class RerankingPipeline:
 # FACTORY
 # =============================================================================
 
+
 def create_reranker(
     model_type: str = "cross-encoder",
     config: Optional[RerankerConfig] = None,
-    llm_gateway = None,
+    llm_gateway=None,
 ) -> BaseReranker:
     """
     Factory pour créer un reranker.
@@ -424,4 +429,3 @@ __all__ = [
     "RerankingPipeline",
     "create_reranker",
 ]
-

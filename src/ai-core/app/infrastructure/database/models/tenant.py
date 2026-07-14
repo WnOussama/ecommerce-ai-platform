@@ -5,15 +5,15 @@ Chaque boutique e-commerce = 1 tenant.
 Toutes les autres entités sont liées à un tenant.
 """
 
-from sqlalchemy import Column, String, Boolean, Index
-from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy import Boolean, Column, Index, String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.infrastructure.database.base import (
     Base,
-    UUIDMixin,
-    TimestampMixin,
     SoftDeleteMixin,
+    TimestampMixin,
+    UUIDMixin,
 )
 
 
@@ -32,6 +32,7 @@ class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         settings: Configuration JSONB flexible
         is_active: Tenant actif ou suspendu
     """
+
     __tablename__ = "tenants"
 
     # Identité
@@ -88,10 +89,8 @@ class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
         Index("idx_tenant_slug", "slug"),
         Index("idx_tenant_is_active", "is_active"),
         Index("idx_tenant_created_at", "created_at"),
-        {'extend_existing': True}
+        {"extend_existing": True},
     )
 
     def __repr__(self) -> str:
         return f"<Tenant(id={self.id}, name='{self.name}', slug='{self.slug}')>"
-
-

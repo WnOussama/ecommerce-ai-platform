@@ -8,12 +8,11 @@ Ce service abstrait la génération d'embeddings pour:
 - Multi-tenant safe
 """
 
+import hashlib
 import logging
 import random
-import hashlib
-from abc import abstractmethod
-from typing import List, Optional, Protocol
 from dataclasses import dataclass
+from typing import List, Optional, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +21,11 @@ logger = logging.getLogger(__name__)
 # TYPES
 # =============================================================================
 
+
 @dataclass
 class EmbeddingResult:
     """Résultat d'une génération d'embedding."""
+
     embedding: List[float]
     model: str
     dimensions: int
@@ -34,6 +35,7 @@ class EmbeddingResult:
 # =============================================================================
 # PROTOCOL
 # =============================================================================
+
 
 class EmbeddingServiceProtocol(Protocol):
     """
@@ -73,6 +75,7 @@ class EmbeddingServiceProtocol(Protocol):
 # MOCK EMBEDDING SERVICE
 # =============================================================================
 
+
 class MockEmbeddingService:
     """
     Service d'embedding mock pour développement et tests.
@@ -103,10 +106,7 @@ class MockEmbeddingService:
         self._simulate_latency = simulate_latency
         self._model_name = "mock-embedding-v1"
 
-        logger.info(
-            "MockEmbeddingService initialized",
-            extra={"dimensions": dimensions}
-        )
+        logger.info("MockEmbeddingService initialized", extra={"dimensions": dimensions})
 
     @property
     def dimensions(self) -> int:
@@ -138,6 +138,7 @@ class MockEmbeddingService:
         """
         if self._simulate_latency:
             import asyncio
+
             await asyncio.sleep(random.uniform(0.01, 0.05))
 
         return self._generate_deterministic_embedding(text)
@@ -159,6 +160,7 @@ class MockEmbeddingService:
         """
         if self._simulate_latency:
             import asyncio
+
             # Latence proportionnelle au nombre de textes
             await asyncio.sleep(random.uniform(0.01, 0.02) * len(texts))
 
@@ -192,6 +194,7 @@ class MockEmbeddingService:
 # =============================================================================
 # OPENAI EMBEDDING SERVICE
 # =============================================================================
+
 
 class EmbeddingService:
     """
@@ -239,10 +242,11 @@ class EmbeddingService:
         if api_key:
             try:
                 from openai import AsyncOpenAI
+
                 self._client = AsyncOpenAI(api_key=api_key)
                 logger.info(
                     "EmbeddingService initialized with OpenAI",
-                    extra={"model": model, "dimensions": dimensions}
+                    extra={"model": model, "dimensions": dimensions},
                 )
             except ImportError:
                 logger.warning("OpenAI not installed, using mock")
@@ -301,8 +305,7 @@ class EmbeddingService:
 
         except Exception as e:
             logger.error(
-                "Failed to generate embedding",
-                extra={"tenant_id": tenant_id, "error": str(e)}
+                "Failed to generate embedding", extra={"tenant_id": tenant_id, "error": str(e)}
             )
 
             # Fallback to mock
@@ -341,7 +344,7 @@ class EmbeddingService:
         all_embeddings: List[List[float]] = []
 
         for i in range(0, len(texts), self.MAX_BATCH_SIZE):
-            batch = texts[i:i + self.MAX_BATCH_SIZE]
+            batch = texts[i : i + self.MAX_BATCH_SIZE]
 
             try:
                 response = await self._client.embeddings.create(
@@ -359,7 +362,7 @@ class EmbeddingService:
                         "tenant_id": tenant_id,
                         "batch_index": i // self.MAX_BATCH_SIZE,
                         "batch_size": len(batch),
-                    }
+                    },
                 )
 
             except Exception as e:
@@ -369,7 +372,7 @@ class EmbeddingService:
                         "tenant_id": tenant_id,
                         "batch_index": i // self.MAX_BATCH_SIZE,
                         "error": str(e),
-                    }
+                    },
                 )
 
                 # Fallback to mock for this batch
@@ -384,4 +387,3 @@ class EmbeddingService:
                     raise
 
         return all_embeddings
-

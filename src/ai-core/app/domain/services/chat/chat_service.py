@@ -38,32 +38,25 @@ FLUX TRANSACTIONNEL:
 └─────────────────────────────────────────────────────────────────────────────┘
 """
 
+import asyncio
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
 
-from app.infrastructure.database.unit_of_work import UnitOfWork
-from app.infrastructure.database.models.message import MessageRole
-from app.infrastructure.database.models.conversation import ConversationStatus
-from app.infrastructure.llm.provider_factory import get_llm_provider, BaseLLMProvider
-
 from app.domain.services.chat.dto import (
-    ChatRequest,
-    ChatResponse,
     ChatMessage,
-    ConversationHistory,
+    ChatResponse,
 )
 from app.domain.services.chat.exceptions import (
-    ChatServiceError,
-    TenantNotFoundError,
     ConversationNotFoundError,
-    MessageAlreadyProcessedError,
     LLMError,
     LLMTimeoutError,
-    PersistenceError,
 )
+from app.infrastructure.database.models.message import MessageRole
+from app.infrastructure.database.unit_of_work import UnitOfWork
+from app.infrastructure.llm.provider_factory import BaseLLMProvider, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -161,14 +154,19 @@ Sois poli, concis et utile. Réponds en français."""
                 "conversation_id": str(conversation_id) if conversation_id else "new",
                 "idempotency_key": str(idempotency_key),
                 "message_length": len(message),
-            }
+            },
         )
 
         # =====================================================================
         # TRANSACTION 1 : Persistance message utilisateur
         # =====================================================================
 
-        conversation, user_message, conversation_created, message_created = await self._persist_user_message(
+        (
+            conversation,
+            user_message,
+            conversation_created,
+            message_created,
+        ) = await self._persist_user_message(
             tenant_id=tenant_id,
             message=message,
             user_identifier=user_identifier,
@@ -201,7 +199,7 @@ Sois poli, concis et utile. Réponds en français."""
                         "conversation_id": str(conversation.id),
                         "idempotency_key": str(idempotency_key),
                         "cached_message_id": str(existing_response.id),
-                    }
+                    },
                 )
 
                 return ChatResponse(
@@ -226,14 +224,20 @@ Sois poli, concis et utile. Réponds en français."""
                     "tenant_id": str(tenant_id),
                     "conversation_id": str(conversation.id),
                     "idempotency_key": str(idempotency_key),
-                }
+                },
             )
 
         # =====================================================================
         # HORS TRANSACTION : Appel LLM
         # =====================================================================
 
-        llm_response, llm_latency_ms, tokens_input, tokens_output, rag_context = await self._call_llm(
+        (
+            llm_response,
+            llm_latency_ms,
+            tokens_input,
+            tokens_output,
+            rag_context,
+        ) = await self._call_llm(
             tenant_id=tenant_id,
             conversation_id=conversation.id,
             user_message=message,
@@ -281,7 +285,7 @@ Sois poli, concis et utile. Réponds en français."""
                 "message_id": str(assistant_message.id),
                 "latency_ms": total_latency_ms,
                 "llm_latency_ms": llm_latency_ms,
-            }
+            },
         )
 
         return response
@@ -336,7 +340,7 @@ Sois poli, concis et utile. Réponds en français."""
                         "tenant_id": str(tenant_id),
                         "idempotency_key": str(idempotency_key),
                         "message_id": str(user_message.id),
-                    }
+                    },
                 )
 
             # 3. Log analytics si nouvelle conversation
@@ -374,7 +378,7 @@ Sois poli, concis et utile. Réponds en français."""
 
         try:
             # 1. Charger historique conversation
-            history = await self._load_conversation_history(tenant_id, conversation_id)
+            await self._load_conversation_history(tenant_id, conversation_id)
 
             # 2. Construire le contexte RAG (optionnel, skip si erreur)
             try:
@@ -385,12 +389,9 @@ Sois poli, concis et utile. Réponds en français."""
                     extra={
                         "tenant_id": str(tenant_id),
                         "error": str(e),
-                    }
+                    },
                 )
                 rag_context = None
-
-            # 3. Construire le prompt
-            messages = self._build_llm_messages(history, user_message, rag_context)
 
             # 4. Appeler le LLM
             response = await self.llm_provider.chat(
@@ -429,7 +430,7 @@ Sois poli, concis et utile. Réponds en français."""
                     "tenant_id": str(tenant_id),
                     "conversation_id": str(conversation_id),
                     "error": str(e),
-                }
+                },
             )
             raise LLMError(
                 message=f"LLM call failed: {str(e)}",
@@ -451,10 +452,7 @@ Sois poli, concis et utile. Réponds en français."""
                 order_asc=True,
             )
 
-            return [
-                {"role": msg.role.value, "content": msg.content}
-                for msg in messages
-            ]
+            return [{"role": msg.role.value, "content": msg.content} for msg in messages]
 
     async def _find_assistant_response(
         self,
@@ -503,7 +501,7 @@ Sois poli, concis et utile. Réponds en français."""
                             "conversation_id": str(conversation_id),
                             "user_message_id": str(after_message_id),
                             "assistant_message_id": str(msg.id),
-                        }
+                        },
                     )
                     return msg
 
@@ -531,16 +529,16 @@ Sois poli, concis et utile. Réponds en français."""
         rag_context: Optional[Dict[str, Any]],
     ) -> List[Dict[str, str]]:
         """Construit la liste de messages pour le LLM."""
-        messages = [
-            {"role": "system", "content": self.DEFAULT_SYSTEM_PROMPT}
-        ]
+        messages = [{"role": "system", "content": self.DEFAULT_SYSTEM_PROMPT}]
 
         # Ajouter contexte RAG si disponible
         if rag_context and rag_context.get("context_string"):
-            messages.append({
-                "role": "system",
-                "content": f"Contexte produits:\n{rag_context['context_string']}"
-            })
+            messages.append(
+                {
+                    "role": "system",
+                    "content": f"Contexte produits:\n{rag_context['context_string']}",
+                }
+            )
 
         # Ajouter historique
         messages.extend(history)
@@ -651,13 +649,10 @@ Sois poli, concis et utile. Réponds en français."""
             ]
 
 
-# Import asyncio pour le timeout
-import asyncio
-
-
 # =============================================================================
 # FACTORY FUNCTION
 # =============================================================================
+
 
 def get_chat_service() -> ChatService:
     """
@@ -667,8 +662,3 @@ def get_chat_service() -> ChatService:
         Instance de ChatService configurée
     """
     return ChatService()
-
-
-
-
-

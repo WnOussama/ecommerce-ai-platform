@@ -20,9 +20,9 @@ from app.services.rag.embedding_service import (
     MockEmbeddingService,
 )
 from app.services.rag.retrieval_service import (
-    ProductRetrievalService,
     ChromaSearchableVectorStore,
     InMemorySearchableVectorStore,
+    ProductRetrievalService,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,10 +43,7 @@ def get_embedding_service() -> EmbeddingService:
 
     if _embedding_service is None:
         # Vérifier si on doit utiliser le mock
-        use_mock = (
-            settings.llm.provider == "mock" or
-            not settings.llm.openai_api_key
-        )
+        use_mock = settings.llm.provider == "mock" or not settings.llm.openai_api_key
 
         if use_mock:
             logger.info("Using MockEmbeddingService")
@@ -130,4 +127,3 @@ def reset_services():
     _retrieval_service = None
 
     logger.debug("RAG services reset")
-

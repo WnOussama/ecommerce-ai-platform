@@ -38,12 +38,12 @@ Architecture:
 └─────────────────────┘               └─────────────────────┘
 """
 
+from app.domain.services.shared.context_manager import ContextManager
 from app.domain.services.shared.llm_gateway import LLMGateway
+from app.domain.services.shared.prompt_registry import PromptRegistry
 from app.domain.services.shared.rag_service import RAGService
 from app.domain.services.shared.security_service import SecurityService
 from app.domain.services.shared.tenant_service import TenantService
-from app.domain.services.shared.context_manager import ContextManager
-from app.domain.services.shared.prompt_registry import PromptRegistry
 
 __all__ = [
     "LLMGateway",
@@ -53,4 +53,3 @@ __all__ = [
     "ContextManager",
     "PromptRegistry",
 ]
-

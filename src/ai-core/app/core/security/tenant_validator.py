@@ -8,8 +8,8 @@ Sécurité:
 - Protection contre header injection
 """
 
-import re
 import logging
+import re
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class TenantIDValidator:
 
     # Pattern strict pour tenant_id
     # Format: tenant_ suivi de 8 à 32 caractères alphanumériques minuscules
-    VALID_PATTERN = re.compile(r'^tenant_[a-z0-9]{8,32}$')
+    VALID_PATTERN = re.compile(r"^tenant_[a-z0-9]{8,32}$")
 
     # Longueur maximale (protection DoS)
     MAX_LENGTH = 50
@@ -79,28 +79,21 @@ class TenantIDValidator:
         """
         # Vérifier que la valeur existe
         if tenant_id is None:
-            raise TenantValidationError(
-                "X-Tenant-ID header is required",
-                tenant_id=None
-            )
+            raise TenantValidationError("X-Tenant-ID header is required", tenant_id=None)
 
         if not isinstance(tenant_id, str):
             raise TenantValidationError(
-                "X-Tenant-ID must be a string",
-                tenant_id=str(tenant_id)[:20]
+                "X-Tenant-ID must be a string", tenant_id=str(tenant_id)[:20]
             )
 
         if not tenant_id.strip():
-            raise TenantValidationError(
-                "X-Tenant-ID cannot be empty",
-                tenant_id=""
-            )
+            raise TenantValidationError("X-Tenant-ID cannot be empty", tenant_id="")
 
         # Vérifier la longueur d'abord (évite DoS avec très long string)
         if len(tenant_id) > cls.MAX_LENGTH:
             raise TenantValidationError(
                 f"X-Tenant-ID too long (max {cls.MAX_LENGTH} characters)",
-                tenant_id=tenant_id[:20] + "..."
+                tenant_id=tenant_id[:20] + "...",
             )
 
         # Vérifier les patterns d'injection AVANT le format
@@ -113,18 +106,18 @@ class TenantIDValidator:
                     extra={
                         "pattern_type": description,
                         "tenant_id_prefix": tenant_id[:10] if tenant_id else None,
-                    }
+                    },
                 )
                 raise TenantValidationError(
                     f"X-Tenant-ID contains forbidden characters: {description}",
-                    tenant_id=tenant_id[:20] + "..." if len(tenant_id) > 20 else tenant_id
+                    tenant_id=tenant_id[:20] + "..." if len(tenant_id) > 20 else tenant_id,
                 )
 
         # Vérifier le format
         if not cls.VALID_PATTERN.match(tenant_id):
             raise TenantValidationError(
                 "Invalid X-Tenant-ID format. Expected: tenant_[a-z0-9]{8,32}",
-                tenant_id=tenant_id[:20] + "..." if len(tenant_id) > 20 else tenant_id
+                tenant_id=tenant_id[:20] + "..." if len(tenant_id) > 20 else tenant_id,
             )
 
         return tenant_id
@@ -164,7 +157,7 @@ class TenantIDValidator:
             return "<invalid_type>"
 
         # Tronquer et remplacer les caractères non-alphanum
-        safe = re.sub(r'[^a-zA-Z0-9_]', '?', tenant_id[:30])
+        safe = re.sub(r"[^a-zA-Z0-9_]", "?", tenant_id[:30])
 
         if len(tenant_id) > 30:
             safe += "..."
@@ -176,6 +169,7 @@ class TenantIDValidator:
 # FASTAPI DEPENDENCY
 # =============================================================================
 
+
 async def get_validated_tenant_id(request) -> str:
     """
     FastAPI Dependency pour extraire et valider le tenant_id.
@@ -185,7 +179,7 @@ async def get_validated_tenant_id(request) -> str:
         async def get_resource(tenant_id: str = Depends(get_validated_tenant_id)):
             ...
     """
-    from fastapi import HTTPException, Request
+    from fastapi import HTTPException
 
     tenant_id = request.headers.get("X-Tenant-ID")
 
@@ -199,7 +193,7 @@ async def get_validated_tenant_id(request) -> str:
                 "tenant_id_safe": TenantIDValidator.sanitize_for_logging(tenant_id),
                 "path": request.url.path,
                 "method": request.method,
-            }
+            },
         )
         raise HTTPException(status_code=400, detail=e.message)
 
@@ -213,4 +207,3 @@ __all__ = [
     "TenantIDValidator",
     "get_validated_tenant_id",
 ]
-

@@ -5,28 +5,26 @@ Tous les repositories héritent de TenantAwareRepository,
 garantissant que TOUTES les queries incluent tenant_id.
 """
 
-from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import select, func, and_, or_
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_, func, or_, select
 
+from app.infrastructure.database.models.models import (
+    AdminActionModel,
+    ConversationModel,
+    CouponModel,
+    CustomerModel,
+    MessageModel,
+)
 from app.infrastructure.database.repositories.base import (
     TenantAwareRepository,
-    TenantContext,
 )
-from app.infrastructure.database.models.models import (
-    CustomerModel,
-    ConversationModel,
-    MessageModel,
-    CouponModel,
-    AdminActionModel,
-)
-
 
 # =============================================================================
 # CUSTOMER REPOSITORY
 # =============================================================================
+
 
 class CustomerRepository(TenantAwareRepository[CustomerModel]):
     """Repository pour les clients avec isolation tenant"""
@@ -51,9 +49,11 @@ class CustomerRepository(TenantAwareRepository[CustomerModel]):
 
     async def get_vip_customers(self, min_score: int = 80) -> List[CustomerModel]:
         """Récupère les clients VIP (score élevé)"""
-        query = self._base_query().where(
-            CustomerModel.loyalty_score >= min_score
-        ).order_by(CustomerModel.loyalty_score.desc())
+        query = (
+            self._base_query()
+            .where(CustomerModel.loyalty_score >= min_score)
+            .order_by(CustomerModel.loyalty_score.desc())
+        )
 
         result = await self._session.execute(query)
         return list(result.scalars().all())
@@ -99,6 +99,7 @@ class CustomerRepository(TenantAwareRepository[CustomerModel]):
 # CONVERSATION REPOSITORY
 # =============================================================================
 
+
 class ConversationRepository(TenantAwareRepository[ConversationModel]):
     """Repository pour les conversations avec isolation tenant"""
 
@@ -118,9 +119,12 @@ class ConversationRepository(TenantAwareRepository[ConversationModel]):
         limit: int = 10,
     ) -> List[ConversationModel]:
         """Récupère les conversations d'un client"""
-        query = self._base_query().where(
-            ConversationModel.customer_id == customer_id
-        ).order_by(ConversationModel.created_at.desc()).limit(limit)
+        query = (
+            self._base_query()
+            .where(ConversationModel.customer_id == customer_id)
+            .order_by(ConversationModel.created_at.desc())
+            .limit(limit)
+        )
 
         result = await self._session.execute(query)
         return list(result.scalars().all())
@@ -133,9 +137,12 @@ class ConversationRepository(TenantAwareRepository[ConversationModel]):
         """Récupère les conversations récentes"""
         cutoff = datetime.utcnow() - timedelta(hours=hours)
 
-        query = self._base_query().where(
-            ConversationModel.created_at >= cutoff
-        ).order_by(ConversationModel.created_at.desc()).limit(limit)
+        query = (
+            self._base_query()
+            .where(ConversationModel.created_at >= cutoff)
+            .order_by(ConversationModel.created_at.desc())
+            .limit(limit)
+        )
 
         result = await self._session.execute(query)
         return list(result.scalars().all())
@@ -167,20 +174,17 @@ class ConversationRepository(TenantAwareRepository[ConversationModel]):
                 and_(
                     ConversationModel.tenant_id == self._tenant_id,
                     ConversationModel.created_at >= cutoff,
-                    ConversationModel.resolved_by_ai == True,
+                    ConversationModel.resolved_by_ai.is_(True),
                 )
             )
         )
 
         # Average satisfaction
-        satisfaction_query = (
-            select(func.avg(ConversationModel.satisfaction_rating))
-            .where(
-                and_(
-                    ConversationModel.tenant_id == self._tenant_id,
-                    ConversationModel.created_at >= cutoff,
-                    ConversationModel.satisfaction_rating.isnot(None),
-                )
+        satisfaction_query = select(func.avg(ConversationModel.satisfaction_rating)).where(
+            and_(
+                ConversationModel.tenant_id == self._tenant_id,
+                ConversationModel.created_at >= cutoff,
+                ConversationModel.satisfaction_rating.isnot(None),
             )
         )
 
@@ -201,6 +205,7 @@ class ConversationRepository(TenantAwareRepository[ConversationModel]):
 # MESSAGE REPOSITORY
 # =============================================================================
 
+
 class MessageRepository(TenantAwareRepository[MessageModel]):
     """Repository pour les messages avec isolation tenant"""
 
@@ -212,9 +217,12 @@ class MessageRepository(TenantAwareRepository[MessageModel]):
         limit: int = 50,
     ) -> List[MessageModel]:
         """Récupère les messages d'une conversation"""
-        query = self._base_query().where(
-            MessageModel.conversation_id == conversation_id
-        ).order_by(MessageModel.created_at.asc()).limit(limit)
+        query = (
+            self._base_query()
+            .where(MessageModel.conversation_id == conversation_id)
+            .order_by(MessageModel.created_at.asc())
+            .limit(limit)
+        )
 
         result = await self._session.execute(query)
         return list(result.scalars().all())
@@ -225,9 +233,12 @@ class MessageRepository(TenantAwareRepository[MessageModel]):
         count: int = 10,
     ) -> List[MessageModel]:
         """Récupère les N derniers messages"""
-        query = self._base_query().where(
-            MessageModel.conversation_id == conversation_id
-        ).order_by(MessageModel.created_at.desc()).limit(count)
+        query = (
+            self._base_query()
+            .where(MessageModel.conversation_id == conversation_id)
+            .order_by(MessageModel.created_at.desc())
+            .limit(count)
+        )
 
         result = await self._session.execute(query)
         # Inverser pour ordre chronologique
@@ -237,6 +248,7 @@ class MessageRepository(TenantAwareRepository[MessageModel]):
 # =============================================================================
 # COUPON REPOSITORY
 # =============================================================================
+
 
 class CouponRepository(TenantAwareRepository[CouponModel]):
     """Repository pour les coupons avec isolation tenant"""
@@ -297,13 +309,10 @@ class CouponRepository(TenantAwareRepository[CouponModel]):
         )
 
         # Montant total remisé
-        discount_query = (
-            select(func.sum(CouponModel.discount_value))
-            .where(
-                and_(
-                    CouponModel.tenant_id == self._tenant_id,
-                    CouponModel.status == "used",
-                )
+        discount_query = select(func.sum(CouponModel.discount_value)).where(
+            and_(
+                CouponModel.tenant_id == self._tenant_id,
+                CouponModel.status == "used",
             )
         )
 
@@ -322,6 +331,7 @@ class CouponRepository(TenantAwareRepository[CouponModel]):
 # =============================================================================
 # ADMIN ACTION REPOSITORY
 # =============================================================================
+
 
 class AdminActionRepository(TenantAwareRepository[AdminActionModel]):
     """Repository pour les actions admin avec isolation tenant"""
@@ -363,4 +373,3 @@ __all__ = [
     "CouponRepository",
     "AdminActionRepository",
 ]
-

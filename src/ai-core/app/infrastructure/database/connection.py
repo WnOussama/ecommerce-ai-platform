@@ -14,11 +14,10 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config.settings import settings
-from app.infrastructure.database.base import Base
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +72,7 @@ SyncSessionLocal = sessionmaker(
 # =============================================================================
 # DEPENDENCY INJECTION
 # =============================================================================
+
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     """
@@ -143,6 +143,7 @@ async def get_db_context() -> AsyncGenerator[AsyncSession, None]:
 # HEALTH CHECK
 # =============================================================================
 
+
 async def check_database_connection() -> dict:
     """
     Vérifie que la connexion à la base de données fonctionne.
@@ -173,7 +174,7 @@ async def check_database_connection() -> dict:
                 "timeout_seconds": HEALTH_CHECK_TIMEOUT_SECONDS,
                 "host": settings.database.host,
                 "database": settings.database.name,
-            }
+            },
         )
         return {
             "status": "unhealthy",
@@ -190,7 +191,7 @@ async def check_database_connection() -> dict:
                 "error": str(e),
                 "host": settings.database.host,
                 "database": settings.database.name,
-            }
+            },
         )
         return {
             "status": "unhealthy",
@@ -205,6 +206,7 @@ async def check_database_connection() -> dict:
 # =============================================================================
 # INITIALIZATION
 # =============================================================================
+
 
 async def init_database() -> None:
     """
@@ -222,7 +224,7 @@ async def init_database() -> None:
             "pool_size": settings.database.pool_size,
             "max_overflow": settings.database.max_overflow,
             "pool_recycle": settings.database.pool_recycle,
-        }
+        },
     )
 
     # Vérifier la connexion
@@ -234,7 +236,7 @@ async def init_database() -> None:
             extra={
                 "database": settings.database.name,
                 "version": health.get("version", "unknown")[:50],
-            }
+            },
         )
     else:
         logger.error(
@@ -242,7 +244,7 @@ async def init_database() -> None:
             extra={
                 "error": health.get("error", "Unknown error"),
                 "host": settings.database.host,
-            }
+            },
         )
 
 
@@ -252,8 +254,3 @@ async def close_database() -> None:
     await async_engine.dispose()
     sync_engine.dispose()
     logger.info("Database connections closed")
-
-
-
-
-

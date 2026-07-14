@@ -33,37 +33,33 @@ Usage:
 
 # Legacy exports (for backwards compatibility)
 from app.services.message_queue.redis_queue import (
-    QueueName,
-    MessageType,
     MessagePriority,
+    MessageType,
     QueueMessage,
+    QueueName,
     RedisQueueClient,
     get_queue_client,
 )
 
 # New reliable queue exports (recommended)
 from app.services.message_queue.reliable_queue import (
-    # Core
-    ReliableQueue,
-    QueueWorker,
-    QueueConfig,
-
-    # Jobs
-    Job,
-    JobStatus,
-    JobPriority,
-    JobResult,
-    EmbeddingJob,
-    CatalogSyncJob,
     BulkOperationJob,
-    ReportJob,
-
-    # Stream Names
-    StreamName,
-
+    CatalogSyncJob,
     # DLQ
     DLQManager,
-
+    EmbeddingJob,
+    # Jobs
+    Job,
+    JobPriority,
+    JobResult,
+    JobStatus,
+    QueueConfig,
+    QueueWorker,
+    # Core
+    ReliableQueue,
+    ReportJob,
+    # Stream Names
+    StreamName,
     # Factory
     create_queue_system,
 )
@@ -76,7 +72,6 @@ __all__ = [
     "QueueMessage",
     "RedisQueueClient",
     "get_queue_client",
-
     # New (recommended)
     "ReliableQueue",
     "QueueWorker",

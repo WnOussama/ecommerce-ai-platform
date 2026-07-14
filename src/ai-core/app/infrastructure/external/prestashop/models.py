@@ -7,14 +7,15 @@ Ces modèles servent de contrat entre l'API PrestaShop et notre système.
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional, List, Dict, Any
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ProductStatus(str, Enum):
     """Status d'un produit PrestaShop."""
+
     ACTIVE = "active"
     INACTIVE = "inactive"
     OUT_OF_STOCK = "out_of_stock"
@@ -84,13 +85,19 @@ class Product(BaseModel):
     price: Decimal = Field(..., ge=0, description="Prix HT")
     price_tax_incl: Optional[Decimal] = Field(default=None, ge=0, description="Prix TTC")
     wholesale_price: Optional[Decimal] = Field(default=None, ge=0, description="Prix d'achat")
-    reduction_percent: Optional[Decimal] = Field(default=None, ge=0, le=100, description="Réduction en %")
-    reduction_amount: Optional[Decimal] = Field(default=None, ge=0, description="Réduction en valeur")
+    reduction_percent: Optional[Decimal] = Field(
+        default=None, ge=0, le=100, description="Réduction en %"
+    )
+    reduction_amount: Optional[Decimal] = Field(
+        default=None, ge=0, description="Réduction en valeur"
+    )
 
     # Stock
     quantity: int = Field(default=0, ge=0, description="Quantité en stock")
     minimal_quantity: int = Field(default=1, ge=1, description="Quantité minimum de commande")
-    out_of_stock_behavior: int = Field(default=2, ge=0, le=2, description="0=deny, 1=allow, 2=default")
+    out_of_stock_behavior: int = Field(
+        default=2, ge=0, le=2, description="0=deny, 1=allow, 2=default"
+    )
 
     # Catégorisation
     category_id: Optional[int] = Field(default=None, description="ID catégorie principale")
@@ -126,7 +133,9 @@ class Product(BaseModel):
 
     # Tags et attributs personnalisés
     tags: List[str] = Field(default_factory=list, description="Tags du produit")
-    features: Dict[str, str] = Field(default_factory=dict, description="Caractéristiques clé-valeur")
+    features: Dict[str, str] = Field(
+        default_factory=dict, description="Caractéristiques clé-valeur"
+    )
 
     @field_validator("price", "price_tax_incl", "wholesale_price", mode="before")
     @classmethod
@@ -150,8 +159,8 @@ class Product(BaseModel):
     def is_on_sale(self) -> bool:
         """Vérifie si le produit est en promotion."""
         return bool(
-            (self.reduction_percent and self.reduction_percent > 0) or
-            (self.reduction_amount and self.reduction_amount > 0)
+            (self.reduction_percent and self.reduction_percent > 0)
+            or (self.reduction_amount and self.reduction_amount > 0)
         )
 
     @property
@@ -179,6 +188,7 @@ class Product(BaseModel):
             clean_desc = self.description_short.replace("<br>", " ").replace("<br/>", " ")
             # Supprimer les tags HTML simples
             import re
+
             clean_desc = re.sub(r"<[^>]+>", "", clean_desc)
             parts.append(clean_desc)
 
@@ -209,7 +219,9 @@ class Product(BaseModel):
             "product_id": self.id,
             "name": self.name,
             "price": float(self.price),
-            "price_tax_incl": float(self.price_tax_incl) if self.price_tax_incl else float(self.price),
+            "price_tax_incl": float(self.price_tax_incl)
+            if self.price_tax_incl
+            else float(self.price),
             "quantity": self.quantity,
             "in_stock": self.is_in_stock,
             "on_sale": self.is_on_sale,
@@ -255,4 +267,3 @@ class CategoryListResponse(BaseModel):
                 tree[parent_id] = []
             tree[parent_id].append(cat)
         return tree
-

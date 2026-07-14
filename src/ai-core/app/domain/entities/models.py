@@ -6,13 +6,13 @@ Design DDD: Ces entités représentent le cœur métier
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 from uuid import UUID, uuid4
-
 
 # ============================================================================
 # ENUMS
 # ============================================================================
+
 
 class TenantPlan(str, Enum):
     STARTER = "starter"
@@ -91,9 +91,11 @@ class AdminActionStatus(str, Enum):
 # VALUE OBJECTS
 # ============================================================================
 
+
 @dataclass(frozen=True)
 class Money:
     """Value Object pour les montants monétaires"""
+
     amount: float
     currency: str = "EUR"
 
@@ -109,6 +111,7 @@ class Money:
 @dataclass(frozen=True)
 class LLMUsage:
     """Value Object pour tracking usage LLM"""
+
     input_tokens: int
     output_tokens: int
     model: str
@@ -118,13 +121,16 @@ class LLMUsage:
         return self.input_tokens + self.output_tokens
 
     def calculate_cost(self, input_cost_per_1k: float, output_cost_per_1k: float) -> float:
-        return (self.input_tokens / 1000 * input_cost_per_1k +
-                self.output_tokens / 1000 * output_cost_per_1k)
+        return (
+            self.input_tokens / 1000 * input_cost_per_1k
+            + self.output_tokens / 1000 * output_cost_per_1k
+        )
 
 
 @dataclass(frozen=True)
 class EmbeddingMetadata:
     """Metadata pour un embedding vectoriel"""
+
     source_type: str  # product, faq, policy, conversation
     source_id: str
     tenant_id: str
@@ -136,9 +142,11 @@ class EmbeddingMetadata:
 # ENTITIES
 # ============================================================================
 
+
 @dataclass
 class Tenant:
     """Entité Tenant (locataire SaaS)"""
+
     id: UUID = field(default_factory=uuid4)
     name: str = ""
     domain: str = ""  # shop-name.myshopify.com ou URL PrestaShop
@@ -174,6 +182,7 @@ class Tenant:
 @dataclass
 class Customer:
     """Entité Customer (client final de la boutique)"""
+
     id: UUID = field(default_factory=uuid4)
     tenant_id: UUID = field(default_factory=uuid4)
     external_id: str = ""  # ID dans PrestaShop/Shopify
@@ -228,6 +237,7 @@ class Customer:
 @dataclass
 class Conversation:
     """Entité Conversation"""
+
     id: UUID = field(default_factory=uuid4)
     tenant_id: UUID = field(default_factory=uuid4)
     customer_id: Optional[UUID] = None
@@ -260,6 +270,7 @@ class Conversation:
 @dataclass
 class Message:
     """Entité Message"""
+
     id: UUID = field(default_factory=uuid4)
     conversation_id: UUID = field(default_factory=uuid4)
 
@@ -284,6 +295,7 @@ class Message:
 @dataclass
 class Coupon:
     """Entité Coupon généré par IA"""
+
     id: UUID = field(default_factory=uuid4)
     tenant_id: UUID = field(default_factory=uuid4)
     customer_id: UUID = field(default_factory=uuid4)
@@ -315,6 +327,7 @@ class Coupon:
 @dataclass
 class AdminAction:
     """Entité Action Admin (audit log)"""
+
     id: UUID = field(default_factory=uuid4)
     tenant_id: UUID = field(default_factory=uuid4)
 
@@ -350,6 +363,7 @@ class AdminAction:
 @dataclass
 class ProductEmbedding:
     """Metadata pour embedding produit"""
+
     id: UUID = field(default_factory=uuid4)
     tenant_id: UUID = field(default_factory=uuid4)
     product_external_id: str = ""
@@ -368,4 +382,3 @@ class ProductEmbedding:
     # Dates
     indexed_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
-

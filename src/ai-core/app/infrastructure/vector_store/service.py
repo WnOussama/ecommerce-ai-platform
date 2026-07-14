@@ -2,11 +2,11 @@
 Vector Store Service - Abstraction ChromaDB avec support multi-tenant
 """
 
-from typing import Optional, Dict, Any, List
-from uuid import UUID
 import hashlib
 import logging
 from datetime import datetime
+from typing import Any, Dict, List
+from uuid import UUID
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
@@ -31,11 +31,13 @@ class VectorStoreService:
         self.embeddings = embedding_service
 
         # Initialisation ChromaDB
-        self.client = chromadb.Client(ChromaSettings(
-            chroma_db_impl="duckdb+parquet",
-            persist_directory=settings.vector_store.persist_directory,
-            anonymized_telemetry=False
-        ))
+        self.client = chromadb.Client(
+            ChromaSettings(
+                chroma_db_impl="duckdb+parquet",
+                persist_directory=settings.vector_store.persist_directory,
+                anonymized_telemetry=False,
+            )
+        )
 
         self._collections_cache: Dict[str, Any] = {}
 
@@ -50,7 +52,7 @@ class VectorStoreService:
         if collection_name not in self._collections_cache:
             self._collections_cache[collection_name] = self.client.get_or_create_collection(
                 name=collection_name,
-                metadata={"tenant_id": str(tenant_id), "type": collection_type}
+                metadata={"tenant_id": str(tenant_id), "type": collection_type},
             )
 
         return self._collections_cache[collection_name]
@@ -65,7 +67,7 @@ class VectorStoreService:
         collection_type: str,
         document_id: str,
         content: str,
-        metadata: Dict[str, Any] = None
+        metadata: Dict[str, Any] = None,
     ) -> bool:
         """
         Ajoute un document au store.
@@ -93,7 +95,7 @@ class VectorStoreService:
             "content_hash": content_hash,
             "tenant_id": str(tenant_id),
             "indexed_at": datetime.utcnow().isoformat(),
-            **(metadata or {})
+            **(metadata or {}),
         }
 
         # Ajouter au store
@@ -101,21 +103,18 @@ class VectorStoreService:
             ids=[document_id],
             embeddings=[embedding],
             documents=[content],
-            metadatas=[full_metadata]
+            metadatas=[full_metadata],
         )
 
-        logger.info(f"Document added to {collection_type}", extra={
-            "tenant_id": str(tenant_id),
-            "document_id": document_id
-        })
+        logger.info(
+            f"Document added to {collection_type}",
+            extra={"tenant_id": str(tenant_id), "document_id": document_id},
+        )
 
         return True
 
     async def add_documents_batch(
-        self,
-        tenant_id: UUID,
-        collection_type: str,
-        documents: List[Dict[str, Any]]
+        self, tenant_id: UUID, collection_type: str, documents: List[Dict[str, Any]]
     ) -> Dict[str, int]:
         """
         Ajoute plusieurs documents en batch.
@@ -145,21 +144,18 @@ class VectorStoreService:
             embedding = await self.embeddings.generate_embedding(doc["content"], tenant_id)
             embeddings.append(embedding)
 
-            metadatas.append({
-                "document_id": doc["id"],
-                "content_hash": content_hash,
-                "tenant_id": str(tenant_id),
-                "indexed_at": datetime.utcnow().isoformat(),
-                **(doc.get("metadata", {}))
-            })
+            metadatas.append(
+                {
+                    "document_id": doc["id"],
+                    "content_hash": content_hash,
+                    "tenant_id": str(tenant_id),
+                    "indexed_at": datetime.utcnow().isoformat(),
+                    **(doc.get("metadata", {})),
+                }
+            )
 
         if ids:
-            collection.add(
-                ids=ids,
-                embeddings=embeddings,
-                documents=contents,
-                metadatas=metadatas
-            )
+            collection.add(ids=ids, embeddings=embeddings, documents=contents, metadatas=metadatas)
 
         return {"added": len(ids), "skipped": skipped}
 
@@ -170,7 +166,7 @@ class VectorStoreService:
         query: str,
         limit: int = 5,
         filters: Dict[str, Any] = None,
-        min_similarity: float = 0.5
+        min_similarity: float = 0.5,
     ) -> List[Dict[str, Any]]:
         """
         Recherche sémantique dans une collection.
@@ -190,7 +186,7 @@ class VectorStoreService:
             query_embeddings=[query_embedding],
             n_results=limit,
             where=where_clause if len(where_clause) > 1 else None,
-            include=["documents", "metadatas", "distances"]
+            include=["documents", "metadatas", "distances"],
         )
 
         # Formater les résultats
@@ -202,12 +198,14 @@ class VectorStoreService:
                 similarity = 1 - (distance / 2)  # Convertir distance en similarité
 
                 if similarity >= min_similarity:
-                    formatted_results.append({
-                        "id": doc_id,
-                        "content": results["documents"][0][i],
-                        "metadata": results["metadatas"][0][i],
-                        "similarity": similarity
-                    })
+                    formatted_results.append(
+                        {
+                            "id": doc_id,
+                            "content": results["documents"][0][i],
+                            "metadata": results["metadatas"][0][i],
+                            "similarity": similarity,
+                        }
+                    )
 
         return formatted_results
 
@@ -217,7 +215,7 @@ class VectorStoreService:
         collection_type: str,
         document_id: str,
         content: str,
-        metadata: Dict[str, Any] = None
+        metadata: Dict[str, Any] = None,
     ) -> bool:
         """Met à jour un document existant"""
         collection = self._get_or_create_collection(tenant_id, collection_type)
@@ -231,23 +229,20 @@ class VectorStoreService:
             "content_hash": self._compute_content_hash(content),
             "tenant_id": str(tenant_id),
             "updated_at": datetime.utcnow().isoformat(),
-            **(metadata or {})
+            **(metadata or {}),
         }
 
         collection.update(
             ids=[document_id],
             embeddings=[embedding],
             documents=[content],
-            metadatas=[full_metadata]
+            metadatas=[full_metadata],
         )
 
         return True
 
     async def delete_document(
-        self,
-        tenant_id: UUID,
-        collection_type: str,
-        document_id: str
+        self, tenant_id: UUID, collection_type: str, document_id: str
     ) -> bool:
         """Supprime un document"""
         collection = self._get_or_create_collection(tenant_id, collection_type)
@@ -276,4 +271,3 @@ class VectorStoreService:
                 stats[collection_type] = 0
 
         return stats
-

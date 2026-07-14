@@ -32,14 +32,11 @@ Architecture Stateless:
 └─────────────────────────────────────────────────────────────────────────────────┘
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, TypeVar, Generic
-from enum import Enum
 import json
 import logging
-import hashlib
-from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +47,11 @@ T = TypeVar("T")
 # CONFIGURATION
 # =============================================================================
 
+
 @dataclass
 class SessionConfig:
     """Configuration des sessions"""
+
     # TTL
     session_ttl_seconds: int = 3600  # 1h
     conversation_ttl_seconds: int = 86400  # 24h
@@ -73,9 +72,11 @@ class SessionConfig:
 # SESSION MODELS
 # =============================================================================
 
+
 @dataclass
 class UserSession:
     """Session utilisateur (stateless, stockée dans Redis)"""
+
     session_id: str
     tenant_id: str
     user_id: Optional[str] = None
@@ -120,7 +121,9 @@ class UserSession:
             customer_id=data.get("customer_id"),
             created_at=datetime.fromisoformat(data["created_at"]),
             last_activity=datetime.fromisoformat(data["last_activity"]),
-            expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
+            expires_at=datetime.fromisoformat(data["expires_at"])
+            if data.get("expires_at")
+            else None,
             current_conversation_id=data.get("current_conversation_id"),
             page_context=data.get("page_context", {}),
             request_count=data.get("request_count", 0),
@@ -132,6 +135,7 @@ class UserSession:
 @dataclass
 class ConversationContext:
     """Contexte de conversation (stateless, stockée dans Redis)"""
+
     conversation_id: str
     tenant_id: str
     session_id: str
@@ -182,18 +186,21 @@ class ConversationContext:
 
     def add_message(self, role: str, content: str, metadata: Optional[Dict] = None) -> None:
         """Ajoute un message au contexte"""
-        self.messages.append({
-            "role": role,
-            "content": content,
-            "timestamp": datetime.utcnow().isoformat(),
-            "metadata": metadata or {},
-        })
+        self.messages.append(
+            {
+                "role": role,
+                "content": content,
+                "timestamp": datetime.utcnow().isoformat(),
+                "metadata": metadata or {},
+            }
+        )
         self.updated_at = datetime.utcnow()
 
 
 # =============================================================================
 # STATELESS SESSION STORE (REDIS)
 # =============================================================================
+
 
 class StatelessSessionStore:
     """
@@ -365,7 +372,9 @@ class StatelessSessionStore:
         # Limiter le nombre de messages
         if len(context.messages) > self._config.max_messages_in_context:
             # Garder le premier message (système) et les N derniers
-            context.messages = [context.messages[0]] + context.messages[-self._config.max_messages_in_context + 1:]
+            context.messages = [context.messages[0]] + context.messages[
+                -self._config.max_messages_in_context + 1 :
+            ]
 
         key = self._conversation_key(context.tenant_id, context.conversation_id)
 
@@ -373,7 +382,7 @@ class StatelessSessionStore:
 
         # Vérifier la taille
         if len(data.encode()) > self._config.max_context_size_bytes:
-            logger.warning(f"Context too large, truncating messages")
+            logger.warning("Context too large, truncating messages")
             # Réduire le nombre de messages
             context.messages = context.messages[:10]
             data = json.dumps(context.to_dict())
@@ -493,6 +502,7 @@ class StatelessSessionStore:
 # STATELESS REQUEST CONTEXT
 # =============================================================================
 
+
 @dataclass
 class RequestContext:
     """
@@ -501,6 +511,7 @@ class RequestContext:
     Créé au début de chaque requête, détruit à la fin.
     Toutes les données persistantes sont dans Redis.
     """
+
     request_id: str
     tenant_id: str
     session: Optional[UserSession] = None
@@ -596,4 +607,3 @@ __all__ = [
     "RequestContext",
     "RequestContextManager",
 ]
-

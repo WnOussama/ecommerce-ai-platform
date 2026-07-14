@@ -35,15 +35,15 @@ Usage:
     await worker.run()
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Generic, Awaitable
-from uuid import uuid4
-from enum import Enum
-import json
 import asyncio
+import json
 import logging
 import traceback
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Awaitable, Callable, Dict, List, Optional, TypeVar
+from uuid import uuid4
 
 import redis.asyncio as redis
 
@@ -56,9 +56,11 @@ T = TypeVar("T")
 # CONFIGURATION
 # =============================================================================
 
+
 @dataclass
 class QueueConfig:
     """Configuration de la queue"""
+
     # Retry
     max_retries: int = 3
     retry_delay_seconds: int = 60  # Délai avant retry
@@ -81,8 +83,10 @@ class QueueConfig:
 # JOB TYPES
 # =============================================================================
 
+
 class JobStatus(str, Enum):
     """Statut d'un job"""
+
     PENDING = "pending"
     PROCESSING = "processing"
     COMPLETED = "completed"
@@ -93,6 +97,7 @@ class JobStatus(str, Enum):
 
 class JobPriority(int, Enum):
     """Priorité des jobs"""
+
     LOW = 1
     NORMAL = 5
     HIGH = 10
@@ -102,6 +107,7 @@ class JobPriority(int, Enum):
 @dataclass
 class Job:
     """Job de base"""
+
     id: str = field(default_factory=lambda: str(uuid4()))
     type: str = ""
     tenant_id: str = ""
@@ -148,7 +154,9 @@ class Job:
             payload=json.loads(data["payload"]),
             priority=JobPriority(int(data["priority"])),
             created_at=datetime.fromisoformat(data["created_at"]),
-            scheduled_at=datetime.fromisoformat(data["scheduled_at"]) if data.get("scheduled_at") else None,
+            scheduled_at=datetime.fromisoformat(data["scheduled_at"])
+            if data.get("scheduled_at")
+            else None,
             retry_count=int(data.get("retry_count", 0)),
             max_retries=int(data.get("max_retries", 3)),
             last_error=data.get("last_error") or None,
@@ -160,6 +168,7 @@ class Job:
 @dataclass
 class JobResult:
     """Résultat d'un job"""
+
     job_id: str
     status: JobStatus
     result: Optional[Dict[str, Any]] = None
@@ -171,6 +180,7 @@ class JobResult:
 # =============================================================================
 # STREAM NAMES
 # =============================================================================
+
 
 class StreamName:
     """Noms des streams Redis"""
@@ -197,6 +207,7 @@ class StreamName:
 # =============================================================================
 # RELIABLE QUEUE (PRODUCER)
 # =============================================================================
+
 
 class ReliableQueue:
     """
@@ -238,14 +249,14 @@ class ReliableQueue:
         )
 
         logger.info(
-            f"Job enqueued",
+            "Job enqueued",
             extra={
                 "stream": stream,
                 "job_id": job.id,
                 "job_type": job.type,
                 "tenant_id": job.tenant_id,
                 "stream_id": stream_id,
-            }
+            },
         )
 
         # Métriques
@@ -297,7 +308,7 @@ class ReliableQueue:
 
         logger.info(
             f"Job scheduled for {job.scheduled_at}",
-            extra={"job_id": job.id, "stream": stream, "delay_seconds": delay_seconds}
+            extra={"job_id": job.id, "stream": stream, "delay_seconds": delay_seconds},
         )
 
         return job.id
@@ -393,12 +404,12 @@ class QueueWorker:
 
         self._running = True
         logger.info(
-            f"Worker started",
+            "Worker started",
             extra={
                 "stream": self._stream,
                 "group": self._group_name,
                 "consumer": self._consumer_name,
-            }
+            },
         )
 
         # Lancer les tâches parallèles
@@ -457,18 +468,18 @@ class QueueWorker:
     async def _process_message(self, stream_id: str, data: Dict[str, str]) -> None:
         """Traite un message individuel"""
         import time
+
         start_time = time.perf_counter()
 
         try:
             job = Job.from_dict(data)
 
             logger.debug(
-                f"Processing job {job.id}",
-                extra={"stream_id": stream_id, "job_type": job.type}
+                f"Processing job {job.id}", extra={"stream_id": stream_id, "job_type": job.type}
             )
 
             # Exécuter le handler
-            result = await self._handler(job)
+            await self._handler(job)
 
             # ACK le message
             await self._redis.xack(self._stream, self._group_name, stream_id)
@@ -478,21 +489,20 @@ class QueueWorker:
             self._processed_count += 1
 
             logger.info(
-                f"Job completed",
+                "Job completed",
                 extra={
                     "job_id": job.id,
                     "job_type": job.type,
                     "tenant_id": job.tenant_id,
                     "processing_time_ms": processing_time,
-                }
+                },
             )
 
             # Métriques
             if self._config.metrics_enabled:
                 await self._redis.incr(f"queue:{self._stream}:completed")
                 await self._redis.incrby(
-                    f"queue:{self._stream}:processing_time_ms",
-                    processing_time
+                    f"queue:{self._stream}:processing_time_ms", processing_time
                 )
 
         except Exception as e:
@@ -517,7 +527,7 @@ class QueueWorker:
                 "job_id": data.get("id"),
                 "error": error_msg,
                 "stream_id": stream_id,
-            }
+            },
         )
 
         if retry_count < max_retries:
@@ -526,7 +536,7 @@ class QueueWorker:
             data["last_error"] = error_msg
 
             # Délai exponentiel: 60s, 120s, 240s...
-            delay = self._config.retry_delay_seconds * (2 ** retry_count)
+            delay = self._config.retry_delay_seconds * (2**retry_count)
 
             # Ajouter au stream scheduled pour retry différé
             scheduled_at = datetime.utcnow() + timedelta(seconds=delay)
@@ -535,10 +545,7 @@ class QueueWorker:
                 {json.dumps({"stream": self._stream, "job": data}): scheduled_at.timestamp()},
             )
 
-            logger.info(
-                f"Job scheduled for retry in {delay}s",
-                extra={"job_id": data.get("id")}
-            )
+            logger.info(f"Job scheduled for retry in {delay}s", extra={"job_id": data.get("id")})
 
         else:
             # DLQ: Max retries atteint
@@ -554,7 +561,7 @@ class QueueWorker:
                 extra={
                     "job_id": data.get("id"),
                     "error": error_msg,
-                }
+                },
             )
 
             if self._config.metrics_enabled:
@@ -602,7 +609,7 @@ class QueueWorker:
                         if claimed:
                             logger.warning(
                                 f"Claimed abandoned message {msg_id}",
-                                extra={"idle_time_ms": idle_time}
+                                extra={"idle_time_ms": idle_time},
                             )
 
             except asyncio.CancelledError:
@@ -646,8 +653,7 @@ class QueueWorker:
                         await self._redis.zrem(StreamName.SCHEDULED, job_data)
 
                         logger.info(
-                            f"Scheduled job moved to {stream}",
-                            extra={"job_id": job_dict.get("id")}
+                            f"Scheduled job moved to {stream}", extra={"job_id": job_dict.get("id")}
                         )
 
                     except Exception as e:
@@ -674,6 +680,7 @@ class QueueWorker:
 # =============================================================================
 # SPECIFIC JOB TYPES
 # =============================================================================
+
 
 @dataclass
 class EmbeddingJob(Job):
@@ -747,6 +754,7 @@ class ReportJob(Job):
 # DLQ MANAGER
 # =============================================================================
 
+
 class DLQManager:
     """
     Gestionnaire de la Dead Letter Queue.
@@ -772,16 +780,18 @@ class DLQManager:
             if tenant_id and data.get("tenant_id") != tenant_id:
                 continue
 
-            jobs.append({
-                "stream_id": stream_id,
-                "job_id": data.get("id"),
-                "type": data.get("type"),
-                "tenant_id": data.get("tenant_id"),
-                "error": data.get("last_error"),
-                "failed_at": data.get("failed_at"),
-                "original_stream": data.get("original_stream"),
-                "retry_count": int(data.get("retry_count", 0)),
-            })
+            jobs.append(
+                {
+                    "stream_id": stream_id,
+                    "job_id": data.get("id"),
+                    "type": data.get("type"),
+                    "tenant_id": data.get("tenant_id"),
+                    "error": data.get("last_error"),
+                    "failed_at": data.get("failed_at"),
+                    "original_stream": data.get("original_stream"),
+                    "retry_count": int(data.get("retry_count", 0)),
+                }
+            )
 
         return jobs
 
@@ -865,6 +875,7 @@ class DLQManager:
 # FACTORY
 # =============================================================================
 
+
 async def create_queue_system(
     redis_url: str,
 ) -> tuple[ReliableQueue, redis.Redis]:
@@ -896,7 +907,6 @@ __all__ = [
     "ReliableQueue",
     "QueueWorker",
     "QueueConfig",
-
     # Jobs
     "Job",
     "JobStatus",
@@ -906,14 +916,10 @@ __all__ = [
     "CatalogSyncJob",
     "BulkOperationJob",
     "ReportJob",
-
     # Stream Names
     "StreamName",
-
     # DLQ
     "DLQManager",
-
     # Factory
     "create_queue_system",
 ]
-

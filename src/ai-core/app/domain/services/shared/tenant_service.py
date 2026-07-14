@@ -3,12 +3,12 @@ Tenant Service - Gestion multi-tenant partagée
 Gère les plans, limites, features et configuration par tenant
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
-from uuid import UUID, uuid4
-from enum import Enum
 import logging
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
+from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,10 @@ logger = logging.getLogger(__name__)
 # TYPES
 # =============================================================================
 
+
 class TenantPlan(str, Enum):
     """Plans disponibles"""
+
     STARTER = "starter"
     PROFESSIONAL = "professional"
     ENTERPRISE = "enterprise"
@@ -26,6 +28,7 @@ class TenantPlan(str, Enum):
 
 class TenantStatus(str, Enum):
     """Statut du tenant"""
+
     ACTIVE = "active"
     SUSPENDED = "suspended"
     TRIAL = "trial"
@@ -34,6 +37,7 @@ class TenantStatus(str, Enum):
 
 class Feature(str, Enum):
     """Features disponibles"""
+
     CHATBOT = "chatbot"
     FAQ = "faq"
     RECOMMENDATIONS = "recommendations"
@@ -68,13 +72,9 @@ PLAN_DEFINITIONS: Dict[TenantPlan, Dict[str, Any]] = {
         },
         "price_monthly_usd": 29,
     },
-
     TenantPlan.PROFESSIONAL: {
         "name": "Professional",
-        "features": [
-            Feature.CHATBOT, Feature.FAQ,
-            Feature.RECOMMENDATIONS, Feature.COUPONS
-        ],
+        "features": [Feature.CHATBOT, Feature.FAQ, Feature.RECOMMENDATIONS, Feature.COUPONS],
         "limits": {
             "conversations_per_day": 2000,
             "products_indexed": 10000,
@@ -91,14 +91,17 @@ PLAN_DEFINITIONS: Dict[TenantPlan, Dict[str, Any]] = {
         },
         "price_monthly_usd": 99,
     },
-
     TenantPlan.ENTERPRISE: {
         "name": "Enterprise",
         "features": [
-            Feature.CHATBOT, Feature.FAQ,
-            Feature.RECOMMENDATIONS, Feature.COUPONS,
-            Feature.ADMIN_AI, Feature.ANALYTICS,
-            Feature.BULK_OPERATIONS, Feature.CUSTOM_PROMPTS,
+            Feature.CHATBOT,
+            Feature.FAQ,
+            Feature.RECOMMENDATIONS,
+            Feature.COUPONS,
+            Feature.ADMIN_AI,
+            Feature.ANALYTICS,
+            Feature.BULK_OPERATIONS,
+            Feature.CUSTOM_PROMPTS,
             Feature.PRIORITY_SUPPORT,
         ],
         "limits": {
@@ -125,9 +128,11 @@ PLAN_DEFINITIONS: Dict[TenantPlan, Dict[str, Any]] = {
 # DATA CLASSES
 # =============================================================================
 
+
 @dataclass
 class TenantLimits:
     """Limites du tenant"""
+
     conversations_per_day: int = 500
     products_indexed: int = 1000
     customers: int = 5000
@@ -141,6 +146,7 @@ class TenantLimits:
 @dataclass
 class TenantLLMConfig:
     """Configuration LLM du tenant"""
+
     model: str = "gpt-4o-mini"
     max_tokens: int = 500
     temperature: float = 0.7
@@ -150,6 +156,7 @@ class TenantLLMConfig:
 @dataclass
 class TenantUsage:
     """Usage actuel du tenant"""
+
     tenant_id: str
     period: str  # "daily" ou "monthly"
 
@@ -170,6 +177,7 @@ class TenantUsage:
 @dataclass
 class Tenant:
     """Entité Tenant complète"""
+
     id: UUID = field(default_factory=uuid4)
     name: str = ""
     domain: str = ""
@@ -200,6 +208,7 @@ class Tenant:
 @dataclass
 class TenantContext:
     """Contexte tenant injecté dans les requêtes"""
+
     tenant_id: str
     tenant_name: str
     plan: TenantPlan
@@ -213,6 +222,7 @@ class TenantContext:
 # =============================================================================
 # TENANT SERVICE
 # =============================================================================
+
 
 class TenantService:
     """
@@ -255,7 +265,7 @@ class TenantService:
                     await self._cache.set(
                         f"tenant:{tenant_id}",
                         self._serialize_tenant(tenant),
-                        ex=300  # 5 min TTL
+                        ex=300,  # 5 min TTL
                     )
                 return tenant
 
@@ -392,10 +402,20 @@ class TenantService:
         # Liste des modèles autorisés par plan
         ALLOWED_MODELS = {
             TenantPlan.STARTER: ["gpt-4o-mini", "gpt-3.5-turbo"],
-            TenantPlan.PROFESSIONAL: ["gpt-4o-mini", "gpt-3.5-turbo", "gpt-4o", "claude-3-haiku-20240307"],
+            TenantPlan.PROFESSIONAL: [
+                "gpt-4o-mini",
+                "gpt-3.5-turbo",
+                "gpt-4o",
+                "claude-3-haiku-20240307",
+            ],
             TenantPlan.ENTERPRISE: [
-                "gpt-4o-mini", "gpt-3.5-turbo", "gpt-4o", "gpt-4-turbo",
-                "claude-3-haiku-20240307", "claude-3-sonnet-20240229", "claude-3-5-sonnet-20240620"
+                "gpt-4o-mini",
+                "gpt-3.5-turbo",
+                "gpt-4o",
+                "gpt-4-turbo",
+                "claude-3-haiku-20240307",
+                "claude-3-sonnet-20240229",
+                "claude-3-5-sonnet-20240620",
             ],
         }
 
@@ -416,22 +436,26 @@ class TenantService:
     def _serialize_tenant(self, tenant: Tenant) -> str:
         """Sérialise un tenant pour cache"""
         import json
-        return json.dumps({
-            "id": str(tenant.id),
-            "name": tenant.name,
-            "domain": tenant.domain,
-            "platform": tenant.platform,
-            "plan": tenant.plan.value,
-            "status": tenant.status.value,
-            "features": [f.value for f in tenant.features],
-            "limits": tenant.limits.__dict__,
-            "llm_config": tenant.llm_config.__dict__,
-            "settings": tenant.settings,
-        })
+
+        return json.dumps(
+            {
+                "id": str(tenant.id),
+                "name": tenant.name,
+                "domain": tenant.domain,
+                "platform": tenant.platform,
+                "plan": tenant.plan.value,
+                "status": tenant.status.value,
+                "features": [f.value for f in tenant.features],
+                "limits": tenant.limits.__dict__,
+                "llm_config": tenant.llm_config.__dict__,
+                "settings": tenant.settings,
+            }
+        )
 
     def _deserialize_tenant(self, data: str) -> Tenant:
         """Désérialise un tenant depuis cache"""
         import json
+
         d = json.loads(data)
         return Tenant(
             id=UUID(d["id"]),
@@ -463,4 +487,3 @@ class TenantService:
         """Retourne la config LLM d'un plan"""
         config_dict = PLAN_DEFINITIONS[plan]["llm_config"]
         return TenantLLMConfig(**config_dict)
-

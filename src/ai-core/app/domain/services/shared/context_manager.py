@@ -3,14 +3,13 @@ Context Manager - Gestion avancée du contexte conversationnel
 Implémente mémoire court-terme, résumé, compression
 """
 
+import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List
-from uuid import UUID, uuid4
 from enum import Enum
-import logging
-import json
-import hashlib
+from typing import Any, Dict, List, Optional
+from uuid import UUID, uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +18,17 @@ logger = logging.getLogger(__name__)
 # TYPES
 # ============================================================================
 
+
 class MemoryType(str, Enum):
-    SHORT_TERM = "short_term"    # Messages récents (window)
-    WORKING = "working"          # Résumé de la session
-    LONG_TERM = "long_term"      # Profil utilisateur persisté
+    SHORT_TERM = "short_term"  # Messages récents (window)
+    WORKING = "working"  # Résumé de la session
+    LONG_TERM = "long_term"  # Profil utilisateur persisté
 
 
 @dataclass
 class ContextWindow:
     """Fenêtre de contexte avec gestion des tokens"""
+
     messages: List[Dict[str, str]] = field(default_factory=list)
     total_tokens: int = 0
     max_tokens: int = 4000  # Réserve pour le prompt système et la réponse
@@ -39,20 +40,19 @@ class ContextWindow:
             removed = self.messages.pop(0)
             self.total_tokens -= removed.get("token_count", 0)
 
-        self.messages.append({
-            "role": role,
-            "content": content,
-            "token_count": token_count,
-            "timestamp": datetime.utcnow().isoformat()
-        })
+        self.messages.append(
+            {
+                "role": role,
+                "content": content,
+                "token_count": token_count,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+        )
         self.total_tokens += token_count
 
     def get_messages(self) -> List[Dict[str, str]]:
         """Retourne les messages sans les métadonnées internes"""
-        return [
-            {"role": m["role"], "content": m["content"]}
-            for m in self.messages
-        ]
+        return [{"role": m["role"], "content": m["content"]} for m in self.messages]
 
     def clear(self):
         self.messages = []
@@ -62,6 +62,7 @@ class ContextWindow:
 @dataclass
 class WorkingMemory:
     """Mémoire de travail - résumé de la conversation en cours"""
+
     summary: str = ""
     key_facts: List[str] = field(default_factory=list)
     current_intent: Optional[str] = None
@@ -80,9 +81,7 @@ class WorkingMemory:
             parts.append(f"Points clés: {'; '.join(self.key_facts)}")
 
         if self.entities_mentioned:
-            entities_str = ", ".join(
-                f"{k}: {v}" for k, v in self.entities_mentioned.items()
-            )
+            entities_str = ", ".join(f"{k}: {v}" for k, v in self.entities_mentioned.items())
             parts.append(f"Informations mentionnées: {entities_str}")
 
         if self.actions_taken:
@@ -94,6 +93,7 @@ class WorkingMemory:
 @dataclass
 class CustomerProfile:
     """Profil client persisté (mémoire long terme)"""
+
     customer_id: UUID = field(default_factory=uuid4)
     tenant_id: UUID = field(default_factory=uuid4)
 
@@ -140,6 +140,7 @@ class CustomerProfile:
 @dataclass
 class ConversationState:
     """État complet d'une conversation"""
+
     conversation_id: UUID = field(default_factory=uuid4)
     tenant_id: UUID = field(default_factory=uuid4)
     customer_id: Optional[UUID] = None
@@ -169,6 +170,7 @@ class ConversationState:
 # CONTEXT MANAGER
 # ============================================================================
 
+
 class ContextManager:
     """
     Gestionnaire de contexte conversationnel.
@@ -187,7 +189,7 @@ class ContextManager:
         repository,  # Repository pour profils persistés
         llm_service=None,  # Pour résumé/compression
         max_context_tokens: int = 4000,
-        session_timeout_minutes: int = 30
+        session_timeout_minutes: int = 30,
     ):
         self.cache = cache
         self.repository = repository
@@ -199,10 +201,7 @@ class ContextManager:
         self._active_sessions: Dict[str, ConversationState] = {}
 
     async def get_or_create_state(
-        self,
-        tenant_id: UUID,
-        session_id: str,
-        customer_id: Optional[UUID] = None
+        self, tenant_id: UUID, session_id: str, customer_id: Optional[UUID] = None
     ) -> ConversationState:
         """Récupère ou crée un état de conversation"""
 
@@ -231,7 +230,7 @@ class ContextManager:
             tenant_id=tenant_id,
             session_id=session_id,
             customer_id=customer_id,
-            context_window=ContextWindow(max_tokens=self.max_context_tokens)
+            context_window=ContextWindow(max_tokens=self.max_context_tokens),
         )
 
         # Charger profil client si disponible
@@ -251,7 +250,7 @@ class ContextManager:
         content: str,
         token_count: int,
         intent: Optional[str] = None,
-        entities: Dict[str, Any] = None
+        entities: Dict[str, Any] = None,
     ):
         """Ajoute un message et met à jour le contexte"""
 
@@ -280,9 +279,7 @@ class ContextManager:
         state.working_memory.last_updated = datetime.utcnow()
 
     async def build_context_for_llm(
-        self,
-        state: ConversationState,
-        current_message: str
+        self, state: ConversationState, current_message: str
     ) -> Dict[str, Any]:
         """
         Construit le contexte complet pour l'appel LLM.
@@ -297,7 +294,7 @@ class ContextManager:
         context = {
             "messages": state.context_window.get_messages(),
             "system_context": "",
-            "customer_context": ""
+            "customer_context": "",
         }
 
         # Working memory context
@@ -316,7 +313,9 @@ class ContextManager:
         if state.current_product_id:
             nav_parts.append(f"Produit consulté: {state.current_product_id}")
         if state.cart_items:
-            cart_total = sum(item.get("price", 0) * item.get("quantity", 1) for item in state.cart_items)
+            cart_total = sum(
+                item.get("price", 0) * item.get("quantity", 1) for item in state.cart_items
+            )
             nav_parts.append(f"Panier: {len(state.cart_items)} articles, {cart_total:.2f}€")
 
         if nav_parts:
@@ -331,10 +330,12 @@ class ContextManager:
 
         try:
             # Construire le prompt de résumé
-            messages_text = "\n".join([
-                f"{m['role']}: {m['content']}"
-                for m in state.context_window.messages[-10:]  # Derniers 10 messages
-            ])
+            messages_text = "\n".join(
+                [
+                    f"{m['role']}: {m['content']}"
+                    for m in state.context_window.messages[-10:]  # Derniers 10 messages
+                ]
+            )
 
             summary_prompt = f"""Résume cette conversation de support client en 2-3 phrases.
 Identifie:
@@ -368,11 +369,7 @@ Résumé:"""
         cache_key = f"conv_state:{state.tenant_id}:{state.session_id}"
         serialized = self._serialize_state(state)
 
-        await self.cache.set(
-            cache_key,
-            serialized,
-            ex=int(self.session_timeout.total_seconds())
-        )
+        await self.cache.set(cache_key, serialized, ex=int(self.session_timeout.total_seconds()))
 
     async def _archive_state(self, state: ConversationState):
         """Archive une session terminée"""
@@ -407,7 +404,7 @@ Résumé:"""
             "context_window": {
                 "messages": state.context_window.messages,
                 "total_tokens": state.context_window.total_tokens,
-                "max_tokens": state.context_window.max_tokens
+                "max_tokens": state.context_window.max_tokens,
             },
             "working_memory": {
                 "summary": state.working_memory.summary,
@@ -423,7 +420,7 @@ Résumé:"""
             "start_time": state.start_time.isoformat(),
             "last_activity": state.last_activity.isoformat(),
             "is_active": state.is_active,
-            "needs_human_handoff": state.needs_human_handoff
+            "needs_human_handoff": state.needs_human_handoff,
         }
         return json.dumps(data)
 
@@ -443,7 +440,7 @@ Résumé:"""
             needs_human_handoff=obj["needs_human_handoff"],
             current_page=obj.get("current_page"),
             current_product_id=obj.get("current_product_id"),
-            cart_items=obj.get("cart_items", [])
+            cart_items=obj.get("cart_items", []),
         )
 
         # Context window
@@ -451,7 +448,7 @@ Résumé:"""
         state.context_window = ContextWindow(
             messages=cw_data.get("messages", []),
             total_tokens=cw_data.get("total_tokens", 0),
-            max_tokens=cw_data.get("max_tokens", 4000)
+            max_tokens=cw_data.get("max_tokens", 4000),
         )
 
         # Working memory
@@ -461,16 +458,12 @@ Résumé:"""
             key_facts=wm_data.get("key_facts", []),
             current_intent=wm_data.get("current_intent"),
             entities_mentioned=wm_data.get("entities_mentioned", {}),
-            actions_taken=wm_data.get("actions_taken", [])
+            actions_taken=wm_data.get("actions_taken", []),
         )
 
         return state
 
-    async def end_conversation(
-        self,
-        state: ConversationState,
-        reason: str = "completed"
-    ):
+    async def end_conversation(self, state: ConversationState, reason: str = "completed"):
         """Termine une conversation proprement"""
         state.is_active = False
 
@@ -486,7 +479,7 @@ Résumé:"""
 
         logger.info(
             f"Conversation ended: {state.conversation_id}",
-            extra={"reason": reason, "message_count": state.message_count}
+            extra={"reason": reason, "message_count": state.message_count},
         )
 
     async def request_human_handoff(self, state: ConversationState, reason: str):
@@ -497,7 +490,5 @@ Résumé:"""
         await self._persist_state(state)
 
         logger.info(
-            f"Human handoff requested for {state.conversation_id}",
-            extra={"reason": reason}
+            f"Human handoff requested for {state.conversation_id}", extra={"reason": reason}
         )
-

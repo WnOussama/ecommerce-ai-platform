@@ -13,13 +13,13 @@ GARANTIES IDEMPOTENCY:
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import select, and_
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database.models.message import Message, MessageRole
 
@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 class DuplicateMessageError(Exception):
     """Exception levée si un message avec la même idempotency_key existe déjà."""
+
     pass
 
 
@@ -226,7 +227,7 @@ class MessageRepository:
                 "conversation_id": str(conversation_id),
                 "role": role.value,
                 "idempotency_key": str(idempotency_key),
-            }
+            },
         )
 
         return message
@@ -343,7 +344,7 @@ class MessageRepository:
                     "conversation_id": str(conversation_id),
                     "idempotency_key": str(idempotency_key),
                     "role": role.value,
-                }
+                },
             )
             return message, True
 
@@ -364,7 +365,7 @@ class MessageRepository:
                 "tenant_id": str(self._tenant_id),
                 "message_id": str(existing.id),
                 "idempotency_key": str(idempotency_key),
-            }
+            },
         )
         return existing, False
 
@@ -401,7 +402,3 @@ class MessageRepository:
         await self._session.flush()
 
         return message
-
-
-
-

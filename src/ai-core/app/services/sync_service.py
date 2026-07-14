@@ -13,17 +13,17 @@ import asyncio
 import logging
 import os
 import signal
-from typing import Dict, Any, Callable, List
 from datetime import datetime
+from typing import Any, Callable, Dict
 
 from app.core.config.settings import settings
 from app.core.logging.config import setup_logging
 from app.services.message_queue.redis_queue import (
-    RedisQueueClient,
-    QueueName,
-    QueueMessage,
     MessageType,
-    get_queue_client
+    QueueMessage,
+    QueueName,
+    RedisQueueClient,
+    get_queue_client,
 )
 
 # Setup logging
@@ -39,6 +39,7 @@ SERVICE_VERSION = settings.app_version
 # MESSAGE HANDLERS
 # =============================================================================
 
+
 class EmbeddingHandler:
     """Handler pour les tâches de génération d'embeddings"""
 
@@ -48,8 +49,8 @@ class EmbeddingHandler:
 
     async def handle_product_embeddings(self, message: QueueMessage) -> None:
         """Générer les embeddings pour des produits"""
-        from app.infrastructure.vector_store.service import VectorStoreService
         from app.infrastructure.llm.gateway import LLMGateway
+        from app.infrastructure.vector_store.service import VectorStoreService
 
         tenant_id = message.tenant_id
         payload = message.payload
@@ -57,7 +58,7 @@ class EmbeddingHandler:
 
         logger.info(
             f"Generating embeddings for {len(documents)} products",
-            extra={"tenant_id": tenant_id, "message_id": message.id}
+            extra={"tenant_id": tenant_id, "message_id": message.id},
         )
 
         try:
@@ -79,43 +80,39 @@ class EmbeddingHandler:
                 collection_name=collection_name,
                 documents=documents,
                 embeddings=embeddings,
-                ids=[str(doc.get("id")) for doc in documents]
+                ids=[str(doc.get("id")) for doc in documents],
             )
 
             logger.info(
                 f"Successfully generated embeddings for {len(documents)} products",
-                extra={"tenant_id": tenant_id}
+                extra={"tenant_id": tenant_id},
             )
 
         except Exception as e:
             logger.error(
                 f"Failed to generate product embeddings: {e}",
-                extra={"tenant_id": tenant_id, "message_id": message.id}
+                extra={"tenant_id": tenant_id, "message_id": message.id},
             )
             raise
 
     async def handle_faq_embeddings(self, message: QueueMessage) -> None:
         """Générer les embeddings pour des FAQs"""
-        from app.infrastructure.vector_store.service import VectorStoreService
         from app.infrastructure.llm.gateway import LLMGateway
+        from app.infrastructure.vector_store.service import VectorStoreService
 
         tenant_id = message.tenant_id
         payload = message.payload
         documents = payload.get("documents", [])
 
         logger.info(
-            f"Generating embeddings for {len(documents)} FAQs",
-            extra={"tenant_id": tenant_id}
+            f"Generating embeddings for {len(documents)} FAQs", extra={"tenant_id": tenant_id}
         )
 
         try:
             llm_gateway = LLMGateway()
             vector_store = VectorStoreService()
 
-            texts = [
-                f"{doc.get('question', '')} {doc.get('answer', '')}"
-                for doc in documents
-            ]
+            texts = [f"{doc.get('question', '')} {doc.get('answer', '')}" for doc in documents]
 
             embeddings = await llm_gateway.generate_embeddings(texts)
 
@@ -124,7 +121,7 @@ class EmbeddingHandler:
                 collection_name=collection_name,
                 documents=documents,
                 embeddings=embeddings,
-                ids=[str(doc.get("id")) for doc in documents]
+                ids=[str(doc.get("id")) for doc in documents],
             )
 
             logger.info(f"Successfully generated embeddings for {len(documents)} FAQs")
@@ -144,17 +141,14 @@ class EmbeddingHandler:
 
         logger.info(
             f"Deleting {len(document_ids)} embeddings",
-            extra={"tenant_id": tenant_id, "document_type": document_type}
+            extra={"tenant_id": tenant_id, "document_type": document_type},
         )
 
         try:
             vector_store = VectorStoreService()
             collection_name = f"tenant_{tenant_id}_{document_type}"
 
-            await vector_store.delete_documents(
-                collection_name=collection_name,
-                ids=document_ids
-            )
+            await vector_store.delete_documents(collection_name=collection_name, ids=document_ids)
 
             logger.info(f"Successfully deleted {len(document_ids)} embeddings")
 
@@ -174,24 +168,23 @@ class CatalogSyncHandler:
         sync_type = payload.get("sync_type", "incremental")
 
         logger.info(
-            f"Starting catalog sync",
-            extra={
-                "tenant_id": tenant_id,
-                "platform": platform,
-                "sync_type": sync_type
-            }
+            "Starting catalog sync",
+            extra={"tenant_id": tenant_id, "platform": platform, "sync_type": sync_type},
         )
 
         try:
             # Import the appropriate adapter
             if platform == "prestashop":
                 from app.infrastructure.external.prestashop_adapter import PrestaShopAdapter
+
                 adapter = PrestaShopAdapter(payload.get("api_credentials", {}))
             elif platform == "shopify":
                 from app.infrastructure.external.shopify_adapter import ShopifyAdapter
+
                 adapter = ShopifyAdapter(payload.get("api_credentials", {}))
             elif platform == "woocommerce":
                 from app.infrastructure.external.woocommerce_adapter import WooCommerceAdapter
+
                 adapter = WooCommerceAdapter(payload.get("api_credentials", {}))
             else:
                 raise ValueError(f"Unsupported platform: {platform}")
@@ -207,26 +200,28 @@ class CatalogSyncHandler:
 
             # Trigger embedding generation for new/updated products
             if products:
-                from app.services.message_queue.redis_queue import get_queue_client, QueueMessage, MessageType
+                from app.services.message_queue.redis_queue import (
+                    MessageType,
+                    QueueMessage,
+                    get_queue_client,
+                )
+
                 queue_client = get_queue_client(
                     redis_url=f"redis://{settings.redis.host}:{settings.redis.port}",
                     consumer_group="sync-service",
-                    consumer_name=f"sync-{os.getpid()}"
+                    consumer_name=f"sync-{os.getpid()}",
                 )
 
                 # Batch products for embedding generation
                 batch_size = 50
                 for i in range(0, len(products), batch_size):
-                    batch = products[i:i + batch_size]
+                    batch = products[i : i + batch_size]
                     embedding_message = QueueMessage(
                         type=MessageType.GENERATE_PRODUCT_EMBEDDINGS,
                         tenant_id=tenant_id,
-                        payload={"documents": batch}
+                        payload={"documents": batch},
                     )
-                    await queue_client.publish(
-                        QueueName.EMBEDDING_REQUESTS,
-                        embedding_message
-                    )
+                    await queue_client.publish(QueueName.EMBEDDING_REQUESTS, embedding_message)
 
                 logger.info(f"Queued {len(products)} products for embedding generation")
 
@@ -240,9 +235,8 @@ class CatalogSyncHandler:
     async def handle_sync_customers(self, message: QueueMessage) -> None:
         """Synchroniser les clients depuis la plateforme"""
         tenant_id = message.tenant_id
-        payload = message.payload
 
-        logger.info(f"Starting customer sync", extra={"tenant_id": tenant_id})
+        logger.info("Starting customer sync", extra={"tenant_id": tenant_id})
 
         # TODO: Implement customer sync logic
         pass
@@ -258,8 +252,8 @@ class BulkOperationHandler:
         action_id = payload.get("action_id")
 
         logger.info(
-            f"Starting bulk coupon generation",
-            extra={"tenant_id": tenant_id, "action_id": action_id}
+            "Starting bulk coupon generation",
+            extra={"tenant_id": tenant_id, "action_id": action_id},
         )
 
         try:
@@ -276,8 +270,7 @@ class BulkOperationHandler:
             for customer in customers:
                 try:
                     await admin_agent.generate_coupon(
-                        customer_id=customer["id"],
-                        config=coupon_config
+                        customer_id=customer["id"], config=coupon_config
                     )
                     generated += 1
                 except Exception as e:
@@ -288,29 +281,17 @@ class BulkOperationHandler:
             await self._update_operation_status(
                 action_id=action_id,
                 status="completed",
-                result={
-                    "generated": generated,
-                    "failed": failed,
-                    "total": len(customers)
-                }
+                result={"generated": generated, "failed": failed, "total": len(customers)},
             )
 
             logger.info(
-                f"Bulk coupon generation completed",
-                extra={
-                    "tenant_id": tenant_id,
-                    "generated": generated,
-                    "failed": failed
-                }
+                "Bulk coupon generation completed",
+                extra={"tenant_id": tenant_id, "generated": generated, "failed": failed},
             )
 
         except Exception as e:
             logger.error(f"Bulk coupon generation failed: {e}")
-            await self._update_operation_status(
-                action_id=action_id,
-                status="failed",
-                error=str(e)
-            )
+            await self._update_operation_status(action_id=action_id, status="failed", error=str(e))
             raise
 
     async def handle_bulk_price_update(self, message: QueueMessage) -> None:
@@ -320,41 +301,32 @@ class BulkOperationHandler:
         action_id = payload.get("action_id")
 
         logger.info(
-            f"Starting bulk price update",
-            extra={"tenant_id": tenant_id, "action_id": action_id}
+            "Starting bulk price update", extra={"tenant_id": tenant_id, "action_id": action_id}
         )
 
         # TODO: Implement bulk price update
         pass
 
     async def _update_operation_status(
-        self,
-        action_id: str,
-        status: str,
-        result: Dict[str, Any] = None,
-        error: str = None
+        self, action_id: str, status: str, result: Dict[str, Any] = None, error: str = None
     ) -> None:
         """Mettre à jour le statut d'une opération dans Redis"""
         import redis.asyncio as redis
 
-        client = redis.from_url(
-            f"redis://{settings.redis.host}:{settings.redis.port}"
-        )
+        client = redis.from_url(f"redis://{settings.redis.host}:{settings.redis.port}")
 
-        status_data = {
-            "status": status,
-            "updated_at": datetime.utcnow().isoformat()
-        }
+        status_data = {"status": status, "updated_at": datetime.utcnow().isoformat()}
         if result:
             status_data["result"] = result
         if error:
             status_data["error"] = error
 
         import json
+
         await client.set(
             f"operation:{action_id}:status",
             json.dumps(status_data),
-            ex=86400  # 24h TTL
+            ex=86400,  # 24h TTL
         )
         await client.close()
 
@@ -362,6 +334,7 @@ class BulkOperationHandler:
 # =============================================================================
 # WORKER
 # =============================================================================
+
 
 class SyncServiceWorker:
     """
@@ -396,7 +369,7 @@ class SyncServiceWorker:
         self.queue_client = get_queue_client(
             redis_url=f"redis://{settings.redis.host}:{settings.redis.port}",
             consumer_group="sync-service",
-            consumer_name=f"sync-worker-{os.getpid()}"
+            consumer_name=f"sync-worker-{os.getpid()}",
         )
         await self.queue_client.connect()
 
@@ -405,16 +378,10 @@ class SyncServiceWorker:
         # Démarrer les consumers pour chaque queue
         tasks = [
             asyncio.create_task(
-                self.queue_client.consume(
-                    QueueName.EMBEDDING_REQUESTS,
-                    self._handle_message
-                )
+                self.queue_client.consume(QueueName.EMBEDDING_REQUESTS, self._handle_message)
             ),
             asyncio.create_task(
-                self.queue_client.consume(
-                    QueueName.CATALOG_SYNC,
-                    self._handle_message
-                )
+                self.queue_client.consume(QueueName.CATALOG_SYNC, self._handle_message)
             ),
         ]
 
@@ -443,18 +410,13 @@ class SyncServiceWorker:
 
         if handler is None:
             logger.warning(
-                f"No handler for message type: {message.type}",
-                extra={"message_id": message.id}
+                f"No handler for message type: {message.type}", extra={"message_id": message.id}
             )
             return
 
         logger.info(
-            f"Processing message",
-            extra={
-                "message_id": message.id,
-                "type": message.type,
-                "tenant_id": message.tenant_id
-            }
+            "Processing message",
+            extra={"message_id": message.id, "type": message.type, "tenant_id": message.tenant_id},
         )
 
         start_time = datetime.utcnow()
@@ -464,21 +426,15 @@ class SyncServiceWorker:
 
             duration = (datetime.utcnow() - start_time).total_seconds()
             logger.info(
-                f"Message processed successfully",
-                extra={
-                    "message_id": message.id,
-                    "duration_seconds": duration
-                }
+                "Message processed successfully",
+                extra={"message_id": message.id, "duration_seconds": duration},
             )
 
         except Exception as e:
             duration = (datetime.utcnow() - start_time).total_seconds()
             logger.error(
                 f"Message processing failed: {e}",
-                extra={
-                    "message_id": message.id,
-                    "duration_seconds": duration
-                }
+                extra={"message_id": message.id, "duration_seconds": duration},
             )
             raise
 
@@ -486,6 +442,7 @@ class SyncServiceWorker:
 # =============================================================================
 # MAIN
 # =============================================================================
+
 
 async def main():
     """Point d'entrée principal"""
@@ -511,4 +468,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-

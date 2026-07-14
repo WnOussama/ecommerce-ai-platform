@@ -13,7 +13,7 @@ Caractéristiques:
 
 import logging
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
 from app.services.rag.embedding_service import EmbeddingServiceProtocol
 
@@ -24,9 +24,11 @@ logger = logging.getLogger(__name__)
 # DATA MODELS
 # =============================================================================
 
+
 @dataclass
 class RetrievedProduct:
     """Produit récupéré par la recherche sémantique."""
+
     product_id: int
     name: str
     price: float
@@ -65,6 +67,7 @@ class RetrievedProduct:
 @dataclass
 class RetrievalResult:
     """Résultat d'une recherche de produits."""
+
     query: str
     tenant_id: str
     products: List[RetrievedProduct] = field(default_factory=list)
@@ -119,6 +122,7 @@ class RetrievalResult:
 # VECTOR STORE PROTOCOL FOR SEARCH
 # =============================================================================
 
+
 class SearchableVectorStoreProtocol(Protocol):
     """Protocol pour les opérations de recherche dans le vector store."""
 
@@ -148,6 +152,7 @@ class SearchableVectorStoreProtocol(Protocol):
 # =============================================================================
 # IN-MEMORY SEARCHABLE VECTOR STORE (FOR TESTING)
 # =============================================================================
+
 
 class InMemorySearchableVectorStore:
     """
@@ -201,10 +206,7 @@ class InMemorySearchableVectorStore:
             # Appliquer les filtres de metadata si présents
             if filter_metadata:
                 metadata = doc_data.get("metadata", {})
-                match = all(
-                    metadata.get(k) == v
-                    for k, v in filter_metadata.items()
-                )
+                match = all(metadata.get(k) == v for k, v in filter_metadata.items())
                 if not match:
                     continue
 
@@ -212,13 +214,15 @@ class InMemorySearchableVectorStore:
             doc_embedding = doc_data["embedding"]
             similarity = self._cosine_similarity(query_embedding, doc_embedding)
 
-            results.append({
-                "id": doc_id,
-                "document": doc_data["document"],
-                "metadata": doc_data["metadata"],
-                "distance": 1 - similarity,  # ChromaDB retourne distance, pas similarité
-                "similarity": similarity,
-            })
+            results.append(
+                {
+                    "id": doc_id,
+                    "document": doc_data["document"],
+                    "metadata": doc_data["metadata"],
+                    "distance": 1 - similarity,  # ChromaDB retourne distance, pas similarité
+                    "similarity": similarity,
+                }
+            )
 
         # Trier par similarité décroissante
         results.sort(key=lambda x: x["similarity"], reverse=True)
@@ -253,6 +257,7 @@ class InMemorySearchableVectorStore:
 # CHROMA SEARCHABLE VECTOR STORE
 # =============================================================================
 
+
 class ChromaSearchableVectorStore:
     """
     Adaptateur ChromaDB avec support de recherche sémantique.
@@ -264,16 +269,18 @@ class ChromaSearchableVectorStore:
             import chromadb
             from chromadb.config import Settings as ChromaSettings
 
-            self._client = chromadb.Client(ChromaSettings(
-                chroma_db_impl="duckdb+parquet",
-                persist_directory=persist_directory,
-                anonymized_telemetry=False,
-            ))
+            self._client = chromadb.Client(
+                ChromaSettings(
+                    chroma_db_impl="duckdb+parquet",
+                    persist_directory=persist_directory,
+                    anonymized_telemetry=False,
+                )
+            )
             self._collections: Dict[str, Any] = {}
 
             logger.info(
                 "ChromaSearchableVectorStore initialized",
-                extra={"persist_directory": persist_directory}
+                extra={"persist_directory": persist_directory},
             )
         except ImportError:
             logger.warning("chromadb not installed, search will not work")
@@ -320,20 +327,21 @@ class ChromaSearchableVectorStore:
             if results["ids"] and results["ids"][0]:
                 for i, doc_id in enumerate(results["ids"][0]):
                     distance = results["distances"][0][i] if results["distances"] else 0
-                    formatted.append({
-                        "id": doc_id,
-                        "document": results["documents"][0][i] if results["documents"] else "",
-                        "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
-                        "distance": distance,
-                        "similarity": 1 - (distance / 2),  # Approximation pour cosine
-                    })
+                    formatted.append(
+                        {
+                            "id": doc_id,
+                            "document": results["documents"][0][i] if results["documents"] else "",
+                            "metadata": results["metadatas"][0][i] if results["metadatas"] else {},
+                            "distance": distance,
+                            "similarity": 1 - (distance / 2),  # Approximation pour cosine
+                        }
+                    )
 
             return formatted
 
         except Exception as e:
             logger.error(
-                "ChromaDB search failed",
-                extra={"collection": collection_name, "error": str(e)}
+                "ChromaDB search failed", extra={"collection": collection_name, "error": str(e)}
             )
             return []
 
@@ -351,6 +359,7 @@ class ChromaSearchableVectorStore:
 # =============================================================================
 # PRODUCT RETRIEVAL SERVICE
 # =============================================================================
+
 
 class ProductRetrievalService:
     """
@@ -422,6 +431,7 @@ class ProductRetrievalService:
             RetrievalResult avec les produits trouvés
         """
         import time
+
         start_time = time.monotonic()
 
         collection_name = self._get_collection_name(tenant_id)
@@ -438,7 +448,7 @@ class ProductRetrievalService:
                 "tenant_id": tenant_id,
                 "query": query[:100],
                 "top_k": top_k,
-            }
+            },
         )
 
         try:
@@ -446,10 +456,7 @@ class ProductRetrievalService:
             doc_count = await self._vector_store.count(collection_name)
 
             if doc_count == 0:
-                logger.info(
-                    "No products indexed for tenant",
-                    extra={"tenant_id": tenant_id}
-                )
+                logger.info("No products indexed for tenant", extra={"tenant_id": tenant_id})
                 result.search_time_ms = (time.monotonic() - start_time) * 1000
                 return result
 
@@ -506,17 +513,14 @@ class ProductRetrievalService:
                     "tenant_id": tenant_id,
                     "query": query[:100],
                     "error": str(e),
-                }
+                },
             )
             # Retourner résultat vide en cas d'erreur (fallback gracieux)
 
         finally:
             result.search_time_ms = (time.monotonic() - start_time) * 1000
 
-            logger.info(
-                "Product search completed",
-                extra=result.to_dict()
-            )
+            logger.info("Product search completed", extra=result.to_dict())
 
         return result
 
@@ -562,4 +566,3 @@ class ProductRetrievalService:
             return count > 0
         except Exception:
             return False
-

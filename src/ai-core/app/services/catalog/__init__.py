@@ -6,15 +6,15 @@ Ce module contient:
 - ProductRepository: Accès aux données produits
 """
 
+from app.services.catalog.repository import (
+    ProductFilter,
+    ProductRepository,
+)
 from app.services.catalog.sync_service import (
     CatalogSyncService,
+    SyncError,
     SyncResult,
     SyncStatus,
-    SyncError,
-)
-from app.services.catalog.repository import (
-    ProductRepository,
-    ProductFilter,
 )
 
 __all__ = [
@@ -27,4 +27,3 @@ __all__ = [
     "ProductRepository",
     "ProductFilter",
 ]
-

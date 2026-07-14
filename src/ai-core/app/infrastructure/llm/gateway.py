@@ -2,14 +2,13 @@
 Circuit Breaker & LLM Gateway - Résilience et gestion des fallbacks
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List, Callable
-from enum import Enum
 import asyncio
 import logging
 import time
-from functools import wraps
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -18,24 +17,27 @@ logger = logging.getLogger(__name__)
 # CIRCUIT BREAKER
 # ============================================================================
 
+
 class CircuitState(str, Enum):
-    CLOSED = "closed"      # Normal operation
-    OPEN = "open"          # Failing, reject requests
+    CLOSED = "closed"  # Normal operation
+    OPEN = "open"  # Failing, reject requests
     HALF_OPEN = "half_open"  # Testing if recovered
 
 
 @dataclass
 class CircuitBreakerConfig:
     """Configuration du circuit breaker"""
-    failure_threshold: int = 5      # Nombre d'échecs avant ouverture
-    success_threshold: int = 2      # Succès requis pour fermer depuis half-open
-    timeout_seconds: int = 30       # Temps avant passage en half-open
-    half_open_max_calls: int = 3    # Appels max en half-open
+
+    failure_threshold: int = 5  # Nombre d'échecs avant ouverture
+    success_threshold: int = 2  # Succès requis pour fermer depuis half-open
+    timeout_seconds: int = 30  # Temps avant passage en half-open
+    half_open_max_calls: int = 3  # Appels max en half-open
 
 
 @dataclass
 class CircuitBreakerState:
     """État du circuit breaker"""
+
     state: CircuitState = CircuitState.CLOSED
     failure_count: int = 0
     success_count: int = 0
@@ -111,8 +113,8 @@ class CircuitBreaker:
                 extra={
                     "failure_count": self.state.failure_count,
                     "threshold": self.config.failure_threshold,
-                    "error": str(error) if error else None
-                }
+                    "error": str(error) if error else None,
+                },
             )
 
             if self.state.state == CircuitState.HALF_OPEN:
@@ -162,13 +164,16 @@ class CircuitBreaker:
             "state": self.state.state.value,
             "failure_count": self.state.failure_count,
             "success_count": self.state.success_count,
-            "last_failure": self.state.last_failure_time.isoformat() if self.state.last_failure_time else None,
-            "last_state_change": self.state.last_state_change.isoformat()
+            "last_failure": self.state.last_failure_time.isoformat()
+            if self.state.last_failure_time
+            else None,
+            "last_state_change": self.state.last_state_change.isoformat(),
         }
 
 
 class CircuitBreakerError(Exception):
     """Erreur levée quand le circuit est ouvert"""
+
     pass
 
 
@@ -176,9 +181,11 @@ class CircuitBreakerError(Exception):
 # LLM GATEWAY
 # ============================================================================
 
+
 @dataclass
 class LLMProviderConfig:
     """Configuration d'un provider LLM"""
+
     name: str
     priority: int = 0  # Plus bas = plus prioritaire
     is_enabled: bool = True
@@ -203,7 +210,7 @@ class LLMGateway:
         providers: Dict[str, Any],  # name -> LLMProvider instance
         configs: Dict[str, LLMProviderConfig] = None,
         cache=None,  # Redis pour semantic cache
-        metrics_collector=None  # Prometheus metrics
+        metrics_collector=None,  # Prometheus metrics
     ):
         self.providers = providers
         self.configs = configs or {}
@@ -215,8 +222,7 @@ class LLMGateway:
 
         for name, config in self.configs.items():
             self.circuit_breakers[name] = CircuitBreaker(
-                name=f"llm_{name}",
-                config=config.circuit_breaker_config
+                name=f"llm_{name}", config=config.circuit_breaker_config
             )
 
         # Ordre de fallback (trié par priorité)
@@ -225,8 +231,7 @@ class LLMGateway:
     def _update_fallback_order(self):
         """Met à jour l'ordre de fallback basé sur les priorités"""
         enabled_configs = [
-            (name, config) for name, config in self.configs.items()
-            if config.is_enabled
+            (name, config) for name, config in self.configs.items() if config.is_enabled
         ]
         self.fallback_order = [
             name for name, _ in sorted(enabled_configs, key=lambda x: x[1].priority)
@@ -238,7 +243,7 @@ class LLMGateway:
         tenant_id: str,
         config: Dict[str, Any] = None,
         use_cache: bool = True,
-        cache_ttl: int = 3600
+        cache_ttl: int = 3600,
     ) -> Dict[str, Any]:
         """
         Génère une réponse avec fallback automatique.
@@ -286,7 +291,7 @@ class LLMGateway:
                     messages=messages,
                     config=config,
                     max_retries=provider_config.max_retries if provider_config else 3,
-                    timeout=provider_config.timeout_seconds if provider_config else 30
+                    timeout=provider_config.timeout_seconds if provider_config else 30,
                 )
 
                 # Succès
@@ -302,17 +307,14 @@ class LLMGateway:
                     self.metrics.record_llm_success(
                         provider=provider_name,
                         latency_ms=result.get("latency_ms", 0),
-                        tokens=result.get("usage", {}).get("total_tokens", 0)
+                        tokens=result.get("usage", {}).get("total_tokens", 0),
                     )
 
                 return {**result, "from_cache": False}
 
             except Exception as e:
                 last_error = e
-                logger.warning(
-                    f"Provider {provider_name} failed",
-                    extra={"error": str(e)}
-                )
+                logger.warning(f"Provider {provider_name} failed", extra={"error": str(e)})
 
                 if circuit_breaker:
                     await circuit_breaker.record_failure(e)
@@ -333,7 +335,7 @@ class LLMGateway:
         messages: List[Dict[str, str]],
         config: Dict[str, Any],
         max_retries: int,
-        timeout: int
+        timeout: int,
     ) -> Dict[str, Any]:
         """Appelle un provider avec retry et timeout"""
 
@@ -343,8 +345,7 @@ class LLMGateway:
 
                 # Appel avec timeout
                 response = await asyncio.wait_for(
-                    provider.generate(messages, config),
-                    timeout=timeout
+                    provider.generate(messages, config), timeout=timeout
                 )
 
                 latency_ms = int((time.time() - start_time) * 1000)
@@ -356,10 +357,10 @@ class LLMGateway:
                     "usage": {
                         "input_tokens": response.usage.input_tokens,
                         "output_tokens": response.usage.output_tokens,
-                        "total_tokens": response.usage.total_tokens
+                        "total_tokens": response.usage.total_tokens,
                     },
                     "latency_ms": latency_ms,
-                    "finish_reason": response.finish_reason
+                    "finish_reason": response.finish_reason,
                 }
 
             except asyncio.TimeoutError:
@@ -367,7 +368,7 @@ class LLMGateway:
                     f"Provider {provider_name} timeout (attempt {attempt + 1}/{max_retries})"
                 )
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+                    await asyncio.sleep(2**attempt)  # Exponential backoff
                 else:
                     raise
 
@@ -376,14 +377,12 @@ class LLMGateway:
                     f"Provider {provider_name} error (attempt {attempt + 1}/{max_retries}): {e}"
                 )
                 if attempt < max_retries - 1:
-                    await asyncio.sleep(2 ** attempt)
+                    await asyncio.sleep(2**attempt)
                 else:
                     raise
 
     async def _check_cache(
-        self,
-        messages: List[Dict[str, str]],
-        config: Dict[str, Any]
+        self, messages: List[Dict[str, str]], config: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
         """Vérifie si une réponse est en cache"""
         cache_key = self._compute_cache_key(messages, config)
@@ -391,6 +390,7 @@ class LLMGateway:
         cached = await self.cache.get(f"llm_cache:{cache_key}")
         if cached:
             import json
+
             return json.loads(cached)
         return None
 
@@ -399,23 +399,16 @@ class LLMGateway:
         messages: List[Dict[str, str]],
         config: Dict[str, Any],
         result: Dict[str, Any],
-        ttl: int
+        ttl: int,
     ):
         """Stocke une réponse en cache"""
         cache_key = self._compute_cache_key(messages, config)
 
         import json
-        await self.cache.set(
-            f"llm_cache:{cache_key}",
-            json.dumps(result),
-            ex=ttl
-        )
 
-    def _compute_cache_key(
-        self,
-        messages: List[Dict[str, str]],
-        config: Dict[str, Any]
-    ) -> str:
+        await self.cache.set(f"llm_cache:{cache_key}", json.dumps(result), ex=ttl)
+
+    def _compute_cache_key(self, messages: List[Dict[str, str]], config: Dict[str, Any]) -> str:
         """Calcule une clé de cache déterministe"""
         import hashlib
         import json
@@ -424,7 +417,7 @@ class LLMGateway:
         cache_input = {
             "messages": messages,
             "temperature": config.get("temperature", 0.7),
-            "max_tokens": config.get("max_tokens", 1000)
+            "max_tokens": config.get("max_tokens", 1000),
         }
 
         content = json.dumps(cache_input, sort_keys=True)
@@ -436,11 +429,13 @@ class LLMGateway:
             "providers": {
                 name: {
                     "enabled": self.configs.get(name, LLMProviderConfig(name=name)).is_enabled,
-                    "circuit_breaker": cb.get_status() if (cb := self.circuit_breakers.get(name)) else None
+                    "circuit_breaker": cb.get_status()
+                    if (cb := self.circuit_breakers.get(name))
+                    else None,
                 }
                 for name in self.providers.keys()
             },
-            "fallback_order": self.fallback_order
+            "fallback_order": self.fallback_order,
         }
 
     async def disable_provider(self, name: str):
@@ -463,12 +458,14 @@ class LLMGateway:
 
 class LLMGatewayError(Exception):
     """Erreur du gateway LLM"""
+
     pass
 
 
 # ============================================================================
 # COST LIMITER
 # ============================================================================
+
 
 class CostLimiter:
     """
@@ -481,17 +478,10 @@ class CostLimiter:
         self.default_daily_limit = default_daily_limit
 
         # Limites par plan
-        self.plan_limits = {
-            "starter": 10.0,
-            "professional": 50.0,
-            "enterprise": 200.0
-        }
+        self.plan_limits = {"starter": 10.0, "professional": 50.0, "enterprise": 200.0}
 
     async def check_budget(
-        self,
-        tenant_id: str,
-        plan: str = "starter",
-        estimated_cost: float = 0.05
+        self, tenant_id: str, plan: str = "starter", estimated_cost: float = 0.05
     ) -> bool:
         """
         Vérifie si le tenant peut effectuer l'appel.
@@ -510,21 +500,13 @@ class CostLimiter:
         if current_cost + estimated_cost > limit:
             logger.warning(
                 f"Budget limit reached for tenant {tenant_id}",
-                extra={
-                    "current_cost": current_cost,
-                    "limit": limit,
-                    "plan": plan
-                }
+                extra={"current_cost": current_cost, "limit": limit, "plan": plan},
             )
             return False
 
         return True
 
-    async def record_cost(
-        self,
-        tenant_id: str,
-        cost: float
-    ):
+    async def record_cost(self, tenant_id: str, cost: float):
         """Enregistre un coût"""
         date_key = datetime.utcnow().strftime("%Y-%m-%d")
         cache_key = f"llm_cost:{tenant_id}:{date_key}"
@@ -544,8 +526,4 @@ class CostLimiter:
         current_cost = await self.cache.get(cache_key)
         current_cost = float(current_cost) if current_cost else 0.0
 
-        return {
-            "date": date_key,
-            "cost_usd": current_cost
-        }
-
+        return {"date": date_key, "cost_usd": current_cost}

@@ -9,20 +9,20 @@ from app.infrastructure.external.prestashop.client import (
     PrestaShopClient,
     PrestaShopClientConfig,
 )
-from app.infrastructure.external.prestashop.models import (
-    Product,
-    ProductImage,
-    Category,
-    ProductListResponse,
-    CategoryListResponse,
-)
 from app.infrastructure.external.prestashop.exceptions import (
-    PrestaShopError,
-    PrestaShopConnectionError,
     PrestaShopAuthenticationError,
+    PrestaShopConnectionError,
+    PrestaShopError,
     PrestaShopNotFoundError,
     PrestaShopRateLimitError,
     PrestaShopValidationError,
+)
+from app.infrastructure.external.prestashop.models import (
+    Category,
+    CategoryListResponse,
+    Product,
+    ProductImage,
+    ProductListResponse,
 )
 
 __all__ = [
@@ -43,4 +43,3 @@ __all__ = [
     "PrestaShopRateLimitError",
     "PrestaShopValidationError",
 ]
-

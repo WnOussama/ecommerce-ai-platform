@@ -6,6 +6,7 @@ Utilise pydantic-settings pour validation et typage fort
 from enum import Enum
 from functools import lru_cache
 from typing import List, Optional
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -19,6 +20,7 @@ class Environment(str, Enum):
     - staging: Pré-production pour validation
     - production: Production avec sécurité renforcée
     """
+
     DEVELOPMENT = "development"
     TEST = "test"
     STAGING = "staging"
@@ -36,6 +38,7 @@ class DatabaseSettings(BaseSettings):
     - Development: pool_size=5, max_overflow=10
     - Production:  pool_size=20, max_overflow=40
     """
+
     model_config = SettingsConfigDict(env_prefix="DB_")
 
     host: str = "localhost"
@@ -46,24 +49,33 @@ class DatabaseSettings(BaseSettings):
 
     # Pool configuration - configurable via env
     pool_size: int = Field(default=5, ge=1, le=100, description="Number of connections in pool")
-    max_overflow: int = Field(default=10, ge=0, le=100, description="Max connections above pool_size")
-    pool_recycle: int = Field(default=3600, ge=300, description="Recycle connections after N seconds")
+    max_overflow: int = Field(
+        default=10, ge=0, le=100, description="Max connections above pool_size"
+    )
+    pool_recycle: int = Field(
+        default=3600, ge=300, description="Recycle connections after N seconds"
+    )
 
     echo: bool = Field(default=False, description="Echo SQL queries (debug only)")
 
     @property
     def url(self) -> str:
         """URL async pour PostgreSQL (asyncpg)"""
-        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+        return (
+            f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+        )
 
     @property
     def sync_url(self) -> str:
         """URL sync pour Alembic (psycopg2)"""
-        return f"postgresql+psycopg2://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+        return (
+            f"postgresql+psycopg2://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+        )
 
 
 class RedisSettings(BaseSettings):
     """Configuration Redis pour cache et rate limiting"""
+
     model_config = SettingsConfigDict(env_prefix="REDIS_")
 
     host: str = "localhost"
@@ -87,6 +99,7 @@ class RedisSettings(BaseSettings):
 
 class VectorStoreSettings(BaseSettings):
     """Configuration ChromaDB pour embeddings"""
+
     model_config = SettingsConfigDict(env_prefix="CHROMA_")
 
     persist_directory: str = "./data/chroma"
@@ -98,6 +111,7 @@ class VectorStoreSettings(BaseSettings):
 
 class LLMSettings(BaseSettings):
     """Configuration LLM avec support multi-provider"""
+
     model_config = SettingsConfigDict(env_prefix="LLM_")
 
     provider: str = "mock"  # mock, openai, anthropic, azure
@@ -129,6 +143,7 @@ class LLMSettings(BaseSettings):
 
 class SecuritySettings(BaseSettings):
     """Configuration sécurité"""
+
     model_config = SettingsConfigDict(env_prefix="SECURITY_")
 
     # JWT
@@ -161,6 +176,7 @@ class SecuritySettings(BaseSettings):
 
 class MonitoringSettings(BaseSettings):
     """Configuration observabilité"""
+
     model_config = SettingsConfigDict(env_prefix="MONITORING_")
 
     # Prometheus
@@ -183,6 +199,7 @@ class MonitoringSettings(BaseSettings):
 
 class TenantSettings(BaseSettings):
     """Configuration multi-tenant"""
+
     model_config = SettingsConfigDict(env_prefix="TENANT_")
 
     # Isolation
@@ -200,32 +217,29 @@ class TenantSettings(BaseSettings):
             "max_products_indexed": 1000,
             "max_customers": 5000,
             "rate_limit_rpm": 30,
-            "features": ["chatbot", "faq"]
+            "features": ["chatbot", "faq"],
         },
         "professional": {
             "max_conversations_per_day": 2000,
             "max_products_indexed": 10000,
             "max_customers": 25000,
             "rate_limit_rpm": 100,
-            "features": ["chatbot", "faq", "recommendations", "coupons"]
+            "features": ["chatbot", "faq", "recommendations", "coupons"],
         },
         "enterprise": {
             "max_conversations_per_day": 10000,
             "max_products_indexed": 100000,
             "max_customers": -1,  # Illimité
             "rate_limit_rpm": 300,
-            "features": ["chatbot", "faq", "recommendations", "coupons", "admin_ai", "analytics"]
-        }
+            "features": ["chatbot", "faq", "recommendations", "coupons", "admin_ai", "analytics"],
+        },
     }
 
 
 class Settings(BaseSettings):
     """Configuration principale agrégée"""
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        extra="ignore"
-    )
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Application
     app_name: str = "SaaS AI E-commerce Assistant"
@@ -285,4 +299,3 @@ def get_settings() -> Settings:
 
 # Export pour faciliter l'import
 settings = get_settings()
-

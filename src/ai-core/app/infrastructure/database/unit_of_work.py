@@ -36,9 +36,9 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database.connection import AsyncSessionLocal
+from app.infrastructure.database.repositories.analytics_repo import AnalyticsRepository
 from app.infrastructure.database.repositories.conversation_repo import ConversationRepository
 from app.infrastructure.database.repositories.message_repo import MessageRepository
-from app.infrastructure.database.repositories.analytics_repo import AnalyticsRepository
 
 logger = logging.getLogger(__name__)
 
@@ -122,10 +122,7 @@ class UnitOfWork:
         self._messages = MessageRepository(self._session, self._tenant_id)
         self._analytics = AnalyticsRepository(self._session, self._tenant_id)
 
-        logger.debug(
-            "UnitOfWork started",
-            extra={"tenant_id": str(self._tenant_id)}
-        )
+        logger.debug("UnitOfWork started", extra={"tenant_id": str(self._tenant_id)})
 
         return self
 
@@ -141,16 +138,13 @@ class UnitOfWork:
                         "tenant_id": str(self._tenant_id),
                         "exception_type": exc_type.__name__ if exc_type else None,
                         "exception": str(exc_val) if exc_val else None,
-                    }
+                    },
                 )
         finally:
             # Toujours fermer la session si on l'a créée
             if self._owns_session and self._session:
                 await self._session.close()
-                logger.debug(
-                    "UnitOfWork session closed",
-                    extra={"tenant_id": str(self._tenant_id)}
-                )
+                logger.debug("UnitOfWork session closed", extra={"tenant_id": str(self._tenant_id)})
 
     async def commit(self) -> None:
         """
@@ -163,19 +157,13 @@ class UnitOfWork:
             raise RuntimeError("No active session to commit")
 
         await self._session.commit()
-        logger.debug(
-            "UnitOfWork committed",
-            extra={"tenant_id": str(self._tenant_id)}
-        )
+        logger.debug("UnitOfWork committed", extra={"tenant_id": str(self._tenant_id)})
 
     async def rollback(self) -> None:
         """Rollback la transaction."""
         if self._session:
             await self._session.rollback()
-            logger.debug(
-                "UnitOfWork rolled back",
-                extra={"tenant_id": str(self._tenant_id)}
-            )
+            logger.debug("UnitOfWork rolled back", extra={"tenant_id": str(self._tenant_id)})
 
     async def flush(self) -> None:
         """
@@ -185,8 +173,3 @@ class UnitOfWork:
         """
         if self._session:
             await self._session.flush()
-
-
-
-
-

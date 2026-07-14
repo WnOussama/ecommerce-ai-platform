@@ -3,9 +3,9 @@ Middleware Rate Limiter - Protection contre les abus
 Utilise Redis pour le comptage distribué
 """
 
-from typing import Callable, Optional
-import time
 import logging
+import time
+from typing import Callable, Optional
 
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
@@ -56,14 +56,14 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
                 content={
                     "error": "rate_limit_exceeded",
                     "message": "Too many requests. Please try again later.",
-                    "retry_after": reset_at - int(time.time())
+                    "retry_after": reset_at - int(time.time()),
                 },
                 headers={
                     "X-RateLimit-Limit": str(limit),
                     "X-RateLimit-Remaining": "0",
                     "X-RateLimit-Reset": str(reset_at),
-                    "Retry-After": str(reset_at - int(time.time()))
-                }
+                    "Retry-After": str(reset_at - int(time.time())),
+                },
             )
 
         # Exécuter la requête
@@ -127,11 +127,7 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
 
         return self.default_limit
 
-    async def _check_rate_limit(
-        self,
-        identifier: str,
-        limit: int
-    ) -> tuple[bool, int, int]:
+    async def _check_rate_limit(self, identifier: str, limit: int) -> tuple[bool, int, int]:
         """
         Vérifie et incrémente le compteur de rate limit.
         Retourne (allowed, remaining, reset_timestamp)
@@ -184,12 +180,7 @@ class RedisRateLimiter:
         self.default_limit = default_limit
         self.window_seconds = window_seconds
 
-    async def check(
-        self,
-        identifier: str,
-        action: str,
-        limit: Optional[int] = None
-    ) -> bool:
+    async def check(self, identifier: str, action: str, limit: Optional[int] = None) -> bool:
         """
         Vérifie si l'action est autorisée.
 
@@ -233,4 +224,3 @@ class RedisRateLimiter:
         count = await self.redis.zcard(key)
 
         return max(0, self.default_limit - count)
-

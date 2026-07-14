@@ -2,11 +2,11 @@
 Chat Endpoints - Client AI Interactions with RAG Support
 """
 
+import logging
 import time
 import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-import logging
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -23,8 +23,10 @@ router = APIRouter()
 # SCHEMAS
 # =============================================================================
 
+
 class ChatMessageRequest(BaseModel):
     """Request schema for sending a chat message"""
+
     message: str = Field(..., min_length=1, max_length=4096)
     conversation_id: Optional[str] = None
     customer_id: Optional[str] = None
@@ -38,24 +40,23 @@ class ChatMessageRequest(BaseModel):
                 "message": "Je cherche un téléphone pas cher",
                 "conversation_id": "conv_123",
                 "customer_id": "cust_456",
-                "context": {
-                    "current_page": "/category/smartphones",
-                    "cart_items": []
-                },
+                "context": {"current_page": "/category/smartphones", "cart_items": []},
                 "use_rag": True,
-                "top_k": 5
+                "top_k": 5,
             }
         }
 
 
 class ChatAction(BaseModel):
     """An action suggested by the AI"""
+
     type: str  # "show_products", "generate_coupon", "redirect", etc.
     data: Dict[str, Any]
 
 
 class ChatMessageResponse(BaseModel):
     """Response schema for chat message"""
+
     conversation_id: str
     message_id: str
     response: str
@@ -63,12 +64,15 @@ class ChatMessageResponse(BaseModel):
     confidence: float
     actions: List[ChatAction] = []
     suggestions: List[str] = []
-    products: List[Dict[str, Any]] = Field(default_factory=list, description="Related products from RAG")
+    products: List[Dict[str, Any]] = Field(
+        default_factory=list, description="Related products from RAG"
+    )
     metadata: Dict[str, Any] = {}
 
 
 class ConversationHistory(BaseModel):
     """Conversation history response"""
+
     conversation_id: str
     messages: List[Dict[str, Any]]
     started_at: datetime
@@ -78,6 +82,7 @@ class ConversationHistory(BaseModel):
 
 class FeedbackRequest(BaseModel):
     """Feedback on AI response"""
+
     message_id: str
     rating: int = Field(..., ge=1, le=5)
     feedback_text: Optional[str] = None
@@ -87,11 +92,9 @@ class FeedbackRequest(BaseModel):
 # ENDPOINTS
 # =============================================================================
 
+
 @router.post("/message", response_model=ChatMessageResponse)
-async def send_message(
-    request: Request,
-    body: ChatMessageRequest
-):
+async def send_message(request: Request, body: ChatMessageRequest):
     """
     Send a message to the AI assistant and get a response.
 
@@ -102,7 +105,7 @@ async def send_message(
     - Action extraction
     """
     start_time = time.time()
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    tenant_id = getattr(request.state, "tenant_id", None)
 
     if not tenant_id:
         raise HTTPException(status_code=401, detail="Tenant context required")
@@ -114,7 +117,7 @@ async def send_message(
             "conversation_id": body.conversation_id,
             "message_length": len(body.message),
             "use_rag": body.use_rag,
-        }
+        },
     )
 
     # Générer IDs
@@ -161,19 +164,16 @@ async def send_message(
                             "tenant_id": tenant_id,
                             "products_found": len(retrieved_products),
                             "search_time_ms": rag_search_time_ms,
-                        }
+                        },
                     )
                 else:
-                    logger.debug(
-                        "RAG found no relevant products",
-                        extra={"tenant_id": tenant_id}
-                    )
+                    logger.debug("RAG found no relevant products", extra={"tenant_id": tenant_id})
 
             except Exception as e:
                 # Fallback gracieux - continuer sans RAG
                 logger.warning(
                     "RAG search failed, continuing without product context",
-                    extra={"tenant_id": tenant_id, "error": str(e)}
+                    extra={"tenant_id": tenant_id, "error": str(e)},
                 )
 
         # =====================================================================
@@ -192,10 +192,7 @@ async def send_message(
         # =====================================================================
         # ÉTAPE 4: Générer la réponse
         # =====================================================================
-        response_text = await llm.chat(
-            message=body.message,
-            context=system_context
-        )
+        response_text = await llm.chat(message=body.message, context=system_context)
 
         # =====================================================================
         # ÉTAPE 5: Classifier l'intention
@@ -218,8 +215,8 @@ async def send_message(
                 "processing_time_ms": processing_time_ms,
                 "rag_search_time_ms": rag_search_time_ms,
                 "products_found": len(retrieved_products),
-                "llm_provider": llm.get_model_name()
-            }
+                "llm_provider": llm.get_model_name(),
+            },
         )
 
         return ChatMessageResponse(
@@ -236,16 +233,12 @@ async def send_message(
                 "rag_search_time_ms": rag_search_time_ms,
                 "model": llm.get_model_name(),
                 "rag_enabled": body.use_rag,
-            }
+            },
         )
 
     except Exception as e:
         logger.exception(
-            "Error processing chat message",
-            extra={
-                "tenant_id": tenant_id,
-                "error": str(e)
-            }
+            "Error processing chat message", extra={"tenant_id": tenant_id, "error": str(e)}
         )
 
         # Réponse de fallback en cas d'erreur
@@ -258,10 +251,7 @@ async def send_message(
             actions=[],
             suggestions=["Réessayer", "Contacter le support"],
             products=[],
-            metadata={
-                "processing_time_ms": int((time.time() - start_time) * 1000),
-                "error": True
-            }
+            metadata={"processing_time_ms": int((time.time() - start_time) * 1000), "error": True},
         )
 
 
@@ -338,15 +328,11 @@ def _generate_suggestions(intent: str, has_products: bool = False) -> List[str]:
 
 
 @router.get("/history/{conversation_id}", response_model=ConversationHistory)
-async def get_conversation_history(
-    request: Request,
-    conversation_id: str,
-    limit: int = 50
-):
+async def get_conversation_history(request: Request, conversation_id: str, limit: int = 50):
     """
     Get the history of a conversation.
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    getattr(request.state, "tenant_id", None)
 
     # TODO: Fetch from database
     return ConversationHistory(
@@ -354,28 +340,21 @@ async def get_conversation_history(
         messages=[],
         started_at=datetime.utcnow(),
         last_message_at=datetime.utcnow(),
-        status="active"
+        status="active",
     )
 
 
 @router.post("/feedback")
-async def submit_feedback(
-    request: Request,
-    body: FeedbackRequest
-):
+async def submit_feedback(request: Request, body: FeedbackRequest):
     """
     Submit feedback on an AI response.
     Used for improving the model and tracking satisfaction.
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    tenant_id = getattr(request.state, "tenant_id", None)
 
     logger.info(
         "Feedback received",
-        extra={
-            "tenant_id": tenant_id,
-            "message_id": body.message_id,
-            "rating": body.rating
-        }
+        extra={"tenant_id": tenant_id, "message_id": body.message_id, "rating": body.rating},
     )
 
     # TODO: Store feedback
@@ -383,15 +362,11 @@ async def submit_feedback(
 
 
 @router.delete("/conversation/{conversation_id}")
-async def end_conversation(
-    request: Request,
-    conversation_id: str
-):
+async def end_conversation(request: Request, conversation_id: str):
     """
     End/close a conversation.
     """
-    tenant_id = getattr(request.state, 'tenant_id', None)
+    getattr(request.state, "tenant_id", None)
 
     # TODO: Update conversation status
     return {"status": "closed", "conversation_id": conversation_id}
-

@@ -2,9 +2,9 @@
 Middleware Tenant Context - Extraction et validation du tenant
 """
 
-from typing import Callable, Optional
-import logging
 import hashlib
+import logging
+from typing import Callable, Optional
 
 from fastapi import Request, Response, status
 from fastapi.responses import JSONResponse
@@ -24,14 +24,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
     """
 
     # Routes qui ne nécessitent pas d'authentification
-    PUBLIC_PATHS = [
-        "/health",
-        "/metrics",
-        "/docs",
-        "/redoc",
-        "/openapi.json",
-        "/"
-    ]
+    PUBLIC_PATHS = ["/health", "/metrics", "/docs", "/redoc", "/openapi.json", "/"]
 
     def __init__(self, app, tenant_repository=None):
         super().__init__(app)
@@ -51,8 +44,12 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 request.state.tenant_id = tenant_id
                 request.state.tenant_plan = "enterprise"  # Full access en dev
                 request.state.tenant_features = [
-                    "chatbot", "faq", "recommendations",
-                    "coupons", "admin_ai", "analytics"
+                    "chatbot",
+                    "faq",
+                    "recommendations",
+                    "coupons",
+                    "admin_ai",
+                    "analytics",
                 ]
                 request.state.tenant_rate_limit = 1000
 
@@ -66,11 +63,8 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         if not api_key:
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                content={
-                    "error": "unauthorized",
-                    "message": "API key required"
-                },
-                headers={"WWW-Authenticate": "Bearer"}
+                content={"error": "unauthorized", "message": "API key required"},
+                headers={"WWW-Authenticate": "Bearer"},
             )
 
         # Valider et récupérer le tenant
@@ -79,20 +73,14 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         if not tenant:
             return JSONResponse(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                content={
-                    "error": "unauthorized",
-                    "message": "Invalid API key"
-                }
+                content={"error": "unauthorized", "message": "Invalid API key"},
             )
 
         # Vérifier que le tenant est actif
         if not tenant.get("is_active", False):
             return JSONResponse(
                 status_code=status.HTTP_403_FORBIDDEN,
-                content={
-                    "error": "forbidden",
-                    "message": "Tenant account is inactive"
-                }
+                content={"error": "forbidden", "message": "Tenant account is inactive"},
             )
 
         # Injecter le contexte dans la requête
@@ -134,7 +122,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             if api_key:
                 logger.warning(
                     "API key passed via query parameter - this is insecure and should not be used in production",
-                    extra={"path": request.url.path}
+                    extra={"path": request.url.path},
                 )
             return api_key
 
@@ -164,7 +152,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                     "plan": tenant.plan.value,
                     "features": tenant.features_enabled,
                     "rate_limit_rpm": tenant.rate_limit_rpm,
-                    "is_active": tenant.is_active()
+                    "is_active": tenant.is_active(),
                 }
 
                 # Mettre en cache (5 minutes)
@@ -178,10 +166,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         """Vide le cache (tout ou pour un tenant spécifique)"""
         if tenant_id:
             # Trouver et supprimer les entrées de ce tenant
-            to_remove = [
-                k for k, v in self._tenant_cache.items()
-                if v.get("id") == tenant_id
-            ]
+            to_remove = [k for k, v in self._tenant_cache.items() if v.get("id") == tenant_id]
             for k in to_remove:
                 del self._tenant_cache[k]
         else:
@@ -197,7 +182,7 @@ def get_current_tenant(request: Request) -> dict:
         "id": getattr(request.state, "tenant_id", None),
         "plan": getattr(request.state, "tenant_plan", None),
         "features": getattr(request.state, "tenant_features", []),
-        "rate_limit": getattr(request.state, "tenant_rate_limit", 60)
+        "rate_limit": getattr(request.state, "tenant_rate_limit", 60),
     }
 
 
@@ -212,17 +197,18 @@ def require_feature(feature: str):
         ):
             ...
     """
+
     async def check_feature(request: Request):
         features = getattr(request.state, "tenant_features", [])
 
         if feature not in features:
             from fastapi import HTTPException
+
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Feature '{feature}' not available in your plan"
+                detail=f"Feature '{feature}' not available in your plan",
             )
 
         return get_current_tenant(request)
 
     return check_feature
-

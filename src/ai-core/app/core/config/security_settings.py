@@ -5,10 +5,11 @@ IMPORTANT: L'application ÉCHOUE AU BOOT si les secrets ne sont pas valides.
 Aucune valeur par défaut pour les secrets critiques.
 """
 
+import logging
 import os
 import sys
-import logging
 from typing import List, Optional, Set
+
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 class SecretValidationError(Exception):
     """Erreur levée quand un secret est invalide ou manquant"""
+
     pass
 
 
@@ -45,19 +47,18 @@ class StrictSecuritySettings(BaseSettings):
     # JWT - OBLIGATOIRE
     jwt_secret_key: str = Field(
         ...,  # Required, no default
-        description="JWT signing secret. Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        description='JWT signing secret. Generate with: python -c "import secrets; print(secrets.token_hex(32))"',
     )
 
     # API Key Encryption - OBLIGATOIRE
     api_key_encryption_key: str = Field(
         ...,  # Required, no default
-        description="Key for encrypting API keys at rest"
+        description="Key for encrypting API keys at rest",
     )
 
     # Database encryption key - OBLIGATOIRE en production
     db_encryption_key: Optional[str] = Field(
-        default=None,
-        description="Key for encrypting sensitive data in DB"
+        default=None, description="Key for encrypting sensitive data in DB"
     )
 
     # =========================================================================
@@ -97,9 +98,7 @@ class StrictSecuritySettings(BaseSettings):
     # =========================================================================
 
     max_request_size_mb: int = Field(default=10, ge=1, le=100)
-    allowed_content_types: List[str] = Field(
-        default=["application/json", "multipart/form-data"]
-    )
+    allowed_content_types: List[str] = Field(default=["application/json", "multipart/form-data"])
 
     # =========================================================================
     # AI SECURITY
@@ -124,14 +123,32 @@ class StrictSecuritySettings(BaseSettings):
     # =========================================================================
 
     _FORBIDDEN_SECRET_VALUES: Set[str] = {
-        "changeme", "change_me", "change-me",
-        "secret", "mysecret", "my_secret", "my-secret",
-        "password", "mypassword", "my_password",
-        "test", "testing", "dev", "development",
-        "xxx", "yyy", "zzz", "abc", "123",
-        "please_change_me", "replace_me",
-        "your_secret_here", "your-secret-here",
-        "example", "sample", "demo",
+        "changeme",
+        "change_me",
+        "change-me",
+        "secret",
+        "mysecret",
+        "my_secret",
+        "my-secret",
+        "password",
+        "mypassword",
+        "my_password",
+        "test",
+        "testing",
+        "dev",
+        "development",
+        "xxx",
+        "yyy",
+        "zzz",
+        "abc",
+        "123",
+        "please_change_me",
+        "replace_me",
+        "your_secret_here",
+        "your-secret-here",
+        "example",
+        "sample",
+        "demo",
     }
 
     # =========================================================================
@@ -149,14 +166,13 @@ class StrictSecuritySettings(BaseSettings):
             raise SecretValidationError(
                 f"{field_name} is REQUIRED. "
                 f"Set it via environment variable SECURITY_{field_name.upper()}. "
-                f"Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+                f'Generate with: python -c "import secrets; print(secrets.token_hex(32))"'
             )
 
         # Vérifier la longueur minimale
         if len(v) < 32:
             raise SecretValidationError(
-                f"{field_name} must be at least 32 characters. "
-                f"Current length: {len(v)}"
+                f"{field_name} must be at least 32 characters. Current length: {len(v)}"
             )
 
         # Vérifier que ce n'est pas une valeur interdite
@@ -180,16 +196,12 @@ class StrictSecuritySettings(BaseSettings):
         field_name = info.field_name
 
         if len(v) < 32:
-            raise SecretValidationError(
-                f"{field_name} must be at least 32 characters if provided"
-            )
+            raise SecretValidationError(f"{field_name} must be at least 32 characters if provided")
 
         v_lower = v.lower().strip()
         for forbidden in cls._FORBIDDEN_SECRET_VALUES:
             if forbidden in v_lower:
-                raise SecretValidationError(
-                    f"{field_name} contains forbidden value '{forbidden}'"
-                )
+                raise SecretValidationError(f"{field_name} contains forbidden value '{forbidden}'")
 
         return v
 
@@ -228,9 +240,7 @@ class StrictSecuritySettings(BaseSettings):
                 )
 
             if not self.output_guardrails_enabled:
-                raise SecretValidationError(
-                    "output_guardrails must be enabled in production"
-                )
+                raise SecretValidationError("output_guardrails must be enabled in production")
 
         return self
 
@@ -258,27 +268,26 @@ def validate_security_settings() -> StrictSecuritySettings:
                 "rate_limit_enabled": settings.rate_limit_enabled,
                 "prompt_injection_detection": settings.prompt_injection_detection_enabled,
                 "tenant_isolation": settings.tenant_isolation_enforced,
-            }
+            },
         )
         return settings
 
     except SecretValidationError as e:
         logger.critical(
-            f"SECURITY CONFIGURATION ERROR: {e}",
-            extra={"error_type": "security_config_validation"}
+            f"SECURITY CONFIGURATION ERROR: {e}", extra={"error_type": "security_config_validation"}
         )
-        print(f"\n{'='*60}", file=sys.stderr)
+        print(f"\n{'=' * 60}", file=sys.stderr)
         print("FATAL: Security configuration error", file=sys.stderr)
-        print(f"{'='*60}", file=sys.stderr)
+        print(f"{'=' * 60}", file=sys.stderr)
         print(f"\n{e}\n", file=sys.stderr)
         print("The application cannot start with invalid security settings.", file=sys.stderr)
-        print(f"{'='*60}\n", file=sys.stderr)
+        print(f"{'=' * 60}\n", file=sys.stderr)
         sys.exit(1)
 
     except Exception as e:
         logger.critical(
             f"Unexpected error loading security settings: {e}",
-            extra={"error_type": "security_config_error"}
+            extra={"error_type": "security_config_error"},
         )
         sys.exit(1)
 
@@ -292,4 +301,3 @@ __all__ = [
     "SecretValidationError",
     "validate_security_settings",
 ]
-
