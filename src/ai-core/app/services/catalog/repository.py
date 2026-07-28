@@ -14,8 +14,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Protocol
 
-from sqlalchemy import and_, delete, func, or_, select
-from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy import and_, delete, func, literal_column, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
@@ -168,7 +168,7 @@ class ProductRepository:
 
     Implémente les opérations CRUD avec:
     - Isolation stricte par tenant_id
-    - UPSERT MySQL natif (INSERT ... ON DUPLICATE KEY UPDATE)
+    - UPSERT PostgreSQL natif (INSERT ... ON CONFLICT DO UPDATE)
     - Opérations bulk optimisées
     - Logging structuré
 
@@ -195,7 +195,8 @@ class ProductRepository:
         """
         Insère ou met à jour un produit.
 
-        Utilise INSERT ... ON DUPLICATE KEY UPDATE pour MySQL.
+        Utilise INSERT ... ON CONFLICT DO UPDATE (PostgreSQL), avec le
+        conflit détecté sur l'index unique (tenant_id, external_id).
 
         Args:
             tenant_id: ID du tenant
@@ -205,7 +206,6 @@ class ProductRepository:
             Tuple (created: bool, updated: bool)
             - (True, False) si créé
             - (False, True) si mis à jour
-            - (False, False) si aucun changement
         """
         from app.infrastructure.database.models.product import ProductModel
 
@@ -214,39 +214,41 @@ class ProductRepository:
         data["updated_at"] = datetime.utcnow()
 
         # Préparer l'INSERT
-        insert_stmt = mysql_insert(ProductModel).values(**data)
+        insert_stmt = pg_insert(ProductModel).values(**data)
 
         # Colonnes à mettre à jour en cas de conflit
         update_columns = {
-            "name": insert_stmt.inserted.name,
-            "reference": insert_stmt.inserted.reference,
-            "description": insert_stmt.inserted.description,
-            "description_short": insert_stmt.inserted.description_short,
-            "price": insert_stmt.inserted.price,
-            "price_tax_incl": insert_stmt.inserted.price_tax_incl,
-            "quantity": insert_stmt.inserted.quantity,
-            "category_id": insert_stmt.inserted.category_id,
-            "category_name": insert_stmt.inserted.category_name,
-            "manufacturer_name": insert_stmt.inserted.manufacturer_name,
-            "image_url": insert_stmt.inserted.image_url,
-            "active": insert_stmt.inserted.active,
-            "available_for_order": insert_stmt.inserted.available_for_order,
-            "extra_data": insert_stmt.inserted.extra_data,
+            "name": insert_stmt.excluded.name,
+            "reference": insert_stmt.excluded.reference,
+            "description": insert_stmt.excluded.description,
+            "description_short": insert_stmt.excluded.description_short,
+            "price": insert_stmt.excluded.price,
+            "price_tax_incl": insert_stmt.excluded.price_tax_incl,
+            "quantity": insert_stmt.excluded.quantity,
+            "category_id": insert_stmt.excluded.category_id,
+            "category_name": insert_stmt.excluded.category_name,
+            "manufacturer_name": insert_stmt.excluded.manufacturer_name,
+            "image_url": insert_stmt.excluded.image_url,
+            "active": insert_stmt.excluded.active,
+            "available_for_order": insert_stmt.excluded.available_for_order,
+            "extra_data": insert_stmt.excluded.extra_data,
             "updated_at": datetime.utcnow(),
         }
 
-        upsert_stmt = insert_stmt.on_duplicate_key_update(**update_columns)
+        # PostgreSQL ne distingue pas INSERT/UPDATE via rowcount (toujours 1).
+        # `xmax = 0` est l'idiome standard: une ligne nouvellement insérée n'a
+        # pas encore de transaction "supprimante", donc xmax vaut 0.
+        upsert_stmt = insert_stmt.on_conflict_do_update(
+            index_elements=["tenant_id", "external_id"],
+            set_=update_columns,
+        ).returning(literal_column("(xmax = 0)").label("inserted"))
 
         result = await self._session.execute(upsert_stmt)
         await self._session.commit()
 
-        # MySQL: rowcount = 1 si INSERT, 2 si UPDATE, 0 si pas de changement
-        if result.rowcount == 1:
-            return (True, False)  # Created
-        elif result.rowcount == 2:
-            return (False, True)  # Updated
-        else:
-            return (False, False)  # No change
+        row = result.first()
+        was_inserted = bool(row.inserted) if row is not None else False
+        return (was_inserted, not was_inserted)
 
     async def upsert_products_bulk(
         self,
@@ -282,28 +284,31 @@ class ProductRepository:
             data["updated_at"] = now
             values_list.append(data)
 
-        # Bulk INSERT avec ON DUPLICATE KEY UPDATE
-        insert_stmt = mysql_insert(ProductModel).values(values_list)
+        # Bulk INSERT avec ON CONFLICT DO UPDATE (PostgreSQL)
+        insert_stmt = pg_insert(ProductModel).values(values_list)
 
         update_columns = {
-            "name": insert_stmt.inserted.name,
-            "reference": insert_stmt.inserted.reference,
-            "description": insert_stmt.inserted.description,
-            "description_short": insert_stmt.inserted.description_short,
-            "price": insert_stmt.inserted.price,
-            "price_tax_incl": insert_stmt.inserted.price_tax_incl,
-            "quantity": insert_stmt.inserted.quantity,
-            "category_id": insert_stmt.inserted.category_id,
-            "category_name": insert_stmt.inserted.category_name,
-            "manufacturer_name": insert_stmt.inserted.manufacturer_name,
-            "image_url": insert_stmt.inserted.image_url,
-            "active": insert_stmt.inserted.active,
-            "available_for_order": insert_stmt.inserted.available_for_order,
-            "extra_data": insert_stmt.inserted.extra_data,
+            "name": insert_stmt.excluded.name,
+            "reference": insert_stmt.excluded.reference,
+            "description": insert_stmt.excluded.description,
+            "description_short": insert_stmt.excluded.description_short,
+            "price": insert_stmt.excluded.price,
+            "price_tax_incl": insert_stmt.excluded.price_tax_incl,
+            "quantity": insert_stmt.excluded.quantity,
+            "category_id": insert_stmt.excluded.category_id,
+            "category_name": insert_stmt.excluded.category_name,
+            "manufacturer_name": insert_stmt.excluded.manufacturer_name,
+            "image_url": insert_stmt.excluded.image_url,
+            "active": insert_stmt.excluded.active,
+            "available_for_order": insert_stmt.excluded.available_for_order,
+            "extra_data": insert_stmt.excluded.extra_data,
             "updated_at": now,
         }
 
-        upsert_stmt = insert_stmt.on_duplicate_key_update(**update_columns)
+        upsert_stmt = insert_stmt.on_conflict_do_update(
+            index_elements=["tenant_id", "external_id"],
+            set_=update_columns,
+        )
 
         await self._session.execute(upsert_stmt)
         await self._session.commit()
