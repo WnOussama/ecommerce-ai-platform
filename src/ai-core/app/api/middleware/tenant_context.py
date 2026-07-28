@@ -23,8 +23,9 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
     - Injecter le contexte tenant dans la requête
     """
 
-    # Routes qui ne nécessitent pas d'authentification
-    PUBLIC_PATHS = ["/health", "/metrics", "/docs", "/redoc", "/openapi.json", "/"]
+    # Routes qui ne nécessitent pas d'authentification (préfixes, sauf "/" qui est exact)
+    PUBLIC_PATH_PREFIXES = ["/health", "/metrics", "/docs", "/redoc", "/openapi.json"]
+    PUBLIC_EXACT_PATHS = ["/"]
 
     def __init__(self, app, tenant_repository=None):
         super().__init__(app)
@@ -97,7 +98,9 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
     def _is_public_path(self, path: str) -> bool:
         """Vérifie si le path est public"""
-        return any(path.startswith(p) for p in self.PUBLIC_PATHS)
+        if path in self.PUBLIC_EXACT_PATHS:
+            return True
+        return any(path.startswith(p) for p in self.PUBLIC_PATH_PREFIXES)
 
     def _extract_api_key(self, request: Request) -> Optional[str]:
         """
