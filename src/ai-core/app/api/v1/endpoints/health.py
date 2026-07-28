@@ -41,7 +41,6 @@ def _get_checker(request: Request) -> HealthChecker:
 
 
 @router.get("")
-@router.get("/")
 async def health_check(request: Request):
     """
     Basic health check endpoint.

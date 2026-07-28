@@ -58,7 +58,6 @@ class RecommendationResponse(BaseModel):
 
 
 @router.post("", response_model=RecommendationResponse)
-@router.post("/", response_model=RecommendationResponse)
 async def get_recommendations(request: Request, body: RecommendationRequest):
     """
     Get AI-powered product recommendations.

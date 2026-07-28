@@ -87,14 +87,14 @@ class APIKeyResponse(BaseModel):
 
 
 @router.post("", response_model=TenantResponse)
-@router.post("/", response_model=TenantResponse)
 async def create_tenant(request: Request, body: TenantCreate):
     """
     Create a new tenant.
     Returns the tenant details and API key.
     """
     logger.info(
-        "Creating new tenant", extra={"name": body.name, "domain": body.domain, "plan": body.plan}
+        "Creating new tenant",
+        extra={"tenant_name": body.name, "domain": body.domain, "plan": body.plan},
     )
 
     # TODO: Implement tenant creation
