@@ -8,7 +8,8 @@ from functools import lru_cache
 from typing import List, Optional
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from typing_extensions import Annotated
 
 
 class Environment(str, Enum):
@@ -39,7 +40,9 @@ class DatabaseSettings(BaseSettings):
     - Production:  pool_size=20, max_overflow=40
     """
 
-    model_config = SettingsConfigDict(env_prefix="DB_")
+    model_config = SettingsConfigDict(
+        env_prefix="DB_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     host: str = "localhost"
     port: int = 5432
@@ -76,7 +79,9 @@ class DatabaseSettings(BaseSettings):
 class RedisSettings(BaseSettings):
     """Configuration Redis pour cache et rate limiting"""
 
-    model_config = SettingsConfigDict(env_prefix="REDIS_")
+    model_config = SettingsConfigDict(
+        env_prefix="REDIS_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     host: str = "localhost"
     port: int = 6379
@@ -100,7 +105,9 @@ class RedisSettings(BaseSettings):
 class VectorStoreSettings(BaseSettings):
     """Configuration ChromaDB pour embeddings"""
 
-    model_config = SettingsConfigDict(env_prefix="CHROMA_")
+    model_config = SettingsConfigDict(
+        env_prefix="CHROMA_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     persist_directory: str = "./data/chroma"
     collection_prefix: str = "tenant"  # tenant_{tenant_id}_{collection_type}
@@ -112,7 +119,9 @@ class VectorStoreSettings(BaseSettings):
 class LLMSettings(BaseSettings):
     """Configuration LLM avec support multi-provider"""
 
-    model_config = SettingsConfigDict(env_prefix="LLM_")
+    model_config = SettingsConfigDict(
+        env_prefix="LLM_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     provider: str = "mock"  # mock, openai, anthropic, azure
 
@@ -144,7 +153,9 @@ class LLMSettings(BaseSettings):
 class SecuritySettings(BaseSettings):
     """Configuration sécurité"""
 
-    model_config = SettingsConfigDict(env_prefix="SECURITY_")
+    model_config = SettingsConfigDict(
+        env_prefix="SECURITY_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     # JWT
     jwt_secret_key: str = Field(..., min_length=32)
@@ -161,23 +172,41 @@ class SecuritySettings(BaseSettings):
     rate_limit_window_seconds: int = 60
 
     # CORS
-    cors_origins: List[str] = ["http://localhost:3000", "http://localhost:8080"]
+    cors_origins: Annotated[List[str], NoDecode] = [
+        "http://localhost:3000",
+        "http://localhost:8080",
+    ]
     cors_allow_credentials: bool = True
 
     # Content Security
     max_request_size_mb: int = 10
-    allowed_file_types: List[str] = ["image/jpeg", "image/png", "application/pdf"]
+    allowed_file_types: Annotated[List[str], NoDecode] = [
+        "image/jpeg",
+        "image/png",
+        "application/pdf",
+    ]
 
     # Prompt Injection Protection
     prompt_injection_detection: bool = True
     sensitive_action_confirmation: bool = True
     admin_action_audit_log: bool = True
 
+    @field_validator("cors_origins", "allowed_file_types", mode="before")
+    @classmethod
+    def split_comma_separated(cls, v):
+        """Accepte soit du JSON (`["a","b"]`) soit une liste séparée par des
+        virgules (`a,b`), comme documenté dans .env.example."""
+        if isinstance(v, str) and not v.strip().startswith("["):
+            return [item.strip() for item in v.split(",") if item.strip()]
+        return v
+
 
 class MonitoringSettings(BaseSettings):
     """Configuration observabilité"""
 
-    model_config = SettingsConfigDict(env_prefix="MONITORING_")
+    model_config = SettingsConfigDict(
+        env_prefix="MONITORING_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     # Prometheus
     prometheus_enabled: bool = True
@@ -200,7 +229,9 @@ class MonitoringSettings(BaseSettings):
 class TenantSettings(BaseSettings):
     """Configuration multi-tenant"""
 
-    model_config = SettingsConfigDict(env_prefix="TENANT_")
+    model_config = SettingsConfigDict(
+        env_prefix="TENANT_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
 
     # Isolation
     isolation_mode: str = "logical"  # logical (shared DB) ou physical (separate DBs)
