@@ -1,0 +1,61 @@
+# =============================================================================
+# SonarCloud Analysis
+#
+# ONE-TIME MANUAL SETUP REQUIRED before this workflow can pass (SonarCloud
+# needs your GitHub login, so this can't be automated from here):
+#
+#   1. Go to https://sonarcloud.io, "Log in with GitHub", authorize it.
+#   2. "+" -> "Analyze new project" -> select this repository.
+#   3. Note the Organization Key and Project Key SonarCloud assigns -
+#      if they differ from sonar-project.properties (sonar.organization /
+#      sonar.projectKey at the repo root), update that file to match.
+#   4. My Account -> Security -> Generate a token.
+#   5. On GitHub: repo Settings -> Secrets and variables -> Actions ->
+#      "New repository secret" -> name it SONAR_TOKEN -> paste the token.
+#
+# Until SONAR_TOKEN exists, this workflow will fail at the scan step - that
+# failure is expected and only means step 5 isn't done yet, not a code bug.
+# =============================================================================
+
+name: SonarCloud
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  sonarcloud:
+    name: SonarCloud Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # SonarCloud needs full history for blame/new-code analysis
+
+      - name: Set up Python (for coverage report used by the Python analyzer)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate Python coverage report
+        working-directory: src/ai-core
+        run: |
+          pip install -r requirements.txt -q
+          pip install -r requirements-dev.txt -q
+          LLM_PROVIDER=mock \
+          DB_PASSWORD=ci_test_password_123 \
+          SECURITY_JWT_SECRET_KEY=ci_jwt_secret_key_minimum_32_characters_long \
+          SECURITY_API_KEY_ENCRYPTION_KEY=ci_api_key_encryption_32_chars_minimum \
+          pytest tests/unit/ --cov=app --cov-report=xml:coverage.xml -q
+        continue-on-error: true # coverage is a nice-to-have for the scan, not a gate
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
