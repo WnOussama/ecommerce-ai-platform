@@ -30,13 +30,11 @@ class VectorStoreService:
     def __init__(self, embedding_service):
         self.embeddings = embedding_service
 
-        # Initialisation ChromaDB
-        self.client = chromadb.Client(
-            ChromaSettings(
-                chroma_db_impl="duckdb+parquet",
-                persist_directory=settings.vector_store.persist_directory,
-                anonymized_telemetry=False,
-            )
+        # Initialisation ChromaDB (client persistant - l'ancien Settings(chroma_db_impl=...)
+        # est une configuration supprimée que chromadb refuse désormais au runtime)
+        self.client = chromadb.PersistentClient(
+            path=settings.vector_store.persist_directory,
+            settings=ChromaSettings(anonymized_telemetry=False),
         )
 
         self._collections_cache: Dict[str, Any] = {}

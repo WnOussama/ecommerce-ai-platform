@@ -203,12 +203,11 @@ class ChromaVectorStore:
             import chromadb
             from chromadb.config import Settings as ChromaSettings
 
-            self._client = chromadb.Client(
-                ChromaSettings(
-                    chroma_db_impl="duckdb+parquet",
-                    persist_directory=persist_directory,
-                    anonymized_telemetry=False,
-                )
+            # Client persistant - l'ancien Settings(chroma_db_impl=...) est une
+            # configuration supprimée que chromadb refuse désormais au runtime
+            self._client = chromadb.PersistentClient(
+                path=persist_directory,
+                settings=ChromaSettings(anonymized_telemetry=False),
             )
             self._collections: Dict[str, Any] = {}
 

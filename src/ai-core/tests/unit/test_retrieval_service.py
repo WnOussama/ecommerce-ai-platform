@@ -591,6 +591,100 @@ class TestFallbackBehavior:
         assert result.to_context_string() == ""
 
 
+# =============================================================================
+# CHROMA VECTOR STORE (real chromadb, skip si non importable)
+# =============================================================================
+
+try:
+    import chromadb  # noqa: F401
+
+    _CHROMADB_IMPORTABLE = True
+except Exception:  # pragma: no cover - ex: pydantic.v1 incompatible avec Python 3.14+
+    _CHROMADB_IMPORTABLE = False
+
+pytestmark_chromadb = pytest.mark.skipif(
+    not _CHROMADB_IMPORTABLE,
+    reason="chromadb non importable dans cet environnement (voir Python 3.14 vs 3.11 dans le runbook)",
+)
+
+
+@pytestmark_chromadb
+class TestChromaSearchableVectorStoreUpsert:
+    """
+    Régression: ChromaSearchableVectorStore n'exposait ni upsert() ni
+    get_ids(), alors que ProductIndexer en a besoin pour indexer via le
+    vector store renvoyé par app.services.rag.factory.get_vector_store().
+    Sans cette méthode, toute tentative d'indexation contre un vrai ChromaDB
+    échouait silencieusement (AttributeError capturée et journalisée comme
+    une simple "Failed to store batch").
+
+    Utilise un vrai chromadb.PersistentClient (pas de mock) pour prouver que
+    l'intégration fonctionne réellement, pas seulement l'appel de méthode.
+    """
+
+    @pytest.fixture
+    def store(self, tmp_path):
+        from app.services.rag.retrieval_service import ChromaSearchableVectorStore
+
+        return ChromaSearchableVectorStore(persist_directory=str(tmp_path / "chroma"))
+
+    @pytest.mark.asyncio
+    async def test_upsert_then_search_finds_document(self, store):
+        embedding = [0.1] * 384
+        await store.upsert(
+            collection_name="test_collection",
+            ids=["prod_1"],
+            embeddings=[embedding],
+            documents=["Chaussure de trail"],
+            metadatas=[{"name": "Chaussure de trail"}],
+        )
+
+        results = await store.search(
+            collection_name="test_collection",
+            query_embedding=embedding,
+            top_k=3,
+        )
+
+        assert len(results) == 1
+        assert results[0]["id"] == "prod_1"
+        assert results[0]["metadata"]["name"] == "Chaussure de trail"
+
+    @pytest.mark.asyncio
+    async def test_upsert_then_get_ids(self, store):
+        await store.upsert(
+            collection_name="test_collection",
+            ids=["prod_1", "prod_2"],
+            embeddings=[[0.1] * 384, [0.2] * 384],
+            documents=["doc1", "doc2"],
+            metadatas=[{"name": "doc1"}, {"name": "doc2"}],
+        )
+
+        ids = await store.get_ids("test_collection")
+
+        assert set(ids) == {"prod_1", "prod_2"}
+
+    @pytest.mark.asyncio
+    async def test_data_persists_across_new_client_instance(self, tmp_path):
+        """Preuve de persistance réelle: un second client, même chemin, doit
+        retrouver les données écrites par le premier."""
+        from app.services.rag.retrieval_service import ChromaSearchableVectorStore
+
+        persist_dir = str(tmp_path / "chroma")
+        store1 = ChromaSearchableVectorStore(persist_directory=persist_dir)
+        await store1.upsert(
+            collection_name="test_collection",
+            ids=["prod_1"],
+            embeddings=[[0.1] * 384],
+            documents=["doc1"],
+            metadatas=[{"name": "doc1"}],
+        )
+
+        store2 = ChromaSearchableVectorStore(persist_directory=persist_dir)
+        count = await store2.count("test_collection")
+
+        assert count == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 

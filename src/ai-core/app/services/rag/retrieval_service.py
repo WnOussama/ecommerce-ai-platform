@@ -269,12 +269,11 @@ class ChromaSearchableVectorStore:
             import chromadb
             from chromadb.config import Settings as ChromaSettings
 
-            self._client = chromadb.Client(
-                ChromaSettings(
-                    chroma_db_impl="duckdb+parquet",
-                    persist_directory=persist_directory,
-                    anonymized_telemetry=False,
-                )
+            # Client persistant - l'ancien Settings(chroma_db_impl=...) est une
+            # configuration supprimée que chromadb refuse désormais au runtime
+            self._client = chromadb.PersistentClient(
+                path=persist_directory,
+                settings=ChromaSettings(anonymized_telemetry=False),
             )
             self._collections: Dict[str, Any] = {}
 
@@ -297,6 +296,41 @@ class ChromaSearchableVectorStore:
                 metadata={"hnsw:space": "cosine"},
             )
         return self._collections[collection_name]
+
+    async def upsert(
+        self,
+        collection_name: str,
+        ids: List[str],
+        embeddings: List[List[float]],
+        documents: List[str],
+        metadatas: List[Dict[str, Any]],
+    ) -> int:
+        """
+        Insère ou met à jour des documents.
+
+        Permet d'utiliser ce store (normalement dédié à la recherche) comme
+        cible d'indexation via ProductIndexer, qui requiert un upsert.
+        """
+        if self._client is None or not ids:
+            return 0
+
+        collection = self._get_collection(collection_name)
+        collection.upsert(
+            ids=ids,
+            embeddings=embeddings,
+            documents=documents,
+            metadatas=metadatas,
+        )
+        return len(ids)
+
+    async def get_ids(self, collection_name: str) -> List[str]:
+        """Récupère tous les IDs d'une collection."""
+        if self._client is None:
+            return []
+
+        collection = self._get_collection(collection_name)
+        result = collection.get(include=[])
+        return result.get("ids", [])
 
     async def search(
         self,
