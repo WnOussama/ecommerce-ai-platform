@@ -56,6 +56,38 @@ services:
         limits:
           cpus: '1'
           memory: 1G
+
+  # ===========================================================================
+  # BACKOFFICE - Laravel/Filament Admin Dashboard
+  # REST client only - no direct database access (see header note above)
+  # ===========================================================================
+  backoffice:
+    build:
+      context: ../../src/backoffice
+      dockerfile: ../../infrastructure/docker/services/backoffice.Dockerfile
+      target: development
+    container_name: saas_backoffice
+    restart: unless-stopped
+    environment:
+      - APP_KEY=${BACKOFFICE_APP_KEY:?BACKOFFICE_APP_KEY is required}
+      - DB_CONNECTION=sqlite
+      - AICORE_API_URL=http://ai-core:8000/api/v1
+      - AICORE_ROOT_URL=http://ai-core:8000
+      - AICORE_TENANT_ID=${BACKOFFICE_TENANT_ID:-}
+      - AICORE_API_KEY=${BACKOFFICE_API_KEY:-}
+    ports:
+      - "${BACKOFFICE_PORT:-8090}:8000"
+    networks:
+      - saas_network
+    depends_on:
+      ai-core:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
   # ===========================================================================
   # DATABASE - PostgreSQL 16
   # Owner: FastAPI AI Core (EXCLUSIVE)
