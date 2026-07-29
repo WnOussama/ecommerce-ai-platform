@@ -315,8 +315,8 @@ Réponds en JSON avec cette structure:
 
     def _get_user_bucket(self, user_id: str, traffic_split: float) -> str:
         """Détermine le bucket A/B de façon déterministe"""
-        # Hash déterministe pour consistance
-        hash_value = int(hashlib.md5(user_id.encode()).hexdigest(), 16)
+        # Hash déterministe pour consistance (bucketing A/B, pas d'usage sécurité)
+        hash_value = int(hashlib.md5(user_id.encode(), usedforsecurity=False).hexdigest(), 16)
         bucket_value = (hash_value % 100) / 100
 
         if bucket_value < traffic_split:

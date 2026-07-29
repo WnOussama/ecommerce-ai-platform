@@ -190,7 +190,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "app.services.chat_service:app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # nosec B104 - conteneurisé, le mapping de port est explicite
         port=int(os.getenv("CHAT_SERVICE_PORT", "8001")),
         reload=settings.is_development,
         workers=1 if settings.is_development else 4,

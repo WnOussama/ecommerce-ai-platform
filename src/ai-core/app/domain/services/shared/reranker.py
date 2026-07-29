@@ -218,7 +218,8 @@ class CrossEncoderReranker(BaseReranker):
         import hashlib
 
         combined = f"{query[:100]}:{content[:200]}"
-        return hashlib.md5(combined.encode()).hexdigest()
+        # Clé de cache uniquement (pas d'usage cryptographique/sécurité)
+        return hashlib.md5(combined.encode(), usedforsecurity=False).hexdigest()
 
     def clear_cache(self):
         """Vide le cache"""
