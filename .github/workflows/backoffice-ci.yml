@@ -101,13 +101,49 @@ jobs:
         run: php artisan test
 
   # ===========================================================================
+  # SECURITY SCAN
+  # ===========================================================================
+  security-scan:
+    name: 🛡️ Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: lint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: intl, pdo_sqlite, mbstring
+          coverage: none
+
+      - name: Install dependencies
+        working-directory: ${{ env.WORKING_DIR }}
+        run: composer install --no-interaction --prefer-dist
+
+      # skip-dirs excludes vendor/ - third-party packages sometimes bundle
+      # their own docs-build requirements.txt (e.g. mockery/docs) which
+      # aren't part of this project's actual dependency surface
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: ${{ env.WORKING_DIR }}
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          skip-dirs: 'vendor'
+
+  # ===========================================================================
   # DOCKER BUILD
   # ===========================================================================
   build:
     name: 🐳 Docker Build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: test
+    needs: [test, security-scan]
 
     steps:
       - name: Checkout code
@@ -149,7 +185,7 @@ jobs:
   ci-success:
     name: ✅ CI Success
     runs-on: ubuntu-latest
-    needs: [lint, test, build]
+    needs: [lint, test, security-scan, build]
     if: success()
     steps:
       - name: CI passed

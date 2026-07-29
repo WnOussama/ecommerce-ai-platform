@@ -1,21 +1,26 @@
 # =============================================================================
-# Backend CI Pipeline - AI Core Service
+# Backend CI Pipeline - AI Core Service (FastAPI)
 #
-# Triggers: Push/PR to main, develop, feat/* branches
-# Jobs: Lint → Test → Build
-# Target: < 5 minutes
+# This is the single CI pipeline for src/ai-core - it replaces two
+# previously-overlapping workflows (both fired on every push, building the
+# same image twice) plus infrastructure/ci-cd/github-actions.yml, which was
+# never executed at all (GitHub Actions only reads .github/workflows/) and
+# was the only place security scanning existed. Both are now removed; their
+# useful parts (Trivy + Bandit) are ported into the security-scan job below.
+#
+# Jobs: Lint -> Test (real Postgres + Redis) -> Security scan -> Docker build
 # =============================================================================
 
 name: Backend CI
 
 on:
   push:
-    branches: [main, develop, 'feat/**']
+    branches: [main, dev, 'feat/**']
     paths:
       - 'src/ai-core/**'
       - '.github/workflows/backend-ci.yml'
   pull_request:
-    branches: [main, develop]
+    branches: [main, dev]
     paths:
       - 'src/ai-core/**'
 
@@ -51,28 +56,24 @@ jobs:
             ${{ runner.os }}-pip-
 
       - name: Install linting tools
-        run: pip install ruff black mypy
+        run: pip install ruff
 
       - name: Run Ruff (linter)
         working-directory: ${{ env.WORKING_DIR }}
         run: ruff check app/ --output-format=github
-        continue-on-error: true
 
-      - name: Run Black (format check)
+      - name: Run Ruff (format check)
         working-directory: ${{ env.WORKING_DIR }}
-        run: black --check --diff app/
-        continue-on-error: true
-
-      - name: Run MyPy (type check)
-        working-directory: ${{ env.WORKING_DIR }}
-        run: mypy app/ --ignore-missing-imports --no-error-summary
-        continue-on-error: true
+        run: ruff format --check app/
 
   # ===========================================================================
-  # UNIT TESTS
+  # TESTS - real PostgreSQL + Redis, matching the actual dev/prod stack
+  # (the previous dead workflow used mysql:8.0 here, contradicting every
+  # other part of the project - docker-compose, k8s manifests, and this
+  # workflow's sibling test job all use PostgreSQL)
   # ===========================================================================
   test:
-    name: 🧪 Unit Tests
+    name: 🧪 Tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: lint
@@ -103,23 +104,17 @@ jobs:
           --health-retries=3
 
     env:
-      # Application settings
       ENVIRONMENT: test
       LLM_PROVIDER: mock
-
-      # Database settings
       DB_HOST: localhost
       DB_PORT: 5432
       DB_NAME: test_db
       DB_USER: test_user
       DB_PASSWORD: test_password_123
-
-      # Redis settings
       REDIS_HOST: localhost
       REDIS_PORT: 6379
-
-      # Security settings
       SECURITY_JWT_SECRET_KEY: test_jwt_secret_key_32_characters_minimum_for_ci
+      SECURITY_API_KEY_ENCRYPTION_KEY: test_api_key_encryption_32_chars_minimum_for_ci
 
     steps:
       - name: Checkout code
@@ -146,55 +141,75 @@ jobs:
           pip install -r requirements.txt
           pip install -r requirements-dev.txt
 
-      - name: Wait for PostgreSQL
-        run: |
-          until pg_isready -h localhost -p 5432 -U test_user; do
-            echo "Waiting for PostgreSQL..."
-            sleep 2
-          done
-
       - name: Run database migrations
         working-directory: ${{ env.WORKING_DIR }}
-        run: |
-          alembic upgrade head
-        continue-on-error: true
+        run: alembic upgrade head
 
-      - name: Run unit tests
+      - name: Run tests with coverage
         working-directory: ${{ env.WORKING_DIR }}
         run: |
-          pytest tests/unit/ \
-            -v \
-            --tb=short \
+          pytest tests/ \
             --cov=app \
-            --cov-report=xml \
+            --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
             --junitxml=junit.xml \
-            -x
+            -v \
+            --tb=short
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: ${{ env.WORKING_DIR }}/coverage.xml
           retention-days: 7
 
       - name: Upload test results
-        uses: actions/upload-artifact@v4
         if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: ${{ env.WORKING_DIR }}/junit.xml
           retention-days: 7
 
   # ===========================================================================
-  # DOCKER BUILD
+  # SECURITY SCAN (ported from infrastructure/ci-cd/github-actions.yml,
+  # which never actually ran - this is the first time these checks execute)
+  # ===========================================================================
+  security-scan:
+    name: 🛡️ Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: lint
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: 'src/ai-core'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+      - name: Install Bandit
+        run: pip install bandit
+
+      - name: Run Bandit (Python security linter)
+        working-directory: ${{ env.WORKING_DIR }}
+        run: bandit -r app/ -ll -ii
+
+  # ===========================================================================
+  # DOCKER BUILD (no push - a registry push is added once a deploy target
+  # is chosen)
   # ===========================================================================
   build:
     name: 🐳 Docker Build
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: test
+    needs: [test, security-scan]
 
     steps:
       - name: Checkout code
@@ -202,14 +217,6 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
 
       - name: Build Docker image
         uses: docker/build-push-action@v5
@@ -219,14 +226,8 @@ jobs:
           push: false
           tags: ai-core:${{ github.sha }}
           target: production
-          cache-from: type=local,src=/tmp/.buildx-cache
-          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
-
-      # Prevent cache from growing indefinitely
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   # ===========================================================================
   # SUMMARY
@@ -234,9 +235,8 @@ jobs:
   ci-success:
     name: ✅ CI Success
     runs-on: ubuntu-latest
-    needs: [lint, test, build]
+    needs: [lint, test, security-scan, build]
     if: success()
     steps:
       - name: CI passed
-        run: echo "All CI checks passed successfully!"
-
+        run: echo "All backend CI checks passed successfully!"
