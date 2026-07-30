@@ -208,7 +208,9 @@ jobs:
   build:
     name: 🐳 Docker Build
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # sentence-transformers pulls in torch; a cold GHA layer cache has taken
+    # up to ~68min to download it before, 10min was never realistic.
+    timeout-minutes: 30
     needs: [test, security-scan]
 
     steps:
