@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.core.monitoring import get_metrics_collector
+from app.core.security.guardrails import GuardrailResult, guardrails
 from app.infrastructure.llm import get_llm_provider
 from app.services.rag.factory import get_retrieval_service
 
@@ -124,6 +126,44 @@ async def send_message(request: Request, body: ChatMessageRequest):
     conversation_id = body.conversation_id or f"conv_{uuid.uuid4().hex[:12]}"
     message_id = f"msg_{uuid.uuid4().hex[:12]}"
 
+    metrics = get_metrics_collector()
+
+    # =========================================================================
+    # GUARDRAILS D'ENTRÉE - avant tout traitement (RAG, LLM)
+    # =========================================================================
+    input_report = await guardrails.check_input(body.message, context={"tenant_id": tenant_id})
+
+    if not input_report.passed:
+        for check in input_report.checks:
+            if check.result == GuardrailResult.BLOCK:
+                metrics.record_guardrail_trigger(tenant_id, check.category.value, "blocked")
+                if check.category.value == "injection":
+                    metrics.record_prompt_injection_attempt(tenant_id, "high", blocked=True)
+
+        logger.warning(
+            "Chat message blocked by input guardrails",
+            extra={
+                "tenant_id": tenant_id,
+                "message_id": message_id,
+                "block_reason": input_report.get_block_reason(),
+            },
+        )
+
+        return ChatMessageResponse(
+            conversation_id=conversation_id,
+            message_id=message_id,
+            response="Je ne peux pas traiter cette demande. Pouvez-vous reformuler votre question ?",
+            intent="blocked",
+            confidence=1.0,
+            actions=[],
+            suggestions=[],
+            products=[],
+            metadata={
+                "guardrail_blocked": True,
+                "processing_time_ms": int((time.time() - start_time) * 1000),
+            },
+        )
+
     # Variables pour le RAG
     products_context = ""
     retrieved_products = []
@@ -136,10 +176,16 @@ async def send_message(request: Request, body: ChatMessageRequest):
         if body.use_rag:
             try:
                 retrieval_service = get_retrieval_service()
-                rag_result = await retrieval_service.search_products(
-                    query=body.message,
+                with metrics.track_rag_query(tenant_id, "product"):
+                    rag_result = await retrieval_service.search_products(
+                        query=body.message,
+                        tenant_id=tenant_id,
+                        top_k=body.top_k,
+                    )
+                metrics.record_rag_result(
                     tenant_id=tenant_id,
-                    top_k=body.top_k,
+                    doc_type="product",
+                    documents_found=len(rag_result.products),
                 )
 
                 rag_search_time_ms = rag_result.search_time_ms
@@ -192,7 +238,25 @@ async def send_message(request: Request, body: ChatMessageRequest):
         # =====================================================================
         # ÉTAPE 4: Générer la réponse
         # =====================================================================
-        response_text = await llm.chat(message=body.message, context=system_context)
+        with metrics.track_llm_request(tenant_id, llm.get_model_name(), "chat"):
+            response_text = await llm.chat(message=body.message, context=system_context)
+
+        # =====================================================================
+        # GUARDRAILS DE SORTIE - PII masking, XSS, hallucination/confidence
+        # =====================================================================
+        output_context = {"retrieved_documents": [{"content": products_context}] if products_context else []}
+        output_report = await guardrails.check_output(response_text, output_context)
+
+        if output_report.sanitized_content:
+            response_text = output_report.sanitized_content
+
+        for check in output_report.checks:
+            if check.result in (GuardrailResult.WARN, GuardrailResult.BLOCK):
+                metrics.record_guardrail_trigger(
+                    tenant_id,
+                    check.category.value,
+                    "warned" if check.result == GuardrailResult.WARN else "blocked",
+                )
 
         # =====================================================================
         # ÉTAPE 5: Classifier l'intention
