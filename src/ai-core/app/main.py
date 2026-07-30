@@ -10,7 +10,6 @@ from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from prometheus_client import make_asgi_app
 
 from app.api.middleware.rate_limiter import RateLimiterMiddleware
 from app.api.middleware.request_logging import RequestLoggingMiddleware
@@ -27,6 +26,7 @@ from app.api.v1.endpoints import (
 )
 from app.core.config.settings import settings
 from app.core.logging.config import setup_logging
+from app.core.monitoring import setup_metrics
 
 # Setup logging
 setup_logging()
@@ -157,10 +157,11 @@ def create_application() -> FastAPI:
 
     app.include_router(tenants.router, prefix=f"{api_prefix}/tenants", tags=["Tenant Management"])
 
-    # Prometheus metrics endpoint
+    # Prometheus metrics: per-request (api_requests_total, latency, tenant
+    # attribution) via MetricsMiddleware, plus AI-specific metrics recorded
+    # directly in RAG/LLM/guardrail code paths - see app/core/monitoring/.
     if settings.monitoring.prometheus_enabled:
-        metrics_app = make_asgi_app()
-        app.mount("/metrics", metrics_app)
+        setup_metrics(app)
 
     # =========================================================================
     # ROOT ENDPOINT
