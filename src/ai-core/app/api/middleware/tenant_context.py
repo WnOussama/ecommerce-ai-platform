@@ -37,8 +37,10 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         if self._is_public_path(request.url.path):
             return await call_next(request)
 
-        # Mode développement: accepter X-Tenant-ID directement
-        if settings.is_development:
+        # Mode développement/test: accepter X-Tenant-ID directement (pas
+        # d'infrastructure API key/tenant réelle en CI - Environment.TEST
+        # est explicitement documenté comme "Exécution des tests (CI/CD)")
+        if settings.is_development or settings.is_test:
             tenant_id = request.headers.get("X-Tenant-ID")
             if tenant_id:
                 # En dev, on accepte n'importe quel tenant ID
