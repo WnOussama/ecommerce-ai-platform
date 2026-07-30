@@ -14,6 +14,20 @@ from app.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
+# Il n'existe pas encore de système de plans/tiers tarifaires - tout
+# tenant vérifié obtient le même accès complet. À affiner si des plans
+# payants sont introduits (le champ JSONB Tenant.settings peut alors
+# porter le plan choisi).
+DEFAULT_TENANT_FEATURES = [
+    "chatbot",
+    "faq",
+    "recommendations",
+    "coupons",
+    "admin_ai",
+    "analytics",
+]
+DEFAULT_TENANT_RATE_LIMIT_RPM = 60
+
 
 class TenantContextMiddleware(BaseHTTPMiddleware):
     """
@@ -27,9 +41,17 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
     PUBLIC_PATH_PREFIXES = ["/health", "/metrics", "/docs", "/redoc", "/openapi.json"]
     PUBLIC_EXACT_PATHS = ["/"]
 
-    def __init__(self, app, tenant_repository=None):
+    def __init__(self, app, session_factory=None):
+        """
+        Args:
+            session_factory: callable retournant une session SQLAlchemy async
+                (ex. AsyncSessionLocal). Une nouvelle session est ouverte à
+                chaque validation de clé API - le middleware est instancié
+                une seule fois pour toute la durée de vie de l'app, il ne
+                peut donc pas garder une session ouverte en permanence.
+        """
         super().__init__(app)
-        self.tenant_repo = tenant_repository
+        self._session_factory = session_factory
         self._tenant_cache = {}  # Cache simple en mémoire
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
@@ -46,14 +68,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 # En dev, on accepte n'importe quel tenant ID
                 request.state.tenant_id = tenant_id
                 request.state.tenant_plan = "enterprise"  # Full access en dev
-                request.state.tenant_features = [
-                    "chatbot",
-                    "faq",
-                    "recommendations",
-                    "coupons",
-                    "admin_ai",
-                    "analytics",
-                ]
+                request.state.tenant_features = DEFAULT_TENANT_FEATURES
                 request.state.tenant_rate_limit = 1000
 
                 response = await call_next(request)
@@ -89,8 +104,8 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         # Injecter le contexte dans la requête
         request.state.tenant_id = tenant["id"]
         request.state.tenant_plan = tenant["plan"]
-        request.state.tenant_features = tenant.get("features", [])
-        request.state.tenant_rate_limit = tenant.get("rate_limit_rpm", 60)
+        request.state.tenant_features = tenant["features"]
+        request.state.tenant_rate_limit = tenant["rate_limit_rpm"]
 
         # Ajouter header pour tracing
         response = await call_next(request)
@@ -148,16 +163,19 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             return self._tenant_cache[api_key_hash]
 
         # Récupérer depuis la base de données
-        if self.tenant_repo:
-            tenant = await self.tenant_repo.get_by_api_key_hash(api_key_hash)
+        if self._session_factory:
+            from app.infrastructure.database.repositories.tenant_repo import TenantRepository
+
+            async with self._session_factory() as session:
+                tenant = await TenantRepository(session).get_by_api_key_hash(api_key_hash)
 
             if tenant:
                 tenant_data = {
                     "id": str(tenant.id),
-                    "plan": tenant.plan.value,
-                    "features": tenant.features_enabled,
-                    "rate_limit_rpm": tenant.rate_limit_rpm,
-                    "is_active": tenant.is_active(),
+                    "plan": "standard",
+                    "features": DEFAULT_TENANT_FEATURES,
+                    "rate_limit_rpm": DEFAULT_TENANT_RATE_LIMIT_RPM,
+                    "is_active": tenant.is_active,
                 }
 
                 # Mettre en cache (5 minutes)

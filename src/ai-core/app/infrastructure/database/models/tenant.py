@@ -5,7 +5,7 @@ Chaque boutique e-commerce = 1 tenant.
 Toutes les autres entités sont liées à un tenant.
 """
 
-from sqlalchemy import Boolean, Column, Index, String
+from sqlalchemy import Boolean, Column, DateTime, Index, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -41,6 +41,15 @@ class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
 
     # Authentification
     api_key_hash = Column(String(255), nullable=True)
+
+    # Onboarding / vérification email
+    # Un tenant créé via signup démarre non-vérifié et sans api_key_hash ;
+    # la vérification de l'email est ce qui déclenche l'émission de la clé.
+    email = Column(String(255), nullable=True, unique=True)
+    is_verified = Column(Boolean, nullable=False, default=False)
+    verification_token_hash = Column(String(255), nullable=True)
+    verification_sent_at = Column(DateTime(timezone=True), nullable=True)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
 
     # Configuration flexible (JSONB pour queries performantes)
     settings = Column(

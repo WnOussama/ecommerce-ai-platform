@@ -27,6 +27,7 @@ from app.api.v1.endpoints import (
 from app.core.config.settings import settings
 from app.core.logging.config import setup_logging
 from app.core.monitoring import setup_metrics
+from app.infrastructure.database.connection import AsyncSessionLocal
 
 # Setup logging
 setup_logging()
@@ -91,8 +92,9 @@ def create_application() -> FastAPI:
     # Request Logging
     app.add_middleware(RequestLoggingMiddleware)
 
-    # Tenant Context (extrait le tenant de l'API key)
-    app.add_middleware(TenantContextMiddleware)
+    # Tenant Context (extrait le tenant de l'API key - hors dev/test, où un
+    # header X-Tenant-ID suffit)
+    app.add_middleware(TenantContextMiddleware, session_factory=AsyncSessionLocal)
 
     # Rate Limiting
     app.add_middleware(RateLimiterMiddleware)
