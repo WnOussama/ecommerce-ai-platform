@@ -1,20 +1,22 @@
 # =============================================================================
 # SonarCloud Analysis
 #
+# Project: prodexo_cloud-digital-factory (org: prodexo) - see
+# sonar-project.properties at the repo root.
+#
+# IMPORTANT: this repo must be PUBLIC for SonarCloud's free tier to
+# analyze it - private repos need a paid plan.
+#
 # ONE-TIME MANUAL SETUP REQUIRED before this workflow can pass (SonarCloud
 # needs your GitHub login, so this can't be automated from here):
 #
 #   1. Go to https://sonarcloud.io, "Log in with GitHub", authorize it.
-#   2. "+" -> "Analyze new project" -> select this repository.
-#   3. Note the Organization Key and Project Key SonarCloud assigns -
-#      if they differ from sonar-project.properties (sonar.organization /
-#      sonar.projectKey at the repo root), update that file to match.
-#   4. My Account -> Security -> Generate a token.
-#   5. On GitHub: repo Settings -> Secrets and variables -> Actions ->
+#   2. My Account -> Security -> Generate a token.
+#   3. On GitHub: repo Settings -> Secrets and variables -> Actions ->
 #      "New repository secret" -> name it SONAR_TOKEN -> paste the token.
 #
 # Until SONAR_TOKEN exists, this workflow will fail at the scan step - that
-# failure is expected and only means step 5 isn't done yet, not a code bug.
+# failure is expected and only means step 3 isn't done yet, not a code bug.
 # =============================================================================
 
 name: SonarCloud
@@ -33,7 +35,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0 # SonarCloud needs full history for blame/new-code analysis
 
@@ -55,7 +57,7 @@ jobs:
         continue-on-error: true # coverage is a nice-to-have for the scan, not a gate
 
       - name: SonarCloud Scan
-        uses: SonarSource/sonarqube-scan-action@v3
+        uses: SonarSource/sonarqube-scan-action@7006c4492b2e0ee0f816d36501671557c97f5995 # v8.1.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
