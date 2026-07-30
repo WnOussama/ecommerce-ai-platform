@@ -48,7 +48,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "100 * (1 - sum(rate(api_requests_total{status_code=~\"5..\"}[5m])) / sum(rate(api_requests_total[5m])))",
+          "expr": "100 * (1 - (sum(rate(api_requests_total{status_code=~\"5..\"}[5m])) or vector(0)) / sum(rate(api_requests_total[5m])))",
           "refId": "A"
         }
       ]
@@ -114,7 +114,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "100 * sum(rate(ai_hallucination_detected_total[1h])) / sum(rate(llm_requests_total{status=\"success\"}[1h]))",
+          "expr": "100 * (sum(rate(ai_hallucination_detected_total[1h])) or vector(0)) / sum(rate(llm_requests_total{status=\"success\"}[1h]))",
           "refId": "A"
         }
       ]
@@ -141,7 +141,7 @@
       "type": "stat",
       "targets": [
         {
-          "expr": "100 * sum(rate(rag_queries_total{result=\"hit\"}[1h])) / sum(rate(rag_queries_total[1h]))",
+          "expr": "100 * (sum(rate(rag_queries_total{result=\"hit\"}[1h])) or vector(0)) / sum(rate(rag_queries_total[1h]))",
           "refId": "A"
         }
       ]
