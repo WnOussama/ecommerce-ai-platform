@@ -244,7 +244,9 @@ async def send_message(request: Request, body: ChatMessageRequest):
         # =====================================================================
         # GUARDRAILS DE SORTIE - PII masking, XSS, hallucination/confidence
         # =====================================================================
-        output_context = {"retrieved_documents": [{"content": products_context}] if products_context else []}
+        output_context = {
+            "retrieved_documents": [{"content": products_context}] if products_context else []
+        }
         output_report = await guardrails.check_output(response_text, output_context)
 
         if output_report.sanitized_content:
