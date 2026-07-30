@@ -270,6 +270,9 @@ async def send_message(request: Request, body: ChatMessageRequest):
         # =====================================================================
         suggestions = _generate_suggestions(intent, has_products=len(retrieved_products) > 0)
 
+        confidence = 0.85
+        metrics.record_response_confidence(tenant_id, confidence)
+
         processing_time_ms = int((time.time() - start_time) * 1000)
 
         logger.info(
@@ -290,7 +293,7 @@ async def send_message(request: Request, body: ChatMessageRequest):
             message_id=message_id,
             response=response_text,
             intent=intent,
-            confidence=0.85,
+            confidence=confidence,
             actions=[],
             suggestions=suggestions,
             products=retrieved_products,
