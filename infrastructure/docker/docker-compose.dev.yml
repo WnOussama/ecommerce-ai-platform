@@ -184,6 +184,53 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  # ===========================================================================
+  # PROMETHEUS - Scrapes ai-core's real /metrics (see prometheus.dev.yml)
+  # ===========================================================================
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: saas_prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.dev.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
+  # ===========================================================================
+  # GRAFANA - auto-provisioned with the Prometheus datasource and the
+  # existing AI observability dashboard (both were previously referenced
+  # but never actually wired: the provisioning/ directory didn't exist)
+  # ===========================================================================
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: saas_grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - saas_network
+    profiles:
+      - monitoring
+
 # =============================================================================
 # NETWORKS
 # =============================================================================
@@ -202,5 +249,9 @@ volumes:
   chroma_data:
     driver: local
   ai_core_logs:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
     driver: local
 

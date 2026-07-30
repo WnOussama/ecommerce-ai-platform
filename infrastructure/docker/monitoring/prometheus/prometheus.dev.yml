@@ -1,0 +1,22 @@
+# =============================================================================
+# Prometheus Configuration - Development
+#
+# Scrapes the real dev stack (docker-compose.dev.yml), not the aspirational
+# multi-service split in prometheus.yml (ai-chat-service, ai-admin-service,
+# mysql-exporter - none of which exist as actual containers in this repo).
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'ai-core'
+    static_configs:
+      - targets: ['ai-core:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
