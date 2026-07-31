@@ -14,6 +14,8 @@ from pydantic import BaseModel, Field
 from app.core.config.settings import settings
 from app.core.monitoring import get_metrics_collector
 from app.core.security.guardrails import GuardrailResult, guardrails
+from app.infrastructure.database.models.message import MessageRole
+from app.infrastructure.database.unit_of_work import UnitOfWork
 from app.infrastructure.llm import get_llm_provider
 from app.services.rag.factory import get_retrieval_service
 
@@ -123,8 +125,9 @@ async def send_message(request: Request, body: ChatMessageRequest):
         },
     )
 
-    # Générer IDs
-    conversation_id = body.conversation_id or f"conv_{uuid.uuid4().hex[:12]}"
+    # Résout/crée la conversation persistée et y enregistre le message
+    # utilisateur (best-effort - voir _log_user_message).
+    conversation_id = await _log_user_message(tenant_id, body)
     message_id = f"msg_{uuid.uuid4().hex[:12]}"
 
     metrics = get_metrics_collector()
@@ -150,10 +153,20 @@ async def send_message(request: Request, body: ChatMessageRequest):
             },
         )
 
+        blocked_response = (
+            "Je ne peux pas traiter cette demande. Pouvez-vous reformuler votre question ?"
+        )
+        await _log_assistant_message(
+            tenant_id,
+            conversation_id,
+            blocked_response,
+            extra_data={"guardrail_blocked": True, "block_reason": input_report.get_block_reason()},
+        )
+
         return ChatMessageResponse(
             conversation_id=conversation_id,
             message_id=message_id,
-            response="Je ne peux pas traiter cette demande. Pouvez-vous reformuler votre question ?",
+            response=blocked_response,
             intent="blocked",
             confidence=1.0,
             actions=[],
@@ -303,6 +316,16 @@ async def send_message(request: Request, body: ChatMessageRequest):
             },
         )
 
+        await _log_assistant_message(
+            tenant_id,
+            conversation_id,
+            response_text,
+            extra_data={"intent": intent, "products_found": len(retrieved_products)},
+            latency_ms=processing_time_ms,
+            tokens_input=input_tokens,
+            tokens_output=output_tokens,
+        )
+
         return ChatMessageResponse(
             conversation_id=conversation_id,
             message_id=message_id,
@@ -326,16 +349,113 @@ async def send_message(request: Request, body: ChatMessageRequest):
         )
 
         # Réponse de fallback en cas d'erreur
+        error_response = (
+            "Je suis désolé, je rencontre un problème technique. "
+            "Pouvez-vous reformuler votre question ?"
+        )
+        await _log_assistant_message(
+            tenant_id, conversation_id, error_response, extra_data={"error": True}
+        )
+
         return ChatMessageResponse(
             conversation_id=conversation_id,
             message_id=message_id,
-            response="Je suis désolé, je rencontre un problème technique. Pouvez-vous reformuler votre question ?",
+            response=error_response,
             intent="error",
             confidence=0.0,
             actions=[],
             suggestions=["Réessayer", "Contacter le support"],
             products=[],
             metadata={"processing_time_ms": int((time.time() - start_time) * 1000), "error": True},
+        )
+
+
+async def _log_user_message(tenant_id: str, body: ChatMessageRequest) -> str:
+    """
+    Résout/crée la conversation persistée et y enregistre le message
+    utilisateur. Best-effort : si tenant_id n'est pas un vrai UUID (bypass
+    dev avec un identifiant humain comme "demo-tenant") ou si la
+    persistance échoue pour toute autre raison, on continue sans
+    persister plutôt que de casser le chat - même principe de dégradation
+    gracieuse que le fallback RAG plus haut dans ce fichier.
+
+    Returns:
+        L'UUID de la conversation persistée (str), ou un identifiant de
+        secours si la persistance n'a pas pu avoir lieu.
+    """
+    fallback_id = body.conversation_id or f"conv_{uuid.uuid4().hex[:12]}"
+
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+    except (ValueError, AttributeError, TypeError):
+        return fallback_id
+
+    try:
+        async with UnitOfWork(tenant_uuid) as uow:
+            conversation = None
+
+            if body.conversation_id:
+                try:
+                    conversation = await uow.conversations.get_by_id(
+                        uuid.UUID(body.conversation_id)
+                    )
+                except ValueError:
+                    conversation = None
+
+            if not conversation:
+                user_identifier = body.customer_id or f"anon_{uuid.uuid4().hex[:12]}"
+                conversation, _ = await uow.conversations.get_or_create(user_identifier)
+
+            await uow.messages.create(
+                conversation_id=conversation.id,
+                idempotency_key=uuid.uuid4(),
+                role=MessageRole.USER,
+                content=body.message,
+            )
+            await uow.commit()
+
+            return str(conversation.id)
+    except Exception as e:
+        logger.warning(
+            "Skipping conversation persistence for this request",
+            extra={"tenant_id": tenant_id, "error": str(e)},
+        )
+        return fallback_id
+
+
+async def _log_assistant_message(
+    tenant_id: str,
+    conversation_id: str,
+    content: str,
+    extra_data: Optional[Dict[str, Any]] = None,
+    latency_ms: Optional[int] = None,
+    tokens_input: Optional[int] = None,
+    tokens_output: Optional[int] = None,
+) -> None:
+    """Enregistre le message de l'assistant - best-effort, mêmes garde-fous que _log_user_message."""
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+        conv_uuid = uuid.UUID(conversation_id)
+    except (ValueError, AttributeError, TypeError):
+        return
+
+    try:
+        async with UnitOfWork(tenant_uuid) as uow:
+            await uow.messages.create(
+                conversation_id=conv_uuid,
+                idempotency_key=uuid.uuid4(),
+                role=MessageRole.ASSISTANT,
+                content=content,
+                extra_data=extra_data or {},
+                latency_ms=latency_ms,
+                tokens_input=tokens_input,
+                tokens_output=tokens_output,
+            )
+            await uow.commit()
+    except Exception as e:
+        logger.warning(
+            "Skipping assistant message persistence for this request",
+            extra={"tenant_id": tenant_id, "error": str(e)},
         )
 
 

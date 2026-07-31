@@ -745,7 +745,7 @@ class GuardrailsOrchestrator:
                     blocked_categories.append(check.category)
                     logger.warning(
                         f"Guardrail blocked: {check.category.value}",
-                        extra={"message": check.message, "details": check.details},
+                        extra={"guardrail_message": check.message, "details": check.details},
                     )
                 elif check.result == GuardrailResult.WARN:
                     warnings.append(check.message)
