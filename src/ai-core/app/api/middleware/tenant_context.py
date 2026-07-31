@@ -192,7 +192,10 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                     "is_active": tenant.is_active,
                 }
 
-                # Mettre en cache (5 minutes)
+                # Mise en cache: pas de TTL, invalidée explicitement par
+                # clear_cache() sur rotation/révocation de clé (voir
+                # rotate_api_key dans tenants.py) - sans quoi une clé
+                # révoquée continuerait à authentifier indéfiniment.
                 self._tenant_cache[api_key_hash] = tenant_data
 
                 return tenant_data
