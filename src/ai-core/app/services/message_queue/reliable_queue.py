@@ -460,7 +460,7 @@ class QueueWorker:
                         await self._process_message(stream_id, data)
 
             except asyncio.CancelledError:
-                break
+                raise
             except Exception as e:
                 logger.error(f"Consumer loop error: {e}")
                 await asyncio.sleep(1)
@@ -613,7 +613,7 @@ class QueueWorker:
                             )
 
             except asyncio.CancelledError:
-                break
+                raise
             except Exception as e:
                 logger.error(f"Claim loop error: {e}")
                 await asyncio.sleep(5)
@@ -660,7 +660,7 @@ class QueueWorker:
                         logger.error(f"Error processing scheduled job: {e}")
 
             except asyncio.CancelledError:
-                break
+                raise
             except Exception as e:
                 logger.error(f"Scheduled loop error: {e}")
                 await asyncio.sleep(5)

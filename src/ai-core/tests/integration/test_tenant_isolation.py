@@ -349,14 +349,18 @@ class TestTenantIsolation:
         ]
 
         for headers in injection_headers:
-            # Ces requêtes devraient être rejetées
+            # Un client HTTP bien formé peut rejeter des headers contenant
+            # \r\n avant même l'envoi - c'est acceptable (l'injection n'a
+            # jamais atteint le serveur). Mais si la requête EST envoyée,
+            # le serveur doit la rejeter : cet assert ne doit jamais être
+            # avalé silencieusement, sans quoi ce test de sécurité
+            # "passerait" même si la protection était totalement cassée.
             try:
                 response = client.get("/api/v1/conversations", headers=headers)
-                # Si la requête passe, vérifier que le header malicieux n'a pas d'effet
-                assert response.status_code in [400, 422]
             except Exception:
-                # L'exception est acceptable pour headers malformés
-                pass
+                continue
+
+            assert response.status_code in [400, 422]
 
 
 # =============================================================================

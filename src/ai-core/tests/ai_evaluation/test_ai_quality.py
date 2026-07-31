@@ -311,10 +311,11 @@ class TestEdgeCases:
         for message, _ in self.EDGE_CASES:
             try:
                 intent, confidence = intent_classifier.classify(message, context)
-                assert intent is not None
-                assert 0 <= confidence <= 1
             except Exception as e:
                 pytest.fail(f"Crash on input '{message[:30]}...': {e}")
+
+            assert intent is not None
+            assert 0 <= confidence <= 1
 
 
 # ============================================================================

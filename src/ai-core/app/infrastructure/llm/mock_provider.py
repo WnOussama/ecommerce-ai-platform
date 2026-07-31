@@ -246,10 +246,12 @@ class MockLLMProvider:
 
     def _generate_response(self, message: str) -> str:
         """Génère une réponse basée sur le message."""
+        # Les appels random.choice/randint ci-dessous choisissent un texte de
+        # démo ou un prix factice, sans usage cryptographique ou sécurité.
         message_lower = message.lower().strip()
 
         if not message_lower:
-            return random.choice(self.DEFAULT_RESPONSES)
+            return random.choice(self.DEFAULT_RESPONSES)  # NOSONAR
 
         # Chercher un pattern correspondant
         best_match = None
@@ -265,15 +267,16 @@ class MockLLMProvider:
 
         if best_match and best_score > 0:
             responses = self.RESPONSE_PATTERNS[best_match]["responses"]
-            response = random.choice(responses)
+            response = random.choice(responses)  # NOSONAR
 
             # Substituer les variables si présentes
             if "{price}" in response:
-                response = response.format(price=random.choice([19.99, 29.99, 49.99, 79.99]))
+                prices = [19.99, 29.99, 49.99, 79.99]
+                response = response.format(price=random.choice(prices))  # NOSONAR
 
             return response
 
-        return random.choice(self.DEFAULT_RESPONSES)
+        return random.choice(self.DEFAULT_RESPONSES)  # NOSONAR
 
     def _count_tokens(self, messages: List[Dict[str, str]]) -> int:
         """Compte approximativement les tokens des messages."""

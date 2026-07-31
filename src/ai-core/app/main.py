@@ -199,7 +199,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "app.main:app",
-        host="0.0.0.0",  # nosec B104 - conteneurisé, le mapping de port est explicite
+        host="0.0.0.0",  # nosec B104 NOSONAR - conteneurisé, le mapping de port est explicite
         port=8000,
         reload=settings.is_development,
         workers=1 if settings.is_development else 4,

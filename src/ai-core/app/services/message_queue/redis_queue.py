@@ -310,7 +310,7 @@ class RedisQueueClient:
 
             except asyncio.CancelledError:
                 logger.info("Consumer cancelled")
-                break
+                raise
             except Exception as e:
                 logger.error(f"Consumer error: {e}")
                 await asyncio.sleep(1)  # Back-off

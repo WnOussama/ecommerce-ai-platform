@@ -375,9 +375,16 @@ async def main():
     # Gestion des signaux pour arrêt graceful
     loop = asyncio.get_event_loop()
 
+    # asyncio.create_task() only keeps a weak reference to the task - if
+    # nothing else references it, the task can be garbage-collected mid-run.
+    # Keep a strong reference here and let it self-clean on completion.
+    background_tasks: set[asyncio.Task] = set()
+
     def signal_handler():
         logger.info("Received shutdown signal")
-        asyncio.create_task(manager.stop())
+        task = asyncio.create_task(manager.stop())
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
 
     for sig in (signal.SIGTERM, signal.SIGINT):
         loop.add_signal_handler(sig, signal_handler)

@@ -328,7 +328,8 @@ class DatabaseRouter:
 
         # Certaines lectures peuvent aller sur le primary pour données fraîches
         if self._config.read_from_primary_percent > 0:
-            if random.randint(1, 100) <= self._config.read_from_primary_percent:
+            # Routage de charge entre replicas, pas un usage cryptographique.
+            if random.randint(1, 100) <= self._config.read_from_primary_percent:  # NOSONAR
                 return False
 
         return True
