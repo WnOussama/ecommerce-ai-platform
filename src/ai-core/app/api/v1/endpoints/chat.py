@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.core.config.settings import settings
 from app.core.monitoring import get_metrics_collector
 from app.core.security.guardrails import GuardrailResult, guardrails
 from app.infrastructure.llm import get_llm_provider
@@ -240,6 +241,20 @@ async def send_message(request: Request, body: ChatMessageRequest):
         # =====================================================================
         with metrics.track_llm_request(tenant_id, llm.get_model_name(), "chat"):
             response_text = await llm.chat(message=body.message, context=system_context)
+
+        input_tokens = llm.count_tokens(body.message)
+        output_tokens = llm.count_tokens(response_text)
+        estimated_cost = (
+            input_tokens / 1000 * settings.llm.cost_per_1k_input_tokens
+            + output_tokens / 1000 * settings.llm.cost_per_1k_output_tokens
+        )
+        metrics.record_llm_tokens(
+            tenant_id=tenant_id,
+            model=llm.get_model_name(),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost=estimated_cost,
+        )
 
         # =====================================================================
         # GUARDRAILS DE SORTIE - PII masking, XSS, hallucination/confidence

@@ -53,23 +53,6 @@ async def db_session():
     await engine.dispose()
 
 
-@pytest.fixture(autouse=True)
-async def _reset_app_engine_pool():
-    """
-    app.main.create_application() uses the module-level async_engine from
-    app.infrastructure.database.connection, created once at import time and
-    bound to whatever event loop was current then. pytest-asyncio gives each
-    test function its own event loop, so a pooled connection opened by an
-    earlier test can outlive its loop and get reused under a different one
-    ("attached to a different loop"). Dispose the pool before each test so
-    fresh connections are opened under the current test's loop.
-    """
-    from app.infrastructure.database.connection import async_engine
-
-    await async_engine.dispose()
-    yield
-
-
 @pytest.mark.asyncio
 class TestTenantSignupEndToEnd:
     async def test_full_signup_verify_authenticate_flow(self, db_session: AsyncSession):

@@ -6,7 +6,7 @@ Peuvent être synchronisés avec PrestaShop.
 """
 
 import enum
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy import Enum as SQLEnum
@@ -131,6 +131,6 @@ class Coupon(Base, UUIDMixin, TimestampMixin):
         """Vérifie si le coupon est encore valide."""
         if self.status != CouponStatus.ACTIVE:
             return False
-        if self.expires_at and self.expires_at < datetime.utcnow():
+        if self.expires_at and self.expires_at < datetime.now(timezone.utc):
             return False
         return True
