@@ -140,22 +140,32 @@ class RateLimiterMiddleware(BaseHTTPMiddleware):
         window_start = now - self.window_seconds
         key = f"ratelimit:{identifier}"
 
-        # Sliding window avec sorted set Redis
-        pipe = self.redis.pipeline()
+        try:
+            # Sliding window avec sorted set Redis
+            pipe = self.redis.pipeline()
 
-        # Supprimer les entrées expirées
-        pipe.zremrangebyscore(key, 0, window_start)
+            # Supprimer les entrées expirées
+            pipe.zremrangebyscore(key, 0, window_start)
 
-        # Compter les requêtes dans la fenêtre
-        pipe.zcard(key)
+            # Compter les requêtes dans la fenêtre
+            pipe.zcard(key)
 
-        # Ajouter la requête actuelle
-        pipe.zadd(key, {str(now): now})
+            # Ajouter la requête actuelle
+            pipe.zadd(key, {str(now): now})
 
-        # Définir l'expiration
-        pipe.expire(key, self.window_seconds)
+            # Définir l'expiration
+            pipe.expire(key, self.window_seconds)
 
-        results = await pipe.execute()
+            results = await pipe.execute()
+        except Exception as e:
+            # Fail-open: un rate limiter ne doit pas devenir un point de
+            # panne plus grave que ce qu'il protège - une panne Redis ne
+            # doit pas transformer chaque requête en 500.
+            logger.warning(
+                "Rate limiter backend unavailable, allowing request", extra={"error": str(e)}
+            )
+            return True, limit, now + self.window_seconds
+
         request_count = results[1]
 
         remaining = max(0, limit - request_count - 1)

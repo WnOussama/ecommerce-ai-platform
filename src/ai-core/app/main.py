@@ -6,6 +6,7 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
+import redis.asyncio as redis_asyncio
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -96,8 +97,16 @@ def create_application() -> FastAPI:
     # header X-Tenant-ID suffit)
     app.add_middleware(TenantContextMiddleware, session_factory=AsyncSessionLocal)
 
-    # Rate Limiting
-    app.add_middleware(RateLimiterMiddleware)
+    # Rate Limiting - lazy client (redis.asyncio doesn't connect until the
+    # first command), so this is safe even if Redis isn't reachable yet at
+    # startup; the middleware itself fails open on connection errors.
+    redis_client = redis_asyncio.from_url(
+        settings.redis.url,
+        db=settings.redis.rate_limit_db,
+        socket_timeout=settings.redis.socket_timeout,
+        max_connections=settings.redis.max_connections,
+    )
+    app.add_middleware(RateLimiterMiddleware, redis_client=redis_client)
 
     # =========================================================================
     # EXCEPTION HANDLERS

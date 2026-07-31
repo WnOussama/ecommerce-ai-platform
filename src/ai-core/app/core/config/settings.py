@@ -87,6 +87,8 @@ class RedisSettings(BaseSettings):
     port: int = 6379
     db: int = 0
     password: Optional[str] = None
+    # Managed Redis providers (Upstash, etc.) require TLS on the free tier.
+    use_tls: bool = False
     max_connections: int = 50
     socket_timeout: int = 5
 
@@ -98,8 +100,9 @@ class RedisSettings(BaseSettings):
 
     @property
     def url(self) -> str:
+        scheme = "rediss" if self.use_tls else "redis"
         auth = f":{self.password}@" if self.password else ""
-        return f"redis://{auth}{self.host}:{self.port}/{self.db}"
+        return f"{scheme}://{auth}{self.host}:{self.port}/{self.db}"
 
 
 class VectorStoreSettings(BaseSettings):
