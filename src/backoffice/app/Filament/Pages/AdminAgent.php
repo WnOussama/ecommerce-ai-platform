@@ -19,6 +19,10 @@ class AdminAgent extends Page implements HasForms
 
     protected static ?string $navigationLabel = 'Agent IA Admin';
 
+    protected static ?string $navigationGroup = 'Assistant IA';
+
+    protected static ?int $navigationSort = 1;
+
     protected static ?string $title = 'Agent IA Admin';
 
     protected static string $view = 'filament.pages.admin-agent';
