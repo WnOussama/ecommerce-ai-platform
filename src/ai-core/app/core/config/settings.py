@@ -226,6 +226,29 @@ class MonitoringSettings(BaseSettings):
     health_check_interval: int = 30
 
 
+class EmailSettings(BaseSettings):
+    """Configuration email (vérification tenant, notifications)"""
+
+    model_config = SettingsConfigDict(
+        env_prefix="EMAIL_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    provider: str = "mock"  # mock (dev/test, aucun envoi réel) ou smtp
+
+    smtp_host: str = "localhost"
+    smtp_port: int = 587
+    smtp_user: Optional[str] = None
+    smtp_password: Optional[str] = None
+    smtp_use_tls: bool = True
+
+    from_address: str = "no-reply@example.com"
+    from_name: str = "SaaS AI E-commerce Assistant"
+
+    # Base URL publique de l'API (utilisée pour construire le lien de
+    # vérification dans l'email) - doit inclure le schéma, sans slash final.
+    public_base_url: str = "http://localhost:8000"
+
+
 class TenantSettings(BaseSettings):
     """Configuration multi-tenant"""
 
@@ -290,6 +313,7 @@ class Settings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     tenant: TenantSettings = Field(default_factory=TenantSettings)
+    email: EmailSettings = Field(default_factory=EmailSettings)
 
     @field_validator("environment", mode="before")
     @classmethod

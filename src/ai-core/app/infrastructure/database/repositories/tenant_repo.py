@@ -84,6 +84,7 @@ class TenantRepository:
             is_active=False,
             verification_token_hash=_hash(raw_token),
             verification_sent_at=datetime.now(timezone.utc),
+            settings={"plan": "starter"},
         )
 
         self._session.add(tenant)

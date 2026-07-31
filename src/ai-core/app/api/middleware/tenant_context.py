@@ -14,19 +14,13 @@ from app.core.config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# Il n'existe pas encore de système de plans/tiers tarifaires - tout
-# tenant vérifié obtient le même accès complet. À affiner si des plans
-# payants sont introduits (le champ JSONB Tenant.settings peut alors
-# porter le plan choisi).
-DEFAULT_TENANT_FEATURES = [
-    "chatbot",
-    "faq",
-    "recommendations",
-    "coupons",
-    "admin_ai",
-    "analytics",
-]
-DEFAULT_TENANT_RATE_LIMIT_RPM = 60
+DEFAULT_PLAN = "starter"
+
+
+def _plan_config(plan_name: str) -> dict:
+    """Résout un plan vers sa config (features, rate_limit_rpm) via settings.tenant.plans."""
+    plans = settings.tenant.plans
+    return plans.get(plan_name, plans[DEFAULT_PLAN])
 
 
 class TenantContextMiddleware(BaseHTTPMiddleware):
@@ -38,8 +32,19 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
     """
 
     # Routes qui ne nécessitent pas d'authentification (préfixes, sauf "/" qui est exact)
-    PUBLIC_PATH_PREFIXES = ["/health", "/metrics", "/docs", "/redoc", "/openapi.json"]
-    PUBLIC_EXACT_PATHS = ["/"]
+    PUBLIC_PATH_PREFIXES = [
+        "/health",
+        "/metrics",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+        # Un prospect n'a pas encore de clé API pour vérifier son email.
+        f"{settings.api_prefix}/tenants/verify/",
+    ]
+    # Chemins publics uniquement en correspondance EXACTE (pas de préfixe -
+    # POST {api_prefix}/tenants est le signup public, mais
+    # {api_prefix}/tenants/current etc. doivent rester protégés).
+    PUBLIC_EXACT_PATHS = ["/", f"{settings.api_prefix}/tenants"]
 
     def __init__(self, app, session_factory=None):
         """
@@ -55,6 +60,12 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         self._tenant_cache = {}  # Cache simple en mémoire
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Auto-enregistrement pour que les endpoints puissent invalider le
+        # cache après une rotation/révocation de clé (ex. rotate_api_key) -
+        # request.app est toujours la vraie instance FastAPI, contrairement
+        # à self.app qui est la couche ASGI suivante dans la chaîne.
+        request.app.state.tenant_context_middleware = self
+
         # Skip pour les routes publiques
         if self._is_public_path(request.url.path):
             return await call_next(request)
@@ -66,10 +77,11 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             tenant_id = request.headers.get("X-Tenant-ID")
             if tenant_id:
                 # En dev, on accepte n'importe quel tenant ID
+                dev_plan = _plan_config("enterprise")  # Full access en dev
                 request.state.tenant_id = tenant_id
-                request.state.tenant_plan = "enterprise"  # Full access en dev
-                request.state.tenant_features = DEFAULT_TENANT_FEATURES
-                request.state.tenant_rate_limit = 1000
+                request.state.tenant_plan = "enterprise"
+                request.state.tenant_features = dev_plan["features"]
+                request.state.tenant_rate_limit = dev_plan["rate_limit_rpm"]
 
                 response = await call_next(request)
                 response.headers["X-Tenant-ID"] = tenant_id
@@ -170,11 +182,13 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 tenant = await TenantRepository(session).get_by_api_key_hash(api_key_hash)
 
             if tenant:
+                plan_name = (tenant.settings or {}).get("plan", DEFAULT_PLAN)
+                plan = _plan_config(plan_name)
                 tenant_data = {
                     "id": str(tenant.id),
-                    "plan": "standard",
-                    "features": DEFAULT_TENANT_FEATURES,
-                    "rate_limit_rpm": DEFAULT_TENANT_RATE_LIMIT_RPM,
+                    "plan": plan_name,
+                    "features": plan["features"],
+                    "rate_limit_rpm": plan["rate_limit_rpm"],
                     "is_active": tenant.is_active,
                 }
 
