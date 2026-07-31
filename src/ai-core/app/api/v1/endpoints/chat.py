@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from app.core.config.settings import settings
 from app.core.monitoring import get_metrics_collector
 from app.core.security.guardrails import GuardrailResult, guardrails
+from app.infrastructure.database.models.conversation import ConversationStatus
 from app.infrastructure.database.models.message import MessageRole
 from app.infrastructure.database.unit_of_work import UnitOfWork
 from app.infrastructure.llm import get_llm_provider
@@ -536,15 +537,37 @@ async def get_conversation_history(request: Request, conversation_id: str, limit
     """
     Get the history of a conversation.
     """
-    getattr(request.state, "tenant_id", None)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="Tenant context required")
 
-    # TODO: Fetch from database
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+        conv_uuid = uuid.UUID(conversation_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    async with UnitOfWork(tenant_uuid) as uow:
+        conversation = await uow.conversations.get_by_id(conv_uuid)
+        if not conversation:
+            raise HTTPException(status_code=404, detail="Conversation not found")
+
+        db_messages = await uow.messages.get_by_conversation(conv_uuid, limit=limit)
+
     return ConversationHistory(
         conversation_id=conversation_id,
-        messages=[],
-        started_at=datetime.utcnow(),
-        last_message_at=datetime.utcnow(),
-        status="active",
+        messages=[
+            {
+                "id": str(m.id),
+                "role": m.role.value.lower(),
+                "content": m.content,
+                "created_at": m.created_at.isoformat(),
+            }
+            for m in db_messages
+        ],
+        started_at=conversation.created_at,
+        last_message_at=db_messages[-1].created_at if db_messages else conversation.created_at,
+        status=conversation.status.value,
     )
 
 
@@ -561,7 +584,22 @@ async def submit_feedback(request: Request, body: FeedbackRequest):
         extra={"tenant_id": tenant_id, "message_id": body.message_id, "rating": body.rating},
     )
 
-    # TODO: Store feedback
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+        message_uuid = uuid.UUID(body.message_id)
+    except (ValueError, AttributeError, TypeError):
+        # message_id du bypass dev ou d'une réponse dégradée (pas de vrai
+        # UUID persisté) - rien à mettre à jour, mais on ne casse pas l'appel.
+        return {"status": "received", "message_id": body.message_id}
+
+    async with UnitOfWork(tenant_uuid) as uow:
+        updated = await uow.messages.update_extra_data(
+            message_uuid,
+            {"rating": body.rating, "feedback_text": body.feedback_text},
+        )
+        if updated:
+            await uow.commit()
+
     return {"status": "received", "message_id": body.message_id}
 
 
@@ -570,7 +608,19 @@ async def end_conversation(request: Request, conversation_id: str):
     """
     End/close a conversation.
     """
-    getattr(request.state, "tenant_id", None)
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="Tenant context required")
 
-    # TODO: Update conversation status
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+        conv_uuid = uuid.UUID(conversation_id)
+    except (ValueError, AttributeError, TypeError):
+        return {"status": "closed", "conversation_id": conversation_id}
+
+    async with UnitOfWork(tenant_uuid) as uow:
+        updated = await uow.conversations.update_status(conv_uuid, ConversationStatus.RESOLVED)
+        if updated:
+            await uow.commit()
+
     return {"status": "closed", "conversation_id": conversation_id}
