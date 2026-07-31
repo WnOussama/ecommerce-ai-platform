@@ -202,8 +202,10 @@ jobs:
         run: bandit -r app/ -ll -ii
 
   # ===========================================================================
-  # DOCKER BUILD (no push - a registry push is added once a deploy target
-  # is chosen)
+  # DOCKER BUILD - pushes to GitHub Container Registry on push to main/dev
+  # (not on PRs). ghcr.io over Docker Hub: no extra account, no anonymous
+  # pull-rate limits to worry about mid-demo, and it rides on the repo's
+  # existing GitHub auth via GITHUB_TOKEN.
   # ===========================================================================
   build:
     name: 🐳 Docker Build
@@ -212,6 +214,9 @@ jobs:
     # up to ~68min to download it before, 10min was never realistic.
     timeout-minutes: 30
     needs: [test, security-scan]
+    permissions:
+      contents: read
+      packages: write
 
     steps:
       - name: Checkout code
@@ -220,13 +225,30 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # ghcr.io requires lowercase image names, but github.repository
+      # preserves the owner's actual case (WnOussama/...) - lowercase it here
+      # rather than inline, since Actions expressions have no case function.
+      - name: Compute lowercase image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/ai-core" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: ${{ env.WORKING_DIR }}
           file: infrastructure/docker/services/ai-core.Dockerfile
-          push: false
-          tags: ai-core:${{ github.sha }}
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:${{ github.ref_name }}
           target: production
           cache-from: type=gha
           cache-to: type=gha,mode=max
