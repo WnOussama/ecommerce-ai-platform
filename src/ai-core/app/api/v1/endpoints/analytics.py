@@ -3,16 +3,55 @@ Analytics Endpoints - Business Analytics & Reports
 """
 
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
+from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from sqlalchemy import Float, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config.settings import settings
+from app.infrastructure.database.connection import get_async_session
+from app.infrastructure.database.models.conversation import Conversation, ConversationStatus
+from app.infrastructure.database.models.coupon import Coupon, CouponStatus
+from app.infrastructure.database.models.message import Message, MessageRole
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _since_for(time_range: "TimeRange") -> datetime:
+    """Résout un TimeRange en borne de date - pas de gestion de fuseau
+    horaire par tenant pour l'instant, tout est en UTC."""
+    now = datetime.now(timezone.utc)
+    days_by_range = {
+        TimeRange.TODAY: 1,
+        TimeRange.YESTERDAY: 2,
+        TimeRange.LAST_7_DAYS: 7,
+        TimeRange.LAST_30_DAYS: 30,
+        TimeRange.THIS_MONTH: 31,
+        TimeRange.LAST_MONTH: 62,
+    }
+    return now - timedelta(days=days_by_range.get(time_range, 7))
+
+
+def _require_tenant_uuid(request: Request) -> UUID:
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="Tenant context required")
+    try:
+        return UUID(str(tenant_id))
+    except ValueError:
+        # Bypass dev avec un identifiant humain (ex. "demo-tenant") - pas de
+        # ligne réelle à agréger, donc pas d'erreur mais rien à mesurer.
+        raise HTTPException(
+            status_code=404,
+            detail="Analytics require a real tenant (dev header bypass has no persisted data)",
+        )
 
 
 # =============================================================================
@@ -86,87 +125,242 @@ class ReportResponse(BaseModel):
 
 
 @router.get("/dashboard", response_model=DashboardResponse)
-async def get_dashboard(request: Request, time_range: TimeRange = TimeRange.LAST_7_DAYS):
+async def get_dashboard(
+    request: Request,
+    time_range: TimeRange = TimeRange.LAST_7_DAYS,
+    db: AsyncSession = Depends(get_async_session),
+):
     """
-    Get main analytics dashboard data.
+    Get main analytics dashboard data - computed from real conversations/
+    messages, not fabricated. Metrics with no real signal yet (e.g. no
+    conversation has ever been marked RESOLVED because nothing calls
+    DELETE /chat/conversation/{id} in the current UI) will honestly show
+    0 rather than an invented number.
     """
-    tenant_id = getattr(request.state, "tenant_id", None)
+    tenant_id = _require_tenant_uuid(request)
+    since = _since_for(time_range)
 
-    if not tenant_id:
-        raise HTTPException(status_code=401, detail="Tenant context required")
+    conv_count = (
+        await db.scalar(
+            select(func.count())
+            .select_from(Conversation)
+            .where(Conversation.tenant_id == tenant_id, Conversation.created_at >= since)
+        )
+        or 0
+    )
 
-    # TODO: Fetch actual analytics
+    resolved_count = (
+        await db.scalar(
+            select(func.count())
+            .select_from(Conversation)
+            .where(
+                Conversation.tenant_id == tenant_id,
+                Conversation.created_at >= since,
+                Conversation.status == ConversationStatus.RESOLVED,
+            )
+        )
+        or 0
+    )
+    resolution_rate = (resolved_count / conv_count * 100) if conv_count else 0.0
+
+    avg_latency_ms = await db.scalar(
+        select(func.avg(Message.latency_ms)).where(
+            Message.tenant_id == tenant_id,
+            Message.role == MessageRole.ASSISTANT,
+            Message.created_at >= since,
+        )
+    )
+    avg_response_seconds = round((avg_latency_ms or 0) / 1000, 2)
+
+    avg_rating = await db.scalar(
+        select(func.avg(func.cast(Message.extra_data["rating"].astext, Float))).where(
+            Message.tenant_id == tenant_id,
+            Message.created_at >= since,
+            Message.extra_data.has_key("rating"),  # noqa: W601 - JSONB operator, not dict.has_key
+        )
+    )
+    satisfaction_score = round(avg_rating, 2) if avg_rating is not None else 0.0
+
     return DashboardResponse(
         metrics=[
-            MetricValue(name="Conversations", value=1250, unit="count", change=15.2, trend="up"),
-            MetricValue(name="Resolution Rate", value=72.5, unit="percent", change=3.1, trend="up"),
-            MetricValue(
-                name="Avg Response Time", value=2.3, unit="seconds", change=-0.5, trend="down"
-            ),
-            MetricValue(name="Satisfaction Score", value=4.1, unit="score", change=0.2, trend="up"),
+            MetricValue(name="Conversations", value=float(conv_count), unit="count"),
+            MetricValue(name="Resolution Rate", value=round(resolution_rate, 1), unit="percent"),
+            MetricValue(name="Avg Response Time", value=avg_response_seconds, unit="seconds"),
+            MetricValue(name="Satisfaction Score", value=satisfaction_score, unit="score"),
         ],
         charts={"conversations_by_day": [], "intents_distribution": [], "satisfaction_trend": []},
-        insights=[
-            {
-                "type": "positive",
-                "title": "Amélioration du taux de résolution",
-                "description": "Le taux de résolution a augmenté de 3.1% cette semaine",
-            }
-        ],
-        generated_at=datetime.utcnow(),
+        insights=[],
+        generated_at=datetime.now(timezone.utc),
     )
 
 
 @router.get("/ai-performance")
-async def get_ai_performance(request: Request, time_range: TimeRange = TimeRange.LAST_7_DAYS):
+async def get_ai_performance(
+    request: Request,
+    time_range: TimeRange = TimeRange.LAST_7_DAYS,
+    db: AsyncSession = Depends(get_async_session),
+):
     """
-    Get AI-specific performance metrics.
+    Get AI-specific performance metrics - computed from real assistant
+    messages (see chat.py's _log_assistant_message for what gets stored
+    in extra_data/tokens_input/tokens_output).
     """
-    getattr(request.state, "tenant_id", None)
+    tenant_id = _require_tenant_uuid(request)
+    since = _since_for(time_range)
+
+    base_filter = (
+        Message.tenant_id == tenant_id,
+        Message.role == MessageRole.ASSISTANT,
+        Message.created_at >= since,
+    )
+
+    total_assistant_msgs = await db.scalar(
+        select(func.count()).select_from(Message).where(*base_filter)
+    )
+
+    if not total_assistant_msgs:
+        return {
+            "intent_accuracy": 0.0,
+            "avg_confidence": 0.0,
+            "hallucination_rate": 0.0,
+            "guardrail_blocks": 0,
+            "llm_cost_usd": 0.0,
+            "avg_tokens_per_request": 0.0,
+            "time_range": time_range.value,
+            "note": "No assistant messages in this time range yet.",
+        }
+
+    # "intent_accuracy" nomme un score de précision au sens classique
+    # (comparaison à une vérité terrain étiquetée), qui n'existe pas ici -
+    # aucun pipeline d'évaluation humaine n'est en place. On calcule à la
+    # place un proxy honnête et documenté: la part des messages où le
+    # classifieur par règles (_classify_intent) a trouvé une intention
+    # spécifique plutôt que de retomber sur "general".
+    specific_intent_count = await db.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(*base_filter, Message.extra_data["intent"].astext != "general")
+    )
+    intent_accuracy_proxy = (specific_intent_count or 0) / total_assistant_msgs
+
+    avg_confidence = await db.scalar(
+        select(func.avg(func.cast(Message.extra_data["confidence"].astext, Float))).where(
+            *base_filter
+        )
+    )
+
+    hallucination_count = await db.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(*base_filter, Message.extra_data["hallucination_flagged"].astext == "true")
+    )
+    hallucination_rate = (hallucination_count or 0) / total_assistant_msgs
+
+    guardrail_blocks = await db.scalar(
+        select(func.count())
+        .select_from(Message)
+        .where(
+            Message.tenant_id == tenant_id,
+            Message.created_at >= since,
+            Message.extra_data["guardrail_blocked"].astext == "true",
+        )
+    )
+
+    total_input_tokens = (
+        await db.scalar(select(func.sum(Message.tokens_input)).where(*base_filter)) or 0
+    )
+    total_output_tokens = (
+        await db.scalar(select(func.sum(Message.tokens_output)).where(*base_filter)) or 0
+    )
+    llm_cost_usd = (
+        total_input_tokens / 1000 * settings.llm.cost_per_1k_input_tokens
+        + total_output_tokens / 1000 * settings.llm.cost_per_1k_output_tokens
+    )
+    avg_tokens_per_request = (total_input_tokens + total_output_tokens) / total_assistant_msgs
 
     return {
-        "intent_accuracy": 0.87,
-        "avg_confidence": 0.82,
-        "hallucination_rate": 0.03,
-        "guardrail_blocks": 12,
-        "llm_cost_usd": 45.67,
-        "avg_tokens_per_request": 850,
-        "cache_hit_rate": 0.32,
+        "intent_accuracy": round(intent_accuracy_proxy, 3),
+        "avg_confidence": round(avg_confidence, 3) if avg_confidence is not None else 0.0,
+        "hallucination_rate": round(hallucination_rate, 3),
+        "guardrail_blocks": guardrail_blocks or 0,
+        "llm_cost_usd": round(llm_cost_usd, 4),
+        "avg_tokens_per_request": round(avg_tokens_per_request, 1),
         "time_range": time_range.value,
     }
 
 
 @router.get("/customers")
-async def get_customer_analytics(request: Request, time_range: TimeRange = TimeRange.LAST_30_DAYS):
+async def get_customer_analytics(
+    request: Request,
+    time_range: TimeRange = TimeRange.LAST_30_DAYS,
+    db: AsyncSession = Depends(get_async_session),
+):
     """
     Get customer analytics.
+
+    NOTE: il n'existe pas de table `customers` dans ce projet - le chat
+    identifie ses interlocuteurs par un `user_identifier` libre porté par
+    la conversation (session_id, customer_id de la boutique, ou un
+    identifiant anonyme). On compte donc des interlocuteurs distincts
+    réels, pas des "clients" au sens CRM, et on ne renvoie ni
+    segmentation (vip/at_risk/...) ni engagement_rate : ces notions
+    n'ont aucune source de données ici et étaient purement inventées.
     """
-    getattr(request.state, "tenant_id", None)
+    tenant_id = _require_tenant_uuid(request)
+    since = _since_for(time_range)
+
+    distinct_users = await db.scalar(
+        select(func.count(func.distinct(Conversation.user_identifier))).where(
+            Conversation.tenant_id == tenant_id
+        )
+    )
+    active_users = await db.scalar(
+        select(func.count(func.distinct(Conversation.user_identifier))).where(
+            Conversation.tenant_id == tenant_id, Conversation.created_at >= since
+        )
+    )
 
     return {
-        "total_customers": 5420,
-        "active_customers": 3200,
-        "new_customers": 450,
-        "segments": {"vip": 320, "regular": 2100, "at_risk": 580, "new": 450},
-        "engagement_rate": 0.65,
+        "total_identified_users": distinct_users or 0,
+        "active_users": active_users or 0,
         "time_range": time_range.value,
     }
 
 
 @router.get("/coupons")
-async def get_coupon_analytics(request: Request, time_range: TimeRange = TimeRange.LAST_30_DAYS):
+async def get_coupon_analytics(
+    request: Request,
+    time_range: TimeRange = TimeRange.LAST_30_DAYS,
+    db: AsyncSession = Depends(get_async_session),
+):
     """
     Get coupon usage analytics.
+
+    NOTE: pas de `avg_order_with/without_coupon` - le projet ne stocke
+    aucune commande (pas de table orders), ces chiffres étaient inventés.
     """
-    getattr(request.state, "tenant_id", None)
+    tenant_id = _require_tenant_uuid(request)
+    since = _since_for(time_range)
+
+    generated = await db.scalar(
+        select(func.count())
+        .select_from(Coupon)
+        .where(Coupon.tenant_id == tenant_id, Coupon.created_at >= since)
+    )
+    used = await db.scalar(
+        select(func.count())
+        .select_from(Coupon)
+        .where(
+            Coupon.tenant_id == tenant_id,
+            Coupon.created_at >= since,
+            Coupon.status == CouponStatus.USED,
+        )
+    )
 
     return {
-        "coupons_generated": 125,
-        "coupons_used": 89,
-        "conversion_rate": 0.712,
-        "total_discount_given": 1234.56,
-        "avg_order_with_coupon": 85.30,
-        "avg_order_without_coupon": 62.10,
+        "coupons_generated": generated or 0,
+        "coupons_used": used or 0,
+        "conversion_rate": round((used or 0) / generated, 3) if generated else 0.0,
         "time_range": time_range.value,
     }
 
@@ -175,29 +369,31 @@ async def get_coupon_analytics(request: Request, time_range: TimeRange = TimeRan
 async def generate_report(request: Request, body: ReportRequest):
     """
     Generate a custom report.
-    For large reports, returns a report_id to check status.
+
+    NOT IMPLEMENTED. Cet endpoint renvoyait auparavant un
+    report_id="rpt_placeholder" avec status="ready" et un contenu
+    factice - un client suivant le contrat de l'API aurait cru un
+    rapport disponible et n'aurait jamais rien reçu. Tant que la
+    génération (probablement asynchrone via la file de messages
+    existante) n'est pas construite, on renvoie explicitement 501
+    plutôt que de simuler un succès.
     """
     tenant_id = getattr(request.state, "tenant_id", None)
 
     logger.info(
-        "Generating report",
+        "Report generation requested but not implemented",
         extra={"tenant_id": tenant_id, "report_type": body.report_type, "format": body.format},
     )
 
-    # TODO: Implement report generation (possibly async via queue)
-    return ReportResponse(
-        report_id="rpt_placeholder",
-        type=body.report_type,
-        status="ready",
-        data={"summary": "Report data placeholder", "generated_at": datetime.utcnow().isoformat()},
+    raise HTTPException(
+        status_code=501,
+        detail="Report generation is not implemented yet. Use the /analytics/* endpoints instead.",
     )
 
 
 @router.get("/report/{report_id}")
 async def get_report_status(request: Request, report_id: str):
     """
-    Get status of a generated report.
+    Get status of a generated report. NOT IMPLEMENTED - voir generate_report.
     """
-    getattr(request.state, "tenant_id", None)
-
-    return {"report_id": report_id, "status": "ready", "download_url": None}
+    raise HTTPException(status_code=501, detail="Report generation is not implemented yet.")

@@ -20,7 +20,12 @@ class AiPerformanceOverview extends BaseWidget
         }
 
         return [
-            Stat::make('Précision d\'intention', number_format(($data['intent_accuracy'] ?? 0) * 100, 1).'%')
+            // Pas une "précision" au sens classique (aucune vérité terrain
+            // étiquetée n'existe) - c'est la part des messages où le
+            // classifieur a trouvé une intention spécifique. Le libellé le
+            // dit explicitement pour ne pas surinterpréter le chiffre.
+            Stat::make('Intentions reconnues', number_format(($data['intent_accuracy'] ?? 0) * 100, 1).'%')
+                ->description('Part des messages hors catégorie "general"')
                 ->color('success'),
 
             Stat::make('Taux d\'hallucination', number_format(($data['hallucination_rate'] ?? 0) * 100, 1).'%')

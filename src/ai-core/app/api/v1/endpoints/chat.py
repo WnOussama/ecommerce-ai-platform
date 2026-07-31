@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from app.core.config.settings import settings
 from app.core.monitoring import get_metrics_collector
-from app.core.security.guardrails import GuardrailResult, guardrails
+from app.core.security.guardrails import GuardrailCategory, GuardrailResult, guardrails
 from app.infrastructure.database.models.conversation import ConversationStatus
 from app.infrastructure.database.models.message import MessageRole
 from app.infrastructure.database.unit_of_work import UnitOfWork
@@ -281,6 +281,7 @@ async def send_message(request: Request, body: ChatMessageRequest):
         if output_report.sanitized_content:
             response_text = output_report.sanitized_content
 
+        hallucination_flagged = False
         for check in output_report.checks:
             if check.result in (GuardrailResult.WARN, GuardrailResult.BLOCK):
                 metrics.record_guardrail_trigger(
@@ -288,6 +289,8 @@ async def send_message(request: Request, body: ChatMessageRequest):
                     check.category.value,
                     "warned" if check.result == GuardrailResult.WARN else "blocked",
                 )
+                if check.category == GuardrailCategory.HALLUCINATION:
+                    hallucination_flagged = True
 
         # =====================================================================
         # ÉTAPE 5: Classifier l'intention
@@ -321,7 +324,12 @@ async def send_message(request: Request, body: ChatMessageRequest):
             tenant_id,
             conversation_id,
             response_text,
-            extra_data={"intent": intent, "products_found": len(retrieved_products)},
+            extra_data={
+                "intent": intent,
+                "products_found": len(retrieved_products),
+                "confidence": confidence,
+                "hallucination_flagged": hallucination_flagged,
+            },
             latency_ms=processing_time_ms,
             tokens_input=input_tokens,
             tokens_output=output_tokens,
