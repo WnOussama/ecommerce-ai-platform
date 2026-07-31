@@ -38,8 +38,16 @@ return [
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',
             'foreign_key_constraints' => env('DB_FOREIGN_KEYS', true),
-            'busy_timeout' => null,
-            'journal_mode' => null,
+            // Sessions and cache both live in this same SQLite file (see
+            // config/session.php, config/cache.php), and PHP's dev server
+            // now runs multiple worker processes (PHP_CLI_SERVER_WORKERS) -
+            // SQLite's default rollback-journal mode allows only one writer
+            // at a time and busy_timeout=null means zero retry, so
+            // concurrent requests could throw "database is locked". WAL
+            // allows concurrent readers alongside a writer, and a busy
+            // timeout makes writers wait instead of failing immediately.
+            'busy_timeout' => 5000,
+            'journal_mode' => 'WAL',
             'synchronous' => null,
             'transaction_mode' => 'DEFERRED',
         ],
