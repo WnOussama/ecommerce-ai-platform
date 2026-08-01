@@ -153,6 +153,36 @@ class ReportResponse(BaseModel):
     download_url: Optional[str] = None
 
 
+class ExpensiveMessage(BaseModel):
+    """One assistant message, for the cost report's "most expensive
+    recent messages" list."""
+
+    message_id: str
+    conversation_id: str
+    content_preview: str
+    tokens_input: int
+    tokens_output: int
+    cost_usd: float
+    latency_ms: Optional[int] = None
+    created_at: datetime
+
+
+class CostReportResponse(BaseModel):
+    """Per-tenant token/cost tracking - computed from messages.tokens_input/
+    tokens_output/latency_ms, the same real columns _log_assistant_message
+    writes on every chat turn."""
+
+    time_range: TimeRange
+    total_messages: int
+    total_tokens_input: int
+    total_tokens_output: int
+    total_cost_usd: float
+    avg_latency_ms: float
+    conversation_count: int
+    cost_per_conversation_usd: float
+    recent_expensive_messages: List[ExpensiveMessage]
+
+
 # =============================================================================
 # ENDPOINTS
 # =============================================================================
@@ -410,6 +440,116 @@ async def get_ai_performance(
         "avg_tokens_per_request": round(avg_tokens_per_request, 1),
         "time_range": time_range.value,
     }
+
+
+@router.get("/cost-report", response_model=CostReportResponse)
+async def get_cost_report(
+    request: Request,
+    time_range: TimeRange = TimeRange.LAST_30_DAYS,
+    limit: int = 10,
+    db: AsyncSession = Depends(get_async_session),
+):
+    """
+    Per-tenant token/cost tracking for the backoffice's cost page: totals,
+    avg latency, cost-per-conversation, and the most expensive recent
+    messages - all computed from messages.tokens_input/tokens_output/
+    latency_ms, real columns written on every chat turn (see
+    chat.py::_log_assistant_message). Not a new data source, just a report
+    over data that already existed and was never surfaced.
+    """
+    tenant_id = _require_tenant_uuid(request)
+    since = _since_for(time_range)
+
+    base_filter = (
+        Message.tenant_id == tenant_id,
+        Message.role == MessageRole.ASSISTANT,
+        Message.created_at >= since,
+    )
+
+    total_messages = (
+        await db.scalar(select(func.count()).select_from(Message).where(*base_filter)) or 0
+    )
+
+    if not total_messages:
+        return CostReportResponse(
+            time_range=time_range,
+            total_messages=0,
+            total_tokens_input=0,
+            total_tokens_output=0,
+            total_cost_usd=0.0,
+            avg_latency_ms=0.0,
+            conversation_count=0,
+            cost_per_conversation_usd=0.0,
+            recent_expensive_messages=[],
+        )
+
+    total_input_tokens = (
+        await db.scalar(
+            select(func.coalesce(func.sum(Message.tokens_input), 0)).where(*base_filter)
+        )
+        or 0
+    )
+    total_output_tokens = (
+        await db.scalar(
+            select(func.coalesce(func.sum(Message.tokens_output), 0)).where(*base_filter)
+        )
+        or 0
+    )
+    avg_latency_ms = await db.scalar(select(func.avg(Message.latency_ms)).where(*base_filter))
+
+    total_cost_usd = (
+        total_input_tokens / 1000 * settings.llm.cost_per_1k_input_tokens
+        + total_output_tokens / 1000 * settings.llm.cost_per_1k_output_tokens
+    )
+
+    conversation_count = (
+        await db.scalar(
+            select(func.count(func.distinct(Message.conversation_id))).where(*base_filter)
+        )
+        or 0
+    )
+    cost_per_conversation_usd = (
+        round(total_cost_usd / conversation_count, 4) if conversation_count else 0.0
+    )
+
+    cost_expr = func.coalesce(Message.tokens_input, 0) / 1000.0 * float(
+        settings.llm.cost_per_1k_input_tokens
+    ) + func.coalesce(Message.tokens_output, 0) / 1000.0 * float(
+        settings.llm.cost_per_1k_output_tokens
+    )
+    expensive_stmt = (
+        select(Message, cost_expr.label("cost"))
+        .where(*base_filter)
+        .order_by(cost_expr.desc())
+        .limit(limit)
+    )
+    rows = (await db.execute(expensive_stmt)).all()
+
+    recent_expensive_messages = [
+        ExpensiveMessage(
+            message_id=str(m.id),
+            conversation_id=str(m.conversation_id),
+            content_preview=(m.content or "")[:120],
+            tokens_input=m.tokens_input or 0,
+            tokens_output=m.tokens_output or 0,
+            cost_usd=round(cost, 6),
+            latency_ms=m.latency_ms,
+            created_at=m.created_at,
+        )
+        for m, cost in rows
+    ]
+
+    return CostReportResponse(
+        time_range=time_range,
+        total_messages=total_messages,
+        total_tokens_input=total_input_tokens,
+        total_tokens_output=total_output_tokens,
+        total_cost_usd=round(total_cost_usd, 4),
+        avg_latency_ms=round(avg_latency_ms or 0, 1),
+        conversation_count=conversation_count,
+        cost_per_conversation_usd=cost_per_conversation_usd,
+        recent_expensive_messages=recent_expensive_messages,
+    )
 
 
 @router.get("/customers")
