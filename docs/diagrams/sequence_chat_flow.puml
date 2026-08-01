@@ -1,0 +1,57 @@
+@startuml Rules_Evaluation_Flow
+
+title Rules evaluation flow (RuleEvaluator + chat.py action dispatch)
+
+start
+
+:load tenant's active rules\n(RuleRepository.list_active, ordered by priority ASC);
+
+if (any rules for this tenant?) then (no)
+    :continue chat normally\n(no rule applied);
+    stop
+endif
+
+partition "RuleEvaluator.evaluate() - pure, no DB, no side effects" {
+    :message_lower = message.lower();
+    repeat :for each rule, in priority order;
+        if (rule.conditions is empty?) then (yes)
+            :never matches\n(an empty-condition rule must not match everything by accident);
+        else (no)
+            if (conditions.intent set AND intent != conditions.intent?) then (yes)
+                :skip this rule;
+            elseif (conditions.keywords_any set AND no keyword found in message?) then (yes)
+                :skip this rule;
+            elseif (conditions.keywords_all set AND not all keywords found?) then (yes)
+                :skip this rule;
+            else (all conditions satisfied)
+                :return this rule as the match\n(first match wins - stop iterating);
+                break
+            endif
+        endif
+    repeat while (more rules?) is (yes)
+}
+
+if (a rule matched?) then (no)
+    :continue chat normally\n(no rule applied);
+    stop
+endif
+
+switch (rule.action.type)
+case (canned_response)
+    :skip RAG and LLM entirely;
+    :response = action.text;
+case (inject_instruction)
+    :append action.instruction\nto the system prompt sent to the LLM;
+    :continue to RAG + LLM as usual;
+case (generate_coupon)
+    :continue to RAG + LLM as usual;
+    :after the LLM response, create a real coupon\n(CouponRepository, rule_id = this rule's id);
+    :append {type: "generate_coupon", data: {code, ...}} to actions[];
+endswitch
+
+:increment_usage(rule);
+:emit analytics event "rule_triggered"\n(entity_type=rule, payload includes action_type);
+
+stop
+
+@enduml

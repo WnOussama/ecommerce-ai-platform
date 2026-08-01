@@ -1,119 +1,181 @@
 # SaaS AI E-commerce Assistant
 
-## 🎯 Vue d'Ensemble
+An AI chat assistant for e-commerce sites (PrestaShop today; Shopify/WooCommerce
+adapters scaffolded but not wired up), plus an admin backoffice for tenants to
+configure it and see what it's actually doing.
 
-Solution SaaS complète pour sites e-commerce intégrant:
-- **Chatbot AI** intelligent pour le support client 24/7
-- **Système de recommandations** personnalisées
-- **Génération de coupons** intelligente basée sur la fidélité
-- **FAQ dynamique** générée par IA
-- **Dashboard Analytics** pour administrateurs
-- **Agent IA Admin** pour commandes marketing avancées
+## What's real here
 
-**Plateformes supportées:** PrestaShop (v1.0), Shopify & WooCommerce (roadmap)
+This project went through a deliberate pass to replace every fabricated number
+and stubbed endpoint with something computed from real data - there is no
+`orders` table, so there is no revenue, no order count, no fake "Product A"
+in a report. If a metric isn't backed by a real column, it's either omitted
+or the endpoint honestly returns `501 Not Implemented`.
 
-## 📁 Structure du Projet
+- **Chat** (`/api/v1/chat/message`) - RAG-backed product search (ChromaDB +
+  embeddings), guardrails (prompt-injection detection, PII masking, output
+  sanitization), conversations/messages persisted to Postgres.
+- **Tenant rules engine** (`/api/v1/rules`) - conditions (`intent`,
+  `keywords_any`/`keywords_all`) matched against each message, actions
+  (`canned_response`, `inject_instruction`, `generate_coupon`) applied before
+  the LLM call. Editable from the backoffice without touching JSON.
+- **Admin AI agent** (`/api/v1/admin/command`) - a small set of *predefined*
+  actions (no free-form execution), each risk-classified (LOW/MEDIUM/HIGH/
+  CRITICAL) and gated by a real dry-run → confirm → (double-confirm / human
+  approval) → execute workflow, backed by Redis so it survives restarts and
+  is shared across workers.
+- **Insights** (`/api/v1/insights/summary`) - most-requested products, unmet
+  demand (searches that returned nothing - a real catalog-gap signal),
+  intent distribution, peak hours, coupon conversion, low stock. Computed
+  from `messages`/`conversations`/`products`/`coupons`, not invented.
+- **Analytics** (`/api/v1/analytics/*`) - dashboard metrics, per-day chart
+  series, AI performance (guardrail blocks, hallucination-flag rate, LLM
+  cost), and a cost/message report (tokens, cost-per-conversation, most
+  expensive recent messages).
+- **Recommendations** (`/api/v1/recommendations/*`) - content-based
+  "similar products" via the vector store, "trending" from real chat-demand
+  counts.
+- **Backoffice** (Laravel/Filament) - a pure REST client over the AI Core API
+  (no direct database access, enforced by architecture, not just convention).
+  Dashboard with real chart widgets, a chat-transcript admin agent page,
+  rules CRUD, cost/message tracking, a conversations browser, and the
+  insights page above.
+
+## Architecture
+
+A single FastAPI application (`ai-core`) owns Postgres exclusively; the
+Laravel backoffice talks to it only over HTTP. No other service touches the
+database directly.
 
 ```
-sass-app/
-├── src/
-│   ├── ai-core/                    # 🧠 Backend AI (FastAPI/Python)
-│   │   ├── app/
-│   │   │   ├── api/                # Endpoints REST
-│   │   │   │   ├── v1/endpoints/   # Chat, Recommendations, Coupons, Admin
-│   │   │   │   ├── middleware/     # Rate limiting, Auth, Logging
-│   │   │   │   └── dependencies/   # Injection de dépendances
-│   │   │   ├── domain/             # Logique métier (DDD)
-│   │   │   │   ├── entities/       # Modèles de domaine
-│   │   │   │   ├── services/       # Client Agent, Admin Agent
-│   │   │   │   └── repositories/   # Interfaces repositories
-│   │   │   ├── infrastructure/     # Implémentations
-│   │   │   │   ├── database/       # SQLAlchemy models, migrations
-│   │   │   │   ├── cache/          # Redis client
-│   │   │   │   ├── vector_store/   # ChromaDB service
-│   │   │   │   └── llm/            # OpenAI/Anthropic service
-│   │   │   └── core/               # Configuration, Sécurité
-│   │   └── tests/                  # Tests unitaires, intégration, AI eval
-│   │
-│   ├── platform-adapters/          # 🔌 Plugins e-commerce
-│   │   ├── prestashop/             # Plugin PrestaShop (PHP)
-│   │   ├── shopify/                # (Future) App Shopify
-│   │   └── woocommerce/            # (Future) Plugin WordPress
-│   │
-│   └── backoffice/                 # 📊 Dashboard Admin (Laravel)
-│
-├── infrastructure/
-│   ├── docker/                     # 🐳 Configuration Docker
-│   │   ├── docker-compose.yml      # Orchestration services
-│   │   ├── services/               # Dockerfiles par service
-│   │   ├── monitoring/             # Prometheus, Grafana, Loki
-│   │   └── nginx/                  # Reverse proxy config
-│   ├── ci-cd/                      # 🚀 GitHub Actions workflows
-│   └── scripts/                    # Scripts utilitaires
-│
-└── docs/                           # 📚 Documentation
-    ├── architecture/               # Diagrammes, décisions techniques
-    ├── api/                        # Spécifications OpenAPI
-    └── deployment/                 # Guides de déploiement
+┌──────────────┐        ┌──────────────────────────────┐
+│  Storefront  │──chat─▶│                                │
+│  (PrestaShop)│        │   ai-core (FastAPI, Python)    │
+└──────────────┘        │                                │
+                         │  chat · rules · admin agent    │
+┌──────────────┐  REST   │  insights · analytics · recos  │
+│  Backoffice  │────────▶│                                │
+│ (Laravel/    │         └──────┬──────────┬──────────────┘
+│  Filament)   │                │          │
+└──────────────┘                ▼          ▼
+                          ┌───────────┐ ┌─────────┐   ┌───────────┐
+                          │ PostgreSQL│ │  Redis  │   │  ChromaDB │
+                          │ (owner:   │ │ (rate   │   │ (product  │
+                          │  ai-core) │ │ limits, │   │  vectors) │
+                          │           │ │ admin   │   │           │
+                          │           │ │ safety) │   │           │
+                          └───────────┘ └─────────┘   └───────────┘
 ```
 
-## 🚀 Démarrage Rapide
+See `docs/diagrams/` for the full C4 container diagram, the chat request
+sequence (guardrails → rules → RAG → persistence), and the rules-evaluation
+flow.
 
-### Prérequis
+## Project structure
 
-- Docker & Docker Compose v2+
-- Python 3.11+ (développement local)
-- Clé API OpenAI
+```
+src/
+├── ai-core/                 # FastAPI backend (owns Postgres exclusively)
+│   ├── app/
+│   │   ├── api/v1/endpoints/    # chat, rules, admin, analytics, insights,
+│   │   │                        # recommendations, coupons, faq, tenants
+│   │   ├── core/security/       # guardrails, admin_safety (dry-run/confirm/rollback)
+│   │   ├── domain/services/admin/  # AdminAgent - predefined-action executor
+│   │   ├── infrastructure/database/ # SQLAlchemy models, repositories, UnitOfWork
+│   │   └── services/            # rules evaluator, insights, RAG/retrieval
+│   └── tests/                   # unit, integration (real Postgres), ai_evaluation
+│
+├── platform-adapters/        # e-commerce plugins
+│   ├── prestashop/               # active
+│   ├── shopify/                  # scaffolded, not wired up
+│   └── woocommerce/              # scaffolded, not wired up
+│
+└── backoffice/               # Laravel/Filament admin panel (REST client only)
+    ├── app/Filament/Pages/       # Dashboard, AdminAgent, Rules, CostTracking,
+    │                             # Conversations, Insights, TenantSettings
+    ├── app/Filament/Widgets/     # chart widgets (conversations, LLM cost,
+    │                             # guardrail blocks, intent distribution)
+    └── app/Services/AiCoreClient.php  # the only thing allowed to call ai-core
 
-### Installation
+infrastructure/
+├── docker/                   # docker-compose.dev.yml, per-service Dockerfiles
+└── scripts/demo-day.sh       # one-command stack + public tunnel for a live demo
+
+docs/
+├── diagrams/                 # PlantUML (C4 container, sequences, rules flow)
+└── api/                      # exported OpenAPI schema
+```
+
+## Quick start
+
+**Prerequisites:** Docker & Docker Compose v2+.
 
 ```bash
-# 1. Cloner le repository
-git clone https://github.com/your-org/saas-ai-ecommerce.git
-cd saas-ai-ecommerce
-
-# 2. Copier les fichiers d'environnement
 cp infrastructure/docker/.env.example infrastructure/docker/.env
+```
 
-# 3. Configurer les variables (éditer .env)
+Edit `.env`:
+- `LLM_PROVIDER=mock` works out of the box, no API key, no cost - this is
+  what the test suite runs against. Set `openai` or `anthropic` (with the
+  matching `*_API_KEY`) for real model responses.
+- `BACKOFFICE_APP_KEY` - generate with `php artisan key:generate --show`
+  from `src/backoffice` (needs a local PHP/Composer install), or leave it
+  and let the container fail once with a clear error telling you to set it.
+- `BACKOFFICE_TENANT_ID` - there's no tenant signup UI yet; seed a demo
+  tenant first (see below) and paste its UUID here so the backoffice's
+  dev-mode `X-Tenant-ID` header has something real to point at.
 
-# 4. Lancer les services
-cd infrastructure/docker
-docker-compose up -d
+```bash
+# Start everything
+cd infrastructure/docker && docker compose -f docker-compose.dev.yml up -d
+
+# Seed a demo tenant + product catalog + default rules, prints the tenant UUID
+docker exec saas_ai_core python -m scripts.seed_demo_data
 ```
 
 ### Services
 
-| Service | URL | Description |
-|---------|-----|-------------|
-| AI Core API | http://localhost:8000 | API principale |
-| API Docs | http://localhost:8000/docs | Swagger |
-| Grafana | http://localhost:3000 | Monitoring |
+| Service | URL | Notes |
+|---|---|---|
+| AI Core API | http://localhost:8000 | `/docs` for Swagger, `/health` for the healthcheck |
+| Backoffice | http://127.0.0.1:8090/admin | use `127.0.0.1`, not `localhost` |
+| Grafana | http://localhost:3000 | admin/admin by default |
+| Prometheus | http://localhost:9090 | |
 
-## 🧪 Tests
+For a live public demo: `infrastructure/scripts/demo-day.sh` brings up the
+stack and opens a Cloudflare Quick Tunnel.
+
+## Tests
 
 ```bash
-cd src/ai-core
+# ai-core (506+ tests: unit + integration against real Postgres + AI eval)
+docker exec saas_ai_core sh -c "cd /app && python -m pytest tests/ -q"
+docker exec saas_ai_core sh -c "cd /app && ruff check . && ruff format --check ."
 
-# Tests unitaires
-pytest tests/unit/ -v
-
-# Tests intégration
-pytest tests/integration/ -v
-
-# Tests évaluation IA
-pytest tests/ai_evaluation/ -v
+# backoffice
+cd src/backoffice
+php artisan test
+vendor/bin/pint --test
 ```
 
-## 📖 Documentation
+## Design notes worth knowing before you dig in
 
-- [Architecture Technique](docs/architecture/ARCHITECTURE.md)
+- **No orders table.** The PrestaShop client only pulls products and
+  categories. Every "demand" signal in this project (most-requested
+  products, trending, unmet demand) comes from what customers actually
+  *asked the chatbot for*, not from sales data that doesn't exist here.
+- **The admin agent doesn't do free-form execution.** `AdminCommandParser`
+  only recognizes a fixed set of actions; anything else is rejected. This
+  is a deliberate boundary, not a missing feature - see
+  `app/core/security/admin_safety.py`.
+- **Multi-tenancy in dev** uses an `X-Tenant-ID` header accepted only when
+  `ENVIRONMENT=development`; there's no tenant signup/API-key issuance flow
+  yet (see `docs/deployment/docker.md`).
 
-## 📝 Licence
+## License
 
-MIT License
+MIT
 
 ---
 
 **Projet PFE** - 2025-2026
-

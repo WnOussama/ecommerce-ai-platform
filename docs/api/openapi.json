@@ -1,0 +1,3679 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SaaS AI E-commerce Assistant",
+    "description": "SaaS AI Assistant for E-commerce - Production API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health Check",
+        "description": "Basic health check endpoint.\nReturns service status and timestamp.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/live": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Liveness Check",
+        "description": "Liveness probe for Kubernetes.\n\nChecks if the process is alive and can respond.\nDoes NOT check external dependencies.\n\nReturns:\n    200 if alive\n    503 if dead (should never happen if this responds)",
+        "operationId": "liveness_check_health_live_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Readiness Check",
+        "description": "Readiness probe for Kubernetes.\n\nChecks if the service can receive traffic.\nAll CRITICAL dependencies must be healthy.\n\nReturns:\n    200 if ready to receive traffic\n    503 if not ready (Kubernetes will stop sending traffic)",
+        "operationId": "readiness_check_health_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/full": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Full Health Check",
+        "description": "Full health check with all components.\n\nReturns detailed status of:\n- Redis\n- MySQL\n- ChromaDB\n- LLM Provider\n\nReturns:\n    200 if all healthy\n    200 with degraded status if non-critical components unhealthy\n    503 if critical components unhealthy",
+        "operationId": "full_health_check_health_full_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/db": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Database Health Check",
+        "description": "Database health check endpoint.\n\nChecks PostgreSQL connection status.\nFastAPI is the SOLE owner of this database.\n\nReturns:\n    200 if database is healthy\n    503 if database is unreachable",
+        "operationId": "database_health_check_health_db_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/message": {
+      "post": {
+        "tags": [
+          "Chat - Client AI"
+        ],
+        "summary": "Send Message",
+        "description": "Send a message to the AI assistant and get a response.\n\nThis endpoint handles:\n- Intent classification\n- Context retrieval (RAG) - searches relevant products\n- Response generation with product context\n- Action extraction",
+        "operationId": "send_message_api_v1_chat_message_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatMessageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/conversations": {
+      "get": {
+        "tags": [
+          "Chat - Client AI"
+        ],
+        "summary": "List Conversations",
+        "description": "List conversations for the tenant, most recent first - backs the\nbackoffice's conversation browser. No such endpoint existed before;\nonly a lookup by a known conversation_id (GET /history/{id}) did.",
+        "operationId": "list_conversations_api_v1_chat_conversations_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 0,
+              "title": "Offset"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/history/{conversation_id}": {
+      "get": {
+        "tags": [
+          "Chat - Client AI"
+        ],
+        "summary": "Get Conversation History",
+        "description": "Get the history of a conversation.",
+        "operationId": "get_conversation_history_api_v1_chat_history__conversation_id__get",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationHistory"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/feedback": {
+      "post": {
+        "tags": [
+          "Chat - Client AI"
+        ],
+        "summary": "Submit Feedback",
+        "description": "Submit feedback on an AI response.\nUsed for improving the model and tracking satisfaction.",
+        "operationId": "submit_feedback_api_v1_chat_feedback_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FeedbackRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/chat/conversation/{conversation_id}": {
+      "delete": {
+        "tags": [
+          "Chat - Client AI"
+        ],
+        "summary": "End Conversation",
+        "description": "End/close a conversation.",
+        "operationId": "end_conversation_api_v1_chat_conversation__conversation_id__delete",
+        "parameters": [
+          {
+            "name": "conversation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Conversation Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recommendations": {
+      "post": {
+        "tags": [
+          "Recommendations"
+        ],
+        "summary": "Get Recommendations",
+        "description": "Get AI-powered product recommendations.\n\nDelegates to a real strategy: content-based similarity if\n`product_id` is given, otherwise trending/popularity. There is no\npurchase history in this project, so `customer_id`-only requests\nhonestly return an empty, \"not_available\" response rather than a\nfabricated personalized list.",
+        "operationId": "get_recommendations_api_v1_recommendations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecommendationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recommendations/similar/{product_id}": {
+      "get": {
+        "tags": [
+          "Recommendations"
+        ],
+        "summary": "Get Similar Products",
+        "description": "Get products similar to a given product, via real ChromaDB vector similarity.",
+        "operationId": "get_similar_products_api_v1_recommendations_similar__product_id__get",
+        "parameters": [
+          {
+            "name": "product_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Product Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 5,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/recommendations/trending": {
+      "get": {
+        "tags": [
+          "Recommendations"
+        ],
+        "summary": "Get Trending Products",
+        "description": "Get trending products, from real chat-demand counts (InsightsService).",
+        "operationId": "get_trending_products_api_v1_recommendations_trending_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 7,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecommendationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/coupons/generate": {
+      "post": {
+        "tags": [
+          "Coupons"
+        ],
+        "summary": "Generate Coupon",
+        "description": "Generate a personalized coupon for a customer, persisted with a real\nunique code. Discount tiers are a deterministic rule table keyed by\n`reason` - not a trained model, and the response no longer claims one.",
+        "operationId": "generate_coupon_api_v1_coupons_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CouponGenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CouponGenerateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/coupons/validate": {
+      "post": {
+        "tags": [
+          "Coupons"
+        ],
+        "summary": "Validate Coupon",
+        "description": "Validate a coupon code for a customer. A code that doesn't exist for\nthis tenant, is expired, already used, or below its minimum purchase\nis rejected - previously every code was accepted unconditionally.",
+        "operationId": "validate_coupon_api_v1_coupons_validate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CouponValidateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CouponValidateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/coupons/customer/{customer_id}": {
+      "get": {
+        "tags": [
+          "Coupons"
+        ],
+        "summary": "Get Customer Coupons",
+        "description": "Get all coupons for a customer, from the database.",
+        "operationId": "get_customer_coupons_api_v1_coupons_customer__customer_id__get",
+        "parameters": [
+          {
+            "name": "customer_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Customer Id"
+            }
+          },
+          {
+            "name": "active_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Active Only"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/rules": {
+      "get": {
+        "tags": [
+          "Rules"
+        ],
+        "summary": "List Rules",
+        "description": "List all rules for the tenant (active and inactive), ordered by priority.",
+        "operationId": "list_rules_api_v1_rules_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RuleResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Rules Api V1 Rules Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Rules"
+        ],
+        "summary": "Create Rule",
+        "description": "Create a new tenant rule.",
+        "operationId": "create_rule_api_v1_rules_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/rules/{rule_id}": {
+      "get": {
+        "tags": [
+          "Rules"
+        ],
+        "summary": "Get Rule",
+        "description": "Get a single rule by id.",
+        "operationId": "get_rule_api_v1_rules__rule_id__get",
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Rules"
+        ],
+        "summary": "Update Rule",
+        "description": "Update a rule. Only fields present in the request body are changed.",
+        "operationId": "update_rule_api_v1_rules__rule_id__put",
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RuleUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RuleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Rules"
+        ],
+        "summary": "Delete Rule",
+        "description": "Soft-delete a rule.",
+        "operationId": "delete_rule_api_v1_rules__rule_id__delete",
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Rule Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/insights/summary": {
+      "get": {
+        "tags": [
+          "Insights"
+        ],
+        "summary": "Get Insights Summary",
+        "description": "Real demand analytics for the period - same computation as the\nadmin agent's get_analytics action, exposed directly since it has no\nside effects to gate.",
+        "operationId": "get_insights_summary_api_v1_insights_summary_get",
+        "parameters": [
+          {
+            "name": "time_range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TimeRange",
+              "default": "last_30_days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InsightsSummaryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faq/search": {
+      "post": {
+        "tags": [
+          "FAQ"
+        ],
+        "summary": "Search Faq",
+        "description": "Search FAQ using semantic search.\nUses vector embeddings for better matching.",
+        "operationId": "search_faq_api_v1_faq_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FAQSearchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FAQSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faq/{faq_id}": {
+      "get": {
+        "tags": [
+          "FAQ"
+        ],
+        "summary": "Get Faq Item",
+        "description": "Get a specific FAQ item by ID.",
+        "operationId": "get_faq_item_api_v1_faq__faq_id__get",
+        "parameters": [
+          {
+            "name": "faq_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Faq Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/faq/categories": {
+      "get": {
+        "tags": [
+          "FAQ"
+        ],
+        "summary": "Get Faq Categories",
+        "description": "Get all FAQ categories for a tenant.",
+        "operationId": "get_faq_categories_api_v1_faq_categories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/dashboard": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get Dashboard",
+        "description": "Get main analytics dashboard data - computed from real conversations/\nmessages, not fabricated. Metrics with no real signal yet (e.g. no\nconversation has ever been marked RESOLVED because nothing calls\nDELETE /chat/conversation/{id} in the current UI) will honestly show\n0 rather than an invented number.",
+        "operationId": "get_dashboard_api_v1_analytics_dashboard_get",
+        "parameters": [
+          {
+            "name": "time_range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TimeRange",
+              "default": "last_7_days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/timeseries": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get Timeseries",
+        "description": "Real per-day (or per-intent) aggregates backing the backoffice's chart\nwidgets. The `charts` field on /dashboard was always an empty dict\nbecause nothing ever computed it - this is that computation, exposed\ndirectly so each ChartWidget can request only the metric it needs.",
+        "operationId": "get_timeseries_api_v1_analytics_timeseries_get",
+        "parameters": [
+          {
+            "name": "metric",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/TimeseriesMetric"
+            }
+          },
+          {
+            "name": "time_range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TimeRange",
+              "default": "last_30_days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TimeseriesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/ai-performance": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get Ai Performance",
+        "description": "Get AI-specific performance metrics - computed from real assistant\nmessages (see chat.py's _log_assistant_message for what gets stored\nin extra_data/tokens_input/tokens_output).",
+        "operationId": "get_ai_performance_api_v1_analytics_ai_performance_get",
+        "parameters": [
+          {
+            "name": "time_range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TimeRange",
+              "default": "last_7_days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/cost-report": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get Cost Report",
+        "description": "Per-tenant token/cost tracking for the backoffice's cost page: totals,\navg latency, cost-per-conversation, and the most expensive recent\nmessages - all computed from messages.tokens_input/tokens_output/\nlatency_ms, real columns written on every chat turn (see\nchat.py::_log_assistant_message). Not a new data source, just a report\nover data that already existed and was never surfaced.",
+        "operationId": "get_cost_report_api_v1_analytics_cost_report_get",
+        "parameters": [
+          {
+            "name": "time_range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TimeRange",
+              "default": "last_30_days"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CostReportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/customers": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get Customer Analytics",
+        "description": "Get customer analytics.\n\nNOTE: il n'existe pas de table `customers` dans ce projet - le chat\nidentifie ses interlocuteurs par un `user_identifier` libre porté par\nla conversation (session_id, customer_id de la boutique, ou un\nidentifiant anonyme). On compte donc des interlocuteurs distincts\nréels, pas des \"clients\" au sens CRM, et on ne renvoie ni\nsegmentation (vip/at_risk/...) ni engagement_rate : ces notions\nn'ont aucune source de données ici et étaient purement inventées.",
+        "operationId": "get_customer_analytics_api_v1_analytics_customers_get",
+        "parameters": [
+          {
+            "name": "time_range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TimeRange",
+              "default": "last_30_days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/coupons": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get Coupon Analytics",
+        "description": "Get coupon usage analytics.\n\nNOTE: pas de `avg_order_with/without_coupon` - le projet ne stocke\naucune commande (pas de table orders), ces chiffres étaient inventés.",
+        "operationId": "get_coupon_analytics_api_v1_analytics_coupons_get",
+        "parameters": [
+          {
+            "name": "time_range",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/TimeRange",
+              "default": "last_30_days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/report": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Generate Report",
+        "description": "Generate a custom report.\n\nNOT IMPLEMENTED. Cet endpoint renvoyait auparavant un\nreport_id=\"rpt_placeholder\" avec status=\"ready\" et un contenu\nfactice - un client suivant le contrat de l'API aurait cru un\nrapport disponible et n'aurait jamais rien reçu. Tant que la\ngénération (probablement asynchrone via la file de messages\nexistante) n'est pas construite, on renvoie explicitement 501\nplutôt que de simuler un succès.",
+        "operationId": "generate_report_api_v1_analytics_report_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/report/{report_id}": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get Report Status",
+        "description": "Get status of a generated report. NOT IMPLEMENTED - voir generate_report.",
+        "operationId": "get_report_status_api_v1_analytics_report__report_id__get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/command": {
+      "post": {
+        "tags": [
+          "Admin AI"
+        ],
+        "summary": "Execute Command",
+        "description": "Execute an AI-powered admin command.\n\nExamples:\n- {\"command\": \"Analyse les demandes clients de la semaine\"} (LOW risk, auto-exécuté)\n- {\"action_name\": \"suggest_marketing_strategy\", \"parameters\": {\"objective\": \"retention\"}}\n- {\"action_name\": \"generate_bulk_coupons\", \"parameters\": {\"customer_ids\": [...], \"max_count\": N, \"discount_percent\": 10}, \"reason\": \"...\"}",
+        "operationId": "execute_command_api_v1_admin_command_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommandResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/confirm": {
+      "post": {
+        "tags": [
+          "Admin AI"
+        ],
+        "summary": "Confirm Action",
+        "description": "Confirm (or advance) a pending action. HIGH risk actions require this\nto be called twice (double confirmation) - the response's `status`\nstays \"pending_confirmation\" after the first call.",
+        "operationId": "confirm_action_api_v1_admin_confirm_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommandResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/reject": {
+      "post": {
+        "tags": [
+          "Admin AI"
+        ],
+        "summary": "Reject Action",
+        "description": "Reject a pending action (confirmation or human approval stage).",
+        "operationId": "reject_action_api_v1_admin_reject_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectActionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/actions": {
+      "get": {
+        "tags": [
+          "Admin AI"
+        ],
+        "summary": "Get Action History",
+        "description": "Get history of completed/failed admin actions, from analytics_events.",
+        "operationId": "get_action_history_api_v1_admin_actions_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminActionRecord"
+                  },
+                  "title": "Response Get Action History Api V1 Admin Actions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/actions/{action_id}": {
+      "get": {
+        "tags": [
+          "Admin AI"
+        ],
+        "summary": "Get Action Detail",
+        "description": "Get details of a specific admin action, from analytics_events.",
+        "operationId": "get_action_detail_api_v1_admin_actions__action_id__get",
+        "parameters": [
+          {
+            "name": "action_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Action Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminActionRecord"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants": {
+      "post": {
+        "tags": [
+          "Tenant Management"
+        ],
+        "summary": "Signup",
+        "description": "Inscription d'une nouvelle boutique. Crée un tenant en attente de\nvérification email et envoie un lien de vérification - aucune clé API\nn'est émise avant que l'email ne soit confirmé.",
+        "operationId": "signup_api_v1_tenants_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantSignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantSignupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants/verify/{token}": {
+      "get": {
+        "tags": [
+          "Tenant Management"
+        ],
+        "summary": "Verify Email",
+        "description": "Vérifie l'email d'un tenant et émet sa clé API réelle.\nLa clé n'est affichée qu'une seule fois, sur cette page.",
+        "operationId": "verify_email_api_v1_tenants_verify__token__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants/current": {
+      "get": {
+        "tags": [
+          "Tenant Management"
+        ],
+        "summary": "Get Current Tenant",
+        "operationId": "get_current_tenant_api_v1_tenants_current_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Tenant Management"
+        ],
+        "summary": "Update Current Tenant",
+        "operationId": "update_current_tenant_api_v1_tenants_current_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TenantUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TenantResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants/current/usage": {
+      "get": {
+        "tags": [
+          "Tenant Management"
+        ],
+        "summary": "Get Tenant Usage",
+        "description": "Statistiques d'usage réelles du tenant courant (comptages en base -\naucune valeur inventée).",
+        "operationId": "get_tenant_usage_api_v1_tenants_current_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants/current/api-keys/rotate": {
+      "post": {
+        "tags": [
+          "Tenant Management"
+        ],
+        "summary": "Rotate Api Key",
+        "description": "Révoque la clé API actuelle et en émet une nouvelle.",
+        "operationId": "rotate_api_key_api_v1_tenants_current_api_keys_rotate_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/APIKeyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/tenants/current/settings": {
+      "get": {
+        "tags": [
+          "Tenant Management"
+        ],
+        "summary": "Get Tenant Settings",
+        "operationId": "get_tenant_settings_api_v1_tenants_current_settings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Tenant Management"
+        ],
+        "summary": "Update Tenant Settings",
+        "operationId": "update_tenant_settings_api_v1_tenants_current_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "title": "Settings Update"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "APIKeyResponse": {
+        "properties": {
+          "api_key": {
+            "type": "string",
+            "title": "Api Key"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Cette clé ne sera plus jamais affichée - stockez-la en lieu sûr."
+          }
+        },
+        "type": "object",
+        "required": [
+          "api_key"
+        ],
+        "title": "APIKeyResponse"
+      },
+      "AdminActionRecord": {
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "title": "Action Id"
+          },
+          "action_name": {
+            "type": "string",
+            "title": "Action Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "executed_at": {
+            "type": "string",
+            "title": "Executed At"
+          },
+          "admin_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin User Id"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action_id",
+          "action_name",
+          "status",
+          "executed_at"
+        ],
+        "title": "AdminActionRecord",
+        "description": "Enregistrement d'une action admin passée, lu depuis analytics_events."
+      },
+      "AdminCommandRequest": {
+        "properties": {
+          "command": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Command"
+          },
+          "action_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action Name"
+          },
+          "parameters": {
+            "type": "object",
+            "title": "Parameters"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          },
+          "admin_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin User Id"
+          }
+        },
+        "type": "object",
+        "title": "AdminCommandRequest",
+        "description": "Commande admin - soit texte libre (classifié vers une action\nprédéfinie, voir AdminCommandParser), soit structurée avec\naction_name explicite (nécessaire pour les actions qui prennent des\nparamètres réels, ex: generate_bulk_coupons).",
+        "example": {
+          "command": "Analyse les demandes clients de la semaine"
+        }
+      },
+      "AdminCommandResponse": {
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "title": "Action Id"
+          },
+          "action_name": {
+            "type": "string",
+            "title": "Action Name"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "data": {
+            "type": "object",
+            "title": "Data",
+            "default": {}
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "requires_confirmation": {
+            "type": "boolean",
+            "title": "Requires Confirmation",
+            "default": false
+          },
+          "confirmation_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirmation Token"
+          },
+          "dry_run": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dry Run"
+          },
+          "metadata": {
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "action_id",
+          "action_name",
+          "status",
+          "success"
+        ],
+        "title": "AdminCommandResponse",
+        "description": "Réponse réelle de AdminAgent.execute_command."
+      },
+      "ChatAction": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "data": {
+            "type": "object",
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "data"
+        ],
+        "title": "ChatAction",
+        "description": "An action suggested by the AI"
+      },
+      "ChatMessageRequest": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Message"
+          },
+          "conversation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conversation Id"
+          },
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
+          "use_rag": {
+            "type": "boolean",
+            "title": "Use Rag",
+            "description": "Enable RAG product search",
+            "default": true
+          },
+          "top_k": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Top K",
+            "description": "Number of products to retrieve",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "ChatMessageRequest",
+        "description": "Request schema for sending a chat message",
+        "example": {
+          "context": {
+            "cart_items": [],
+            "current_page": "/category/smartphones"
+          },
+          "conversation_id": "conv_123",
+          "customer_id": "cust_456",
+          "message": "Je cherche un téléphone pas cher",
+          "top_k": 5,
+          "use_rag": true
+        }
+      },
+      "ChatMessageResponse": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "response": {
+            "type": "string",
+            "title": "Response"
+          },
+          "intent": {
+            "type": "string",
+            "title": "Intent"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/ChatAction"
+            },
+            "type": "array",
+            "title": "Actions",
+            "default": []
+          },
+          "suggestions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suggestions",
+            "default": []
+          },
+          "products": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Products",
+            "description": "Related products from RAG"
+          },
+          "metadata": {
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "message_id",
+          "response",
+          "intent",
+          "confidence"
+        ],
+        "title": "ChatMessageResponse",
+        "description": "Response schema for chat message"
+      },
+      "ConfirmActionRequest": {
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "title": "Action Id"
+          },
+          "confirmation_token": {
+            "type": "string",
+            "title": "Confirmation Token"
+          },
+          "admin_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action_id",
+          "confirmation_token"
+        ],
+        "title": "ConfirmActionRequest",
+        "description": "Confirme (ou avance) une action en attente."
+      },
+      "ConversationHistory": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "messages": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Started At"
+          },
+          "last_message_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Message At"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "messages",
+          "started_at",
+          "last_message_at",
+          "status"
+        ],
+        "title": "ConversationHistory",
+        "description": "Conversation history response"
+      },
+      "ConversationListResponse": {
+        "properties": {
+          "conversations": {
+            "items": {
+              "$ref": "#/components/schemas/ConversationSummary"
+            },
+            "type": "array",
+            "title": "Conversations"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversations",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "ConversationListResponse"
+      },
+      "ConversationSummary": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "user_identifier": {
+            "type": "string",
+            "title": "User Identifier"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "message_count": {
+            "type": "integer",
+            "title": "Message Count"
+          },
+          "last_message_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Last Message At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "user_identifier",
+          "status",
+          "message_count",
+          "last_message_at",
+          "created_at"
+        ],
+        "title": "ConversationSummary",
+        "description": "One row in the conversation browser's list."
+      },
+      "CostReportResponse": {
+        "properties": {
+          "time_range": {
+            "$ref": "#/components/schemas/TimeRange"
+          },
+          "total_messages": {
+            "type": "integer",
+            "title": "Total Messages"
+          },
+          "total_tokens_input": {
+            "type": "integer",
+            "title": "Total Tokens Input"
+          },
+          "total_tokens_output": {
+            "type": "integer",
+            "title": "Total Tokens Output"
+          },
+          "total_cost_usd": {
+            "type": "number",
+            "title": "Total Cost Usd"
+          },
+          "avg_latency_ms": {
+            "type": "number",
+            "title": "Avg Latency Ms"
+          },
+          "conversation_count": {
+            "type": "integer",
+            "title": "Conversation Count"
+          },
+          "cost_per_conversation_usd": {
+            "type": "number",
+            "title": "Cost Per Conversation Usd"
+          },
+          "recent_expensive_messages": {
+            "items": {
+              "$ref": "#/components/schemas/ExpensiveMessage"
+            },
+            "type": "array",
+            "title": "Recent Expensive Messages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "time_range",
+          "total_messages",
+          "total_tokens_input",
+          "total_tokens_output",
+          "total_cost_usd",
+          "avg_latency_ms",
+          "conversation_count",
+          "cost_per_conversation_usd",
+          "recent_expensive_messages"
+        ],
+        "title": "CostReportResponse",
+        "description": "Per-tenant token/cost tracking - computed from messages.tokens_input/\ntokens_output/latency_ms, the same real columns _log_assistant_message\nwrites on every chat turn."
+      },
+      "Coupon": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "discount_type": {
+            "type": "string",
+            "title": "Discount Type"
+          },
+          "discount_value": {
+            "type": "number",
+            "title": "Discount Value"
+          },
+          "min_purchase": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Purchase"
+          },
+          "max_discount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Discount"
+          },
+          "valid_from": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Valid From"
+          },
+          "valid_until": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Valid Until"
+          },
+          "conditions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Conditions",
+            "default": []
+          },
+          "personalized_message": {
+            "type": "string",
+            "title": "Personalized Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "discount_type",
+          "discount_value",
+          "valid_from",
+          "valid_until",
+          "personalized_message"
+        ],
+        "title": "Coupon",
+        "description": "Generated coupon details"
+      },
+      "CouponGenerateRequest": {
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "title": "Customer Id"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "customer_id"
+        ],
+        "title": "CouponGenerateRequest",
+        "description": "Request to generate a personalized coupon",
+        "example": {
+          "context": {
+            "cart_value": 150.0,
+            "items_in_cart": 3
+          },
+          "customer_id": "cust_123",
+          "reason": "cart_abandonment"
+        }
+      },
+      "CouponGenerateResponse": {
+        "properties": {
+          "coupon": {
+            "$ref": "#/components/schemas/Coupon"
+          },
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "coupon",
+          "strategy"
+        ],
+        "title": "CouponGenerateResponse",
+        "description": "Response with generated coupon"
+      },
+      "CouponValidateRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "customer_id": {
+            "type": "string",
+            "title": "Customer Id"
+          },
+          "cart_value": {
+            "type": "number",
+            "title": "Cart Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "customer_id",
+          "cart_value"
+        ],
+        "title": "CouponValidateRequest",
+        "description": "Request to validate a coupon"
+      },
+      "CouponValidateResponse": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid"
+          },
+          "discount_amount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Discount Amount"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid"
+        ],
+        "title": "CouponValidateResponse",
+        "description": "Response from coupon validation"
+      },
+      "DashboardResponse": {
+        "properties": {
+          "metrics": {
+            "items": {
+              "$ref": "#/components/schemas/MetricValue"
+            },
+            "type": "array",
+            "title": "Metrics"
+          },
+          "charts": {
+            "additionalProperties": {
+              "items": {
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Charts"
+          },
+          "insights": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Insights"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "metrics",
+          "charts",
+          "insights",
+          "generated_at"
+        ],
+        "title": "DashboardResponse",
+        "description": "Dashboard data response"
+      },
+      "ExpensiveMessage": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "content_preview": {
+            "type": "string",
+            "title": "Content Preview"
+          },
+          "tokens_input": {
+            "type": "integer",
+            "title": "Tokens Input"
+          },
+          "tokens_output": {
+            "type": "integer",
+            "title": "Tokens Output"
+          },
+          "cost_usd": {
+            "type": "number",
+            "title": "Cost Usd"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latency Ms"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id",
+          "conversation_id",
+          "content_preview",
+          "tokens_input",
+          "tokens_output",
+          "cost_usd",
+          "created_at"
+        ],
+        "title": "ExpensiveMessage",
+        "description": "One assistant message, for the cost report's \"most expensive\nrecent messages\" list."
+      },
+      "FAQItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "question": {
+            "type": "string",
+            "title": "Question"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "relevance_score": {
+            "type": "number",
+            "title": "Relevance Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "question",
+          "answer",
+          "category",
+          "relevance_score"
+        ],
+        "title": "FAQItem",
+        "description": "A FAQ item"
+      },
+      "FAQSearchRequest": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Query"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "FAQSearchRequest",
+        "description": "Request to search FAQ",
+        "example": {
+          "limit": 5,
+          "query": "Comment retourner un produit?"
+        }
+      },
+      "FAQSearchResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/FAQItem"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "total_found": {
+            "type": "integer",
+            "title": "Total Found"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "query",
+          "total_found"
+        ],
+        "title": "FAQSearchResponse",
+        "description": "Response with FAQ results"
+      },
+      "FeedbackRequest": {
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "title": "Message Id"
+          },
+          "rating": {
+            "type": "integer",
+            "maximum": 5.0,
+            "minimum": 1.0,
+            "title": "Rating"
+          },
+          "feedback_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Feedback Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message_id",
+          "rating"
+        ],
+        "title": "FeedbackRequest",
+        "description": "Feedback on AI response"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "InsightsSummaryResponse": {
+        "properties": {
+          "time_range": {
+            "$ref": "#/components/schemas/TimeRange"
+          },
+          "since": {
+            "type": "string",
+            "title": "Since"
+          },
+          "most_requested_products": {
+            "items": {
+              "$ref": "#/components/schemas/ProductDemandOut"
+            },
+            "type": "array",
+            "title": "Most Requested Products"
+          },
+          "unmet_demand": {
+            "items": {
+              "$ref": "#/components/schemas/UnmetSearchOut"
+            },
+            "type": "array",
+            "title": "Unmet Demand"
+          },
+          "intent_distribution": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Intent Distribution"
+          },
+          "peak_hours": {
+            "items": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Peak Hours"
+          },
+          "coupon_conversion": {
+            "type": "object",
+            "title": "Coupon Conversion"
+          },
+          "low_stock_products": {
+            "items": {
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Low Stock Products"
+          }
+        },
+        "type": "object",
+        "required": [
+          "time_range",
+          "since",
+          "most_requested_products",
+          "unmet_demand",
+          "intent_distribution",
+          "peak_hours",
+          "coupon_conversion",
+          "low_stock_products"
+        ],
+        "title": "InsightsSummaryResponse"
+      },
+      "MetricValue": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "change": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change"
+          },
+          "trend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "value",
+          "unit"
+        ],
+        "title": "MetricValue",
+        "description": "A single metric value"
+      },
+      "ProductDemandOut": {
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "title": "External Id"
+          },
+          "request_count": {
+            "type": "integer",
+            "title": "Request Count"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "price": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Price"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "external_id",
+          "request_count"
+        ],
+        "title": "ProductDemandOut"
+      },
+      "ProductRecommendation": {
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "title": "Product Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "price": {
+            "type": "number",
+            "title": "Price"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "product_id",
+          "name",
+          "price",
+          "score",
+          "reason"
+        ],
+        "title": "ProductRecommendation",
+        "description": "A recommended product"
+      },
+      "RecommendationRequest": {
+        "properties": {
+          "customer_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customer Id"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "context": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 5
+          }
+        },
+        "type": "object",
+        "title": "RecommendationRequest",
+        "description": "Request for product recommendations",
+        "example": {
+          "customer_id": "cust_123",
+          "limit": 5,
+          "product_id": "prod_456"
+        }
+      },
+      "RecommendationResponse": {
+        "properties": {
+          "recommendations": {
+            "items": {
+              "$ref": "#/components/schemas/ProductRecommendation"
+            },
+            "type": "array",
+            "title": "Recommendations"
+          },
+          "strategy": {
+            "type": "string",
+            "title": "Strategy"
+          },
+          "metadata": {
+            "type": "object",
+            "title": "Metadata",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "recommendations",
+          "strategy"
+        ],
+        "title": "RecommendationResponse",
+        "description": "Response with product recommendations"
+      },
+      "RejectActionRequest": {
+        "properties": {
+          "action_id": {
+            "type": "string",
+            "title": "Action Id"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "default": ""
+          },
+          "admin_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admin User Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action_id"
+        ],
+        "title": "RejectActionRequest",
+        "description": "Rejette une action en attente de confirmation/approbation."
+      },
+      "ReportRequest": {
+        "properties": {
+          "report_type": {
+            "type": "string",
+            "title": "Report Type"
+          },
+          "time_range": {
+            "$ref": "#/components/schemas/TimeRange",
+            "default": "last_30_days"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "format": {
+            "type": "string",
+            "title": "Format",
+            "default": "json"
+          },
+          "filters": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filters"
+          }
+        },
+        "type": "object",
+        "required": [
+          "report_type"
+        ],
+        "title": "ReportRequest",
+        "description": "Request to generate a report"
+      },
+      "ReportResponse": {
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "title": "Report Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          },
+          "download_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Download Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "report_id",
+          "type",
+          "status"
+        ],
+        "title": "ReportResponse",
+        "description": "Generated report response"
+      },
+      "RuleCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "conditions": {
+            "type": "object",
+            "title": "Conditions"
+          },
+          "action": {
+            "type": "object",
+            "title": "Action"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority",
+            "default": 0
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "RuleCreateRequest",
+        "example": {
+          "action": {
+            "discount_percent": 10,
+            "type": "generate_coupon",
+            "validity_days": 2
+          },
+          "conditions": {
+            "intent": "coupon_request",
+            "keywords_any": [
+              "panier",
+              "abandonné"
+            ]
+          },
+          "is_active": true,
+          "name": "Relance panier abandonné",
+          "priority": 0
+        }
+      },
+      "RuleResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "conditions": {
+            "type": "object",
+            "title": "Conditions"
+          },
+          "action": {
+            "type": "object",
+            "title": "Action"
+          },
+          "priority": {
+            "type": "integer",
+            "title": "Priority"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "usage_count": {
+            "type": "integer",
+            "title": "Usage Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "conditions",
+          "action",
+          "priority",
+          "is_active",
+          "usage_count"
+        ],
+        "title": "RuleResponse"
+      },
+      "RuleUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "conditions": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Conditions"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "priority": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Priority"
+          },
+          "is_active": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Active"
+          }
+        },
+        "type": "object",
+        "title": "RuleUpdateRequest"
+      },
+      "TenantResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "slug": {
+            "type": "string",
+            "title": "Slug"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "plan": {
+            "type": "string",
+            "title": "Plan"
+          },
+          "is_verified": {
+            "type": "boolean",
+            "title": "Is Verified"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "plan",
+          "is_verified",
+          "is_active",
+          "features",
+          "created_at"
+        ],
+        "title": "TenantResponse"
+      },
+      "TenantSignupRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "email"
+        ],
+        "title": "TenantSignupRequest",
+        "description": "Demande d'inscription d'une nouvelle boutique.",
+        "example": {
+          "email": "admin@maboutique.com",
+          "name": "Ma Boutique"
+        }
+      },
+      "TenantSignupResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "pending_verification"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Un email de vérification a été envoyé."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email"
+        ],
+        "title": "TenantSignupResponse"
+      },
+      "TenantUpdate": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          }
+        },
+        "type": "object",
+        "title": "TenantUpdate"
+      },
+      "TimeRange": {
+        "type": "string",
+        "enum": [
+          "today",
+          "yesterday",
+          "last_7_days",
+          "last_30_days",
+          "this_month",
+          "last_month",
+          "custom"
+        ],
+        "title": "TimeRange",
+        "description": "Predefined time ranges"
+      },
+      "TimeseriesMetric": {
+        "type": "string",
+        "enum": [
+          "conversations",
+          "llm_cost",
+          "guardrail_blocks",
+          "intent_distribution"
+        ],
+        "title": "TimeseriesMetric",
+        "description": "Chart metrics backed by real per-day aggregates - see get_timeseries."
+      },
+      "TimeseriesPoint": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "value": {
+            "type": "number",
+            "title": "Value"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "value"
+        ],
+        "title": "TimeseriesPoint",
+        "description": "One chart data point. `label` is a day (\"2026-07-25\") for every\nmetric except intent_distribution, where it's the intent name -\nthat one is a distribution, not a series over time."
+      },
+      "TimeseriesResponse": {
+        "properties": {
+          "metric": {
+            "$ref": "#/components/schemas/TimeseriesMetric"
+          },
+          "time_range": {
+            "$ref": "#/components/schemas/TimeRange"
+          },
+          "points": {
+            "items": {
+              "$ref": "#/components/schemas/TimeseriesPoint"
+            },
+            "type": "array",
+            "title": "Points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "metric",
+          "time_range",
+          "points"
+        ],
+        "title": "TimeseriesResponse"
+      },
+      "UnmetSearchOut": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "occurrences": {
+            "type": "integer",
+            "title": "Occurrences"
+          },
+          "last_seen": {
+            "type": "string",
+            "title": "Last Seen"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "occurrences",
+          "last_seen"
+        ],
+        "title": "UnmetSearchOut"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

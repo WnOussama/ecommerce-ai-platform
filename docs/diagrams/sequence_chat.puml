@@ -1,0 +1,64 @@
+@startuml Sequence_Chat
+
+title Chat request - POST /api/v1/chat/message (guardrails + rules + persistence)
+
+actor Client
+participant "chat.py\n(endpoint)" as API
+participant "UnitOfWork\n(Postgres)" as DB
+participant "Guardrails" as Guard
+participant "RuleRepository\n+ RuleEvaluator" as Rules
+participant "ChromaDB\n(RAG)" as RAG
+participant "LLM Provider\n(mock/OpenAI/Anthropic)" as LLM
+
+Client -> API: POST /message {message, use_rag, ...}
+activate API
+
+API -> DB: log user message\n(best-effort: skipped if tenant_id isn't a real UUID)
+DB --> API: conversation_id
+
+API -> Guard: check_input(message)
+Guard --> API: report
+
+alt input blocked (prompt injection, etc.)
+    API -> DB: log assistant message\n(extra_data.guardrail_blocked=true)
+    API --> Client: 200 {intent: "blocked", response: "..."}
+else input passed
+    API -> API: _classify_intent(message)
+    API -> Rules: list_active() + evaluate(intent, message)
+    Rules --> API: RuleMatch or None
+
+    alt rule matched: canned_response
+        API -> DB: increment_usage() + emit rule_triggered event
+        API -> DB: log assistant message (text from the rule)
+        API --> Client: 200 {response: rule.text, metadata.rule_triggered: true}
+        note right: LLM is never called for this branch
+    else no match, or inject_instruction / generate_coupon
+        opt use_rag=true
+            API -> RAG: search_products(message)
+            RAG --> API: top-k products
+        end
+
+        API -> API: build system prompt\n(+ rule.instruction if inject_instruction matched)
+        API -> LLM: chat(message, system_context)
+        LLM --> API: response_text, tokens_input, tokens_output
+
+        API -> Guard: check_output(response_text, context)
+        Guard --> API: sanitized response, hallucination_flagged
+
+        opt rule matched: generate_coupon
+            API -> DB: CouponRepository.create(rule_id=rule.id, ...)
+            DB --> API: real coupon code
+        end
+
+        opt any rule matched
+            API -> DB: increment_usage() + emit rule_triggered event
+        end
+
+        API -> DB: log assistant message\n(tokens, latency_ms, product_ids, intent, rule info)
+        API --> Client: 200 {response, intent, actions: [generate_coupon?], products}
+    end
+end
+
+deactivate API
+
+@enduml
