@@ -1,50 +1,80 @@
 @startuml Sequence_Admin_Coupon
 
 skinparam sequenceMessageAlign center
-title Flux Admin: Génération de Coupons IA
+title Flux Admin : génération de coupons en masse (dry-run -> confirmation -> exécution)
 
-actor "Admin" as Admin
-participant "FastAPI" as API #E3F2FD
-participant "Admin Agent" as Agent #FFF3E0
-participant "Command Validator" as Validator #FFCDD2
-participant "LLM Gateway" as LLM #F3E5F5
+actor "Administrateur" as Admin
+participant "admin.py\n(endpoint)" as API #E3F2FD
+participant "AdminCommandParser" as Parser #FFE0B2
+participant "AdminAgent" as Agent #FFF3E0
+participant "AdminAISafetySystem\n(Redis-backed)" as Safety #FFCDD2
+participant "CouponRepository" as Coupons #C8E6C9
 database "PostgreSQL" as DB #E8EAF6
+database "Redis" as Cache #FCE4EC
 
-Admin -> API : POST /admin/coupons/generate\n{count: 50, discount: 20%}
+== 1. Demande initiale (dry-run) ==
+
+Admin -> API : POST /admin/command\n{action_name: "generate_bulk_coupons",\n parameters: {count: 50, discount_percent: 20}}
 activate API
 
-API -> API : Validate admin permissions
-
-API -> Agent : execute_command(COUPON_GENERATE, params)
+API -> Agent : execute_command(request)
 activate Agent
 
-Agent -> Validator : validate(command, tenant)
-activate Validator
-Validator -> Validator : Check limits (max 50)
-Validator -> Validator : Check discount (max 30%)
-Validator -> Validator : Check tenant plan
-Validator --> Agent : (valid, [])
-deactivate Validator
+Agent -> Parser : parse(request)
+Parser -> Parser : valide action_name contre\nACTION_DEFINITIONS (whitelist fermee)
+Parser --> Agent : ParsedCommand(action_name, parameters)
 
-Agent -> Agent : assess_risk()
-note right: risk_level = MEDIUM
+Agent -> Safety : request_confirmation(action)
+activate Safety
+Safety -> Safety : _simulate_action()\n(dry-run, coercion numerique defensive\ndes parametres, verifie les limites)
+note right: risk_level = MEDIUM\n(defini dans ACTION_DEFINITIONS)
+Safety -> Cache : store PendingAction (TTL 7 jours)
+Safety --> Agent : PendingAction(dry_run=True,\nconfirmation_token, résumé)
+deactivate Safety
 
-Agent -> LLM : generate_coupon_strategy(params)
-activate LLM
-LLM --> Agent : {codes[], validity}
-deactivate LLM
+Agent --> API : AdminResponse(requires_confirmation=True,\n confirmation_token, dry_run summary)
+deactivate Agent
+API --> Admin : 200 OK {requires_confirmation: true, ...}
+deactivate API
 
-loop for each coupon
-    Agent -> DB : INSERT coupon
+== 2. Confirmation explicite de l'administrateur ==
+
+Admin -> API : POST /admin/confirm\n{action_id, confirmation_token}
+activate API
+API -> Safety : confirm_action(action_id, token)
+activate Safety
+Safety -> Cache : get PendingAction
+Safety -> Safety : verifie le token, le statut,\net le niveau de risque
+alt risque MEDIUM
+    Safety -> Safety : marque comme confirmé
+else risque HIGH
+    Safety -> Safety : exige un délai minimal\navant une deuxième confirmation
+else risque CRITICAL
+    Safety -> Safety : bascule en file d'approbation humaine
 end
+Safety --> API : AdminResponse(status="confirmed")
+deactivate Safety
 
-Agent -> DB : INSERT audit_log
+== 3. Exécution réelle ==
 
-Agent --> API : AdminResponse(success, coupons[])
+API -> Agent : execute_command(continuation: action_id)
+activate Agent
+Agent -> Safety : execute_action(action_id)
+activate Safety
+Safety -> Cache : get PendingAction (vérifie confirmed=True)
+Safety --> Agent : go
+deactivate Safety
+
+Agent -> Agent : _handle_bulk_coupons(parameters)
+loop pour chaque coupon (count)
+    Agent -> Coupons : create(tenant_id, rule_id=None, ...)
+    Coupons -> DB : INSERT coupon
+end
+Agent -> DB : INSERT analytics_event\n(entity_type="admin_action")
+Agent --> API : AdminResponse(success=True, data={codes: [...]})
 deactivate Agent
 
-API --> Admin : 200 OK {coupons: [...]}
+API --> Admin : 200 OK {codes: [...]}
 deactivate API
 
 @enduml
-

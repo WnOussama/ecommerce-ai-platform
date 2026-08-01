@@ -1,0 +1,20 @@
+\chapter*{Conclusion générale et perspectives}
+\addcontentsline{toc}{chapter}{Conclusion générale et perspectives}
+\markboth{Conclusion générale et perspectives}{}
+
+Ce stage de fin d'études, réalisé au sein de Prodexo sur une période de six mois, avait pour objectif de faire évoluer une plateforme d'assistant IA e-commerce d'un socle technique fonctionnel vers un produit réellement exploitable par un administrateur de boutique. Cet objectif se déclinait en deux exigences complémentaires : rendre le comportement de l'assistant configurable sans intervention technique, et garantir que les informations présentées à l'administrateur reflètent fidèlement l'activité réelle du système.
+
+Les travaux menés ont permis de livrer un \textbf{moteur de règles métier} intégré au flux de traitement du chat, un \textbf{agent IA d'administration} restreint à un ensemble d'actions prédéfinies et protégé par un workflow de confirmation adapté au niveau de risque de chaque action, un \textbf{service d'analyse de la demande client} fondé exclusivement sur des données réellement collectées, ainsi qu'un \textbf{backoffice} complet exposant l'ensemble de ces capacités. Une part substantielle de ce travail a consisté à auditer méthodiquement l'existant pour distinguer ce qui fonctionnait réellement de ce qui n'était qu'apparence -- démarche qui s'est révélée aussi formatrice que l'écriture de code neuf, et qui a mis en lumière plusieurs anomalies significatives (garde-fous de sécurité non câblés, persistance de conversations défaillante, données d'administration fabriquées) corrigées au fil des sprints.
+
+Sur le plan personnel, ce stage a été l'occasion d'approfondir des compétences en développement backend asynchrone (FastAPI, SQLAlchemy), en conception d'API, en sécurisation de systèmes automatisés à effet réel, ainsi qu'en développement d'interfaces d'administration avec l'écosystème Laravel/Filament. Il a également permis de pratiquer une démarche de gestion de projet agile de bout en bout, de la constitution d'un backlog à la livraison itérative de sprints testés et documentés.
+
+Plusieurs pistes d'évolution se dégagent naturellement de ce travail pour la suite du projet :
+
+\begin{itemize}
+    \item l'intégration d'une véritable table de commandes, aujourd'hui absente du système, qui permettrait d'enrichir significativement les indicateurs d'analyse (taux de conversion réel, chiffre d'affaires attribuable au chat) au-delà des seuls signaux de demande actuellement disponibles ;
+    \item l'extension du moteur de règles à des conditions plus riches (segmentation client, historique d'achat) une fois cette donnée disponible ;
+    \item la mise en place d'un parcours d'inscription et de facturation self-service complet pour les tenants, actuellement limité à un mode de développement ;
+    \item l'industrialisation du déploiement en production, au-delà de l'environnement Docker Compose utilisé en développement.
+\end{itemize}
+
+Ce travail constitue une base solide et honnêtement documentée sur laquelle ces évolutions pourront s'appuyer.

@@ -1,0 +1,92 @@
+\chapter{Dictionnaire de données}
+\label{annexe:donnees}
+
+Cette annexe présente les principales tables du schéma relationnel, propriété exclusive du service \emph{ai-core} (\cref{chap:conception}). Les colonnes techniques communes (identifiant primaire \gls{uuid}, horodatages de création/mise à jour) sont omises par souci de lisibilité lorsqu'elles ne portent pas d'information métier spécifique.
+
+\begin{table}[h]
+\centering
+\caption{Table \texttt{tenants}}
+\begin{tabular}{@{}p{4cm}p{11cm}@{}}
+\toprule
+\textbf{Colonne} & \textbf{Description} \\
+\midrule
+\texttt{name}, \texttt{slug} & Identité du tenant (marchand) \\
+\texttt{api\_key\_hash} & Hachage de la clé d'API utilisée pour l'authentification serveur-à-serveur \\
+\texttt{email}, \texttt{is\_verified}, \texttt{verification\_token\_hash} & Inscription self-service avec vérification par courriel \\
+\texttt{settings} & Paramètres libres du tenant (\gls{jsonb}) \\
+\texttt{is\_active} & Active ou désactive le tenant sans suppression de ses données \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Tables \texttt{conversations} et \texttt{messages}}
+\begin{tabular}{@{}p{4cm}p{11cm}@{}}
+\toprule
+\textbf{Colonne} & \textbf{Description} \\
+\midrule
+\texttt{conversations.tenant\_id} & Clé étrangère vers le tenant propriétaire (isolation multi-tenant) \\
+\texttt{conversations.user\_identifier} & Identifiant du client côté site marchand \\
+\texttt{conversations.status} & État de la conversation (ouverte, fermée) \\
+\texttt{messages.role} & \texttt{USER} / \texttt{ASSISTANT} / \texttt{SYSTEM} \\
+\texttt{messages.content} & Contenu textuel du message \\
+\texttt{messages.idempotency\_key} & Empêche le double traitement d'une requête réémise \\
+\texttt{messages.extra\_data} & Métadonnées structurées (\gls{jsonb}) : intention détectée, produits retournés, règle éventuellement déclenchée, usage RAG \\
+\texttt{messages.tokens\_input/output}, \texttt{latency\_ms} & Mesures de coût et de performance de l'appel au \gls{llm} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Table \texttt{rules}}
+\begin{tabular}{@{}p{4cm}p{11cm}@{}}
+\toprule
+\textbf{Colonne} & \textbf{Description} \\
+\midrule
+\texttt{tenant\_id} & Isolation multi-tenant \\
+\texttt{name}, \texttt{description} & Libellé de la règle, affiché dans le backoffice \\
+\texttt{conditions} & \gls{jsonb} -- clés supportées : \texttt{intent}, \texttt{keywords\_any}, \texttt{keywords\_all} \\
+\texttt{action} & \gls{jsonb} -- type (\texttt{canned\_response} / \texttt{inject\_instruction} / \texttt{generate\_coupon}) et paramètres associés \\
+\texttt{priority} & Ordre d'évaluation (croissant) entre règles concurrentes \\
+\texttt{is\_active} & Permet de désactiver une règle sans la supprimer \\
+\texttt{usage\_count} & Compteur de déclenchements, incrémenté à chaque correspondance \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Table \texttt{coupons}}
+\begin{tabular}{@{}p{4cm}p{11cm}@{}}
+\toprule
+\textbf{Colonne} & \textbf{Description} \\
+\midrule
+\texttt{tenant\_id}, \texttt{conversation\_id} & Contexte d'émission du coupon \\
+\texttt{rule\_id} & Règle à l'origine de la génération, le cas échéant (\texttt{NULL} si généré par l'agent d'administration) \\
+\texttt{code} & Code promotionnel généré \\
+\texttt{discount\_percent} / \texttt{discount\_amount} & Remise en pourcentage ou en valeur (centimes) \\
+\texttt{status}, \texttt{used\_at} & Suivi de l'utilisation effective du coupon (base du calcul du taux de conversion, \cref{chap:conception}) \\
+\texttt{expires\_at} & Date d'expiration \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Table \texttt{products}}
+\begin{tabular}{@{}p{4cm}p{11cm}@{}}
+\toprule
+\textbf{Colonne} & \textbf{Description} \\
+\midrule
+\texttt{tenant\_id}, \texttt{external\_id} & Identifiant du produit côté PrestaShop \\
+\texttt{name}, \texttt{description}, \texttt{category\_name}, \texttt{manufacturer\_name} & Attributs indexés pour la recherche vectorielle (RAG) \\
+\texttt{price}, \texttt{quantity} & Prix et stock, synchronisés depuis PrestaShop \\
+\texttt{active}, \texttt{available\_for\_order} & Disponibilité du produit \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\bigskip
+\noindent\textbf{Remarque.} Aucune table de commandes n'existe dans ce schéma : le catalogue synchronisé depuis PrestaShop se limite aux produits et catégories. Toute métrique de conversion présentée dans le backoffice (\cref{chap:realisation}) est en conséquence dérivée d'un signal de \emph{demande} (recherches et messages du chat), et non d'un signal de \emph{vente}.

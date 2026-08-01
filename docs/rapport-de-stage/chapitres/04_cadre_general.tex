@@ -1,0 +1,101 @@
+\chapter{Cadre général du projet}
+\label{chap:cadre-general}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+Ce premier chapitre situe le stage dans son contexte : l'entreprise d'accueil, la problématique à l'origine du projet, les objectifs fixés et la démarche méthodologique retenue pour y répondre.
+
+\section{Présentation de l'organisme d'accueil}
+
+\textbf{Prodexo} est l'entreprise au sein de laquelle ce stage de fin d'études a été réalisé. \emph{[Section à compléter avec la présentation officielle de l'entreprise : secteur d'activité, taille, positionnement, principaux clients ou domaines d'intervention, organigramme du service d'accueil.]}
+
+Le stage s'est déroulé au sein de l'équipe en charge du développement produit, sur un projet interne de plateforme d'assistance IA destinée aux marchands utilisant des solutions e-commerce, en particulier \textbf{PrestaShop}.
+
+\section{Contexte du projet}
+
+À l'arrivée sur le projet, une première version de la plateforme existait déjà : un service backend en Python/FastAPI capable de répondre à des messages de chat en s'appuyant sur un modèle de langage, une intégration partielle avec PrestaShop pour la synchronisation du catalogue produits, ainsi qu'une ébauche de backoffice en Laravel/Filament destinée aux administrateurs de boutique.
+
+Cette première version souffrait cependant de deux limites majeures, identifiées dès la phase de prise en main :
+
+\begin{itemize}
+    \item \textbf{Un comportement du chat figé dans le code.} Toute personnalisation du comportement de l'assistant (réponses automatiques à certains mots-clés, génération de coupons de fidélisation, politiques de remise) nécessitait une modification du code source et un redéploiement, ce qui rendait la plateforme peu exploitable par un administrateur non technique.
+    \item \textbf{Des données d'administration partiellement fabriquées.} Plusieurs écrans du backoffice -- tableau de bord, agent IA d'administration, recommandations -- affichaient des valeurs d'exemple codées en dur (chiffre d'affaires fictif, noms de produits génériques) plutôt que des données réellement calculées à partir de l'activité de la plateforme. Ce constat, documenté au fil de l'audit du code existant, a orienté une part importante du projet vers un travail de \emph{fiabilisation} plutôt que de seule addition de fonctionnalités.
+\end{itemize}
+
+\section{Problématique}
+
+La problématique du stage peut se formuler ainsi : \emph{comment permettre à un administrateur de boutique de configurer et de superviser un assistant IA e-commerce en toute confiance, sans dépendre d'une intervention technique pour chaque ajustement, et sans que les informations qui lui sont présentées soient trompeuses ?}
+
+Cette problématique se décline en plusieurs sous-questions techniques traitées tout au long du projet :
+
+\begin{itemize}
+    \item Comment permettre la personnalisation du comportement du chat (réponses automatiques, remises, instructions contextuelles) sans redéploiement, tout en gardant un système simple à auditer ?
+    \item Comment donner à un agent IA la capacité d'exécuter des actions d'administration (génération de coupons en masse, mise à jour de prix) sans lui accorder une exécution libre et potentiellement dangereuse ?
+    \item Comment calculer des indicateurs de pilotage (produits les plus demandés, demande non satisfaite, taux de conversion des coupons) à partir des seules données réellement disponibles, en l'absence -- notable -- de table de commandes dans le système ?
+    \item Comment garantir, via des tests automatisés reproductibles, que ces garanties (isolation multi-tenant, sécurité de l'agent d'administration, exactitude des métriques) restent vraies dans la durée ?
+\end{itemize}
+
+\section{Objectifs du projet}
+
+Sur la base de cette problématique, les objectifs suivants ont été fixés en début de stage :
+
+\begin{enumerate}
+    \item Concevoir et implémenter un \textbf{moteur de règles métier} permettant à un administrateur de définir, via une interface graphique, des conditions (intention détectée, mots-clés) déclenchant des actions (réponse automatique, instruction injectée dans le contexte du modèle, génération de coupon), interprétées par le chat sans modification de code.
+    \item Remplacer les données fabriquées de l'agent IA d'administration par des calculs réels, et sécuriser son exécution par un mécanisme d'actions prédéfinies avec confirmation.
+    \item Concevoir un service d'\textbf{analyse de la demande client} (\emph{insights}) fondé exclusivement sur les données réellement collectées par la plateforme.
+    \item Faire évoluer le backoffice Laravel/Filament pour exposer ces nouvelles capacités : gestion des règles, interface de pilotage de l'agent IA, tableaux de bord à données réelles, suivi des coûts d'utilisation du modèle de langage.
+    \item Couvrir l'ensemble de ces évolutions par une suite de tests automatisés et documenter l'architecture finale du système.
+\end{enumerate}
+
+\section{Méthodologie de gestion de projet}
+
+\subsection{Choix de la méthodologie}
+
+Le projet a été mené selon une démarche agile inspirée du cadre \textbf{Scrum}~\cite{scrumguide}. Ce choix se justifie par la nature du projet : un périmètre fonctionnel amené à être précisé au fil de l'avancement (l'audit de l'existant a lui-même fait émerger une partie du périmètre réel du stage), la nécessité de livrer des incréments testables et démontrables régulièrement, et un stage solo qui bénéficie d'un cadre stagiaire/encadrant proche d'un binôme Product Owner / équipe de développement.
+
+Le déroulement du stage a ainsi suivi les grands principes de Scrum, adaptés à un contexte de stage individuel :
+
+\begin{itemize}
+    \item un \textbf{backlog produit} recensant les besoins fonctionnels, priorisé conjointement avec l'encadrant professionnel ;
+    \item un découpage du développement en \textbf{sprints} de deux semaines, chacun clos par une démonstration des fonctionnalités livrées ;
+    \item une revue de sprint informelle avec l'encadrant en fin de période, permettant d'ajuster le backlog du sprint suivant ;
+    \item une exigence de \emph{définition of done} stricte pour chaque fonctionnalité : tests automatisés passants (unitaires et, lorsque pertinent, d'intégration sur base de données réelle), vérification manuelle de l'interface concernée, et documentation à jour.
+\end{itemize}
+
+\subsection{Découpage temporel du stage}
+
+Le stage de six mois s'est organisé en deux grandes périodes, détaillées au \cref{chap:realisation} :
+
+\begin{itemize}
+    \item une \textbf{phase de cadrage et de conception} (février à avril 2026), consacrée à la prise en main de l'existant, à la formalisation du cahier des charges, à la montée en compétence sur la pile technique (FastAPI, SQLAlchemy asynchrone, Filament) et à la conception de l'architecture cible ;
+    \item une \textbf{phase de réalisation} (mai à août 2026), structurée en six sprints de développement itératifs, décrits en détail au chapitre 4.
+\end{itemize}
+
+\begin{table}[h]
+\centering
+\caption{Planification générale du stage}
+\label{tab:planification}
+\begin{tabular}{@{}p{4cm}p{3cm}p{7cm}@{}}
+\toprule
+\textbf{Période} & \textbf{Durée} & \textbf{Contenu} \\
+\midrule
+Cadrage \& conception & Fév. -- Avr. 2026 & Analyse de l'existant, spécification des besoins, conception de l'architecture \\
+Sprint 1 & Mai (S1--S2) & Fondations \& infrastructure \\
+Sprint 2 & Mai (S3--S4) & Moteur de chat IA (RAG, persistance) \\
+Sprint 3 & Juin (S1--S2) & Sécurité, multi-tenant \& supervision \\
+Sprint 4 & Juin (S3--S4) & Backoffice Laravel/Filament -- socle \\
+Sprint 5 & Juillet (S1--S2) & Moteur de règles \& agent IA d'administration \\
+Sprint 6 & Juillet -- Août & Finalisation backoffice, analytique réelle, documentation \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Environnement de travail}
+
+Le projet a été développé dans un environnement conteneurisé (\textbf{Docker} / Docker Compose), avec un dépôt \textbf{Git} unique hébergeant les deux composants applicatifs (\emph{ai-core} et \emph{backoffice}) ainsi que l'infrastructure de déploiement. L'intégration continue s'appuie sur \textbf{GitHub Actions}, avec analyse de qualité de code (\emph{linting}, formatage) exécutée avant chaque fusion. Le suivi de version a suivi une convention de \emph{commits} typés (\texttt{feat}, \texttt{fix}, \texttt{chore}) facilitant la traçabilité du travail réalisé sprint par sprint.
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+Ce chapitre a présenté le contexte, la problématique et les objectifs du stage, ainsi que la démarche méthodologique adoptée pour y répondre. Le chapitre suivant détaille l'analyse et la spécification des besoins qui ont découlé de cette problématique.

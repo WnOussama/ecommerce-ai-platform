@@ -1,0 +1,73 @@
+\chapter{Extraits de code significatifs}
+\label{annexe:code}
+
+Cette annexe présente deux extraits représentatifs, tirés tels quels du code source livré, illustrant les mécanismes centraux décrits au \cref{chap:conception}.
+
+\section{Évaluation pure des règles métier}
+
+L'extrait ci-dessous (\texttt{app/services/rules/evaluator.py}) montre l'implémentation du \texttt{RuleEvaluator} : une fonction sans accès à la base de données, ce qui la rend testable de façon exhaustive et rapide (voir \cref{chap:tests}).
+
+\begin{lstlisting}[language=Python, caption={Correspondance des conditions d'une règle}]
+@staticmethod
+def _matches_conditions(conditions, intent, message_lower):
+    if not conditions:
+        return False
+
+    known_keys = ("intent", "keywords_any", "keywords_all")
+    if not any(key in conditions for key in known_keys):
+        return False
+
+    if "intent" in conditions and conditions["intent"] != intent:
+        return False
+
+    if "keywords_any" in conditions:
+        keywords = [kw.lower() for kw in conditions["keywords_any"]]
+        if not any(kw in message_lower for kw in keywords):
+            return False
+
+    if "keywords_all" in conditions:
+        keywords = [kw.lower() for kw in conditions["keywords_all"]]
+        if not all(kw in message_lower for kw in keywords):
+            return False
+
+    return True
+
+def evaluate(self, rules, intent, message):
+    """Retourne la premiere regle qui matche, ou None."""
+    message_lower = message.lower()
+    for rule in rules:
+        if self._matches_conditions(rule.conditions or {}, intent, message_lower):
+            return RuleMatch(rule=rule, action=rule.action or {})
+    return None
+\end{lstlisting}
+
+Le choix explicite qu'une règle sans aucune des trois clés de condition connues ne corresponde jamais (plutôt que de matcher par défaut) évite qu'une règle mal configurée n'intercepte silencieusement l'intégralité du trafic d'un tenant.
+
+\section{Classification des actions d'administration par niveau de risque}
+
+L'extrait ci-dessous (\texttt{app/core/security/admin\_safety.py}) montre un sous-ensemble du registre \texttt{ACTION\_DEFINITIONS}, qui constitue la liste fermée des actions que l'agent d'administration est autorisé à exécuter. Chaque action y est associée à un niveau de risque déterminant le circuit d'approbation requis (cf. \cref{fig:seq-admin-coupon}).
+
+\begin{lstlisting}[language=Python, caption={Extrait du registre des actions administratives autorisées}]
+ACTION_DEFINITIONS: Dict[str, ActionDefinition] = {
+    # RISQUE FAIBLE - execution automatique
+    "get_analytics": ActionDefinition(
+        name="get_analytics",
+        description="Recupere les analytics (lecture seule)",
+        risk_level=RiskLevel.LOW,
+        approval_type=ApprovalType.NONE,
+        supports_rollback=False,
+    ),
+    # RISQUE ELEVE - double confirmation + delai
+    "generate_bulk_coupons": ActionDefinition(
+        name="generate_bulk_coupons",
+        description="Genere des coupons en masse",
+        risk_level=RiskLevel.HIGH,
+        approval_type=ApprovalType.DOUBLE,
+        requires_reason=True,
+        cooldown_seconds=3600,  # 1h entre deux generations en masse
+    ),
+    ...
+}
+\end{lstlisting}
+
+Toute action absente de ce registre est rejetée par l'\texttt{AdminCommandParser} avant même d'atteindre la logique d'exécution -- l'agent ne dispose d'aucune capacité d'exécution libre.

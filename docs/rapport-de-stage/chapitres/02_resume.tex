@@ -1,0 +1,30 @@
+\chapter*{Résumé}
+\addcontentsline{toc}{chapter}{Résumé}
+
+Ce rapport présente le travail réalisé dans le cadre d'un stage de fin d'études de six mois effectué au sein de la société \textbf{Prodexo}, portant sur la conception et le développement d'une plateforme d'assistant conversationnel intelligent destinée aux sites e-commerce, ainsi que du backoffice permettant à un administrateur de tenant de la configurer et d'en superviser l'activité.
+
+La plateforme repose sur un service central (\emph{ai-core}) développé en \textbf{Python/FastAPI}, exposant un chat conversationnel augmenté par recherche vectorielle (\emph{RAG}) sur le catalogue produits, une couche de garde-fous de sécurité (détection d'injection de prompt, masquage de données personnelles), un \textbf{moteur de règles métier} permettant de personnaliser le comportement du chat sans redéploiement, ainsi qu'un \textbf{agent IA d'administration} à exécution encadrée (workflow d'exécution à blanc, confirmation, double confirmation et annulation) pour les actions à impact sur les données du tenant. Le backoffice, développé en \textbf{Laravel / Filament}, consomme exclusivement cette API et fournit un tableau de bord, une interface conversationnelle pour l'agent d'administration, la gestion des règles, ainsi que des pages d'analyse de coût et de comportement client.
+
+Une part significative du travail a consisté à auditer l'existant, à identifier les métriques et fonctionnalités fabriquées ou non connectées à des données réelles, puis à les remplacer par des calculs réels fondés sur les données effectivement collectées par la plateforme (messages, conversations, produits, coupons), en assumant explicitement les limites du système lorsqu'une donnée n'existe pas (absence de table de commandes, par exemple).
+
+Le projet a été mené selon une démarche agile inspirée de \textbf{Scrum}, avec une phase d'analyse et de conception suivie de sprints de développement itératifs. Le résultat final est validé par une suite de tests automatisés (tests unitaires et tests d'intégration sur base de données réelle) ainsi que par des vérifications manuelles de l'interface d'administration.
+
+\vspace{0.5cm}
+\noindent\textbf{Mots-clés :} Intelligence artificielle générative, RAG (\emph{Retrieval-Augmented Generation}), chatbot e-commerce, FastAPI, moteur de règles métier, agent IA supervisé, Laravel, Filament, architecture multi-tenant, méthodologie Scrum.
+
+\bigskip
+\bigskip
+
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+This report presents the work carried out during a six-month end-of-studies internship at \textbf{Prodexo}, focused on the design and development of an AI-powered conversational assistant platform for e-commerce websites, along with the backoffice administration panel used to configure it and monitor its activity.
+
+The platform is built around a central service (\emph{ai-core}) developed with \textbf{Python/FastAPI}, exposing a conversational chat endpoint augmented with vector-based product search (\emph{RAG}), a security guardrails layer (prompt-injection detection, PII masking), a \textbf{business rules engine} allowing the chat behavior to be customized without redeployment, and a \textbf{supervised admin AI agent} restricted to a predefined set of actions and gated by a dry-run / confirm / rollback workflow for any action affecting tenant data. The backoffice, built with \textbf{Laravel / Filament}, is a pure REST client of this API and provides a dashboard, a conversational interface for the admin agent, rules management, and cost/behavior analytics pages.
+
+A significant part of the work consisted of auditing the existing codebase, identifying fabricated or disconnected metrics and features, and replacing them with real computations grounded in the data actually collected by the platform (messages, conversations, products, coupons), while being explicit about the system's limitations where no underlying data exists (e.g., no orders table).
+
+The project followed an agile approach inspired by \textbf{Scrum}, with an initial analysis and design phase followed by iterative development sprints. The final result is validated through an automated test suite (unit and integration tests against a real database) as well as manual verification of the admin interface.
+
+\vspace{0.5cm}
+\noindent\textbf{Keywords:} Generative AI, Retrieval-Augmented Generation (RAG), e-commerce chatbot, FastAPI, business rules engine, supervised AI agent, Laravel, Filament, multi-tenant architecture, Scrum methodology.
