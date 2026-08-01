@@ -10,70 +10,86 @@ class AiCoreClientTest extends TestCase
 {
     /**
      * Regression: PHP has no distinct empty-object type, so an empty array
-     * serializes to JSON `[]`. The AI Core's Pydantic model expects `context`
-     * to be a dict (`{}`) or omitted - sending `[]` triggers a 422
-     * "Input should be a valid dictionary" (discovered by actually running
-     * this against the real AI Core, not by mocking).
+     * serializes to JSON `[]`. The AI Core's Pydantic model expects
+     * `parameters` to be a dict (`{}`) or omitted - sending `[]` triggers a
+     * 422 "Input should be a valid dictionary" (discovered by actually
+     * running this against the real AI Core, not by mocking).
      */
-    public function test_send_admin_command_omits_empty_context(): void
+    public function test_send_admin_command_omits_empty_parameters(): void
     {
         Http::fake([
-            '*/admin/command' => Http::response(['command_id' => 'cmd_1', 'status' => 'completed', 'response' => 'ok']),
+            '*/admin/command' => Http::response(['action_id' => 'a1', 'action_name' => 'get_analytics', 'status' => 'completed', 'success' => true]),
         ]);
 
-        app(AiCoreClient::class)->sendAdminCommand('test command');
+        app(AiCoreClient::class)->sendAdminCommand(command: 'test command');
 
         Http::assertSent(function ($request) {
             $body = $request->data();
 
             return $request->url() === 'http://localhost:8000/api/v1/admin/command'
                 && $body['command'] === 'test command'
-                && ! array_key_exists('context', $body);
+                && ! array_key_exists('parameters', $body)
+                && ! array_key_exists('action_name', $body);
         });
     }
 
-    public function test_send_admin_command_includes_non_empty_context(): void
+    public function test_send_admin_command_with_structured_action_and_parameters(): void
     {
         Http::fake([
-            '*/admin/command' => Http::response(['command_id' => 'cmd_1', 'status' => 'completed', 'response' => 'ok']),
+            '*/admin/command' => Http::response(['action_id' => 'a1', 'action_name' => 'generate_bulk_coupons', 'status' => 'pending_confirmation', 'success' => true]),
         ]);
 
-        app(AiCoreClient::class)->sendAdminCommand('test command', ['key' => 'value']);
+        app(AiCoreClient::class)->sendAdminCommand(
+            actionName: 'generate_bulk_coupons',
+            parameters: ['customer_ids' => ['c1'], 'discount_percent' => 10],
+            reason: 'winback campaign'
+        );
 
-        Http::assertSent(fn ($request) => $request->data()['context'] === ['key' => 'value']);
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+
+            return $body['action_name'] === 'generate_bulk_coupons'
+                && $body['parameters'] === ['customer_ids' => ['c1'], 'discount_percent' => 10]
+                && $body['reason'] === 'winback campaign'
+                && ! array_key_exists('command', $body);
+        });
     }
 
-    /**
-     * Regression: array_filter()'s default callback drops falsy values,
-     * including `false`. confirmAdminAction(confirmed: false) - rejecting an
-     * action - was being silently dropped from the request body, which would
-     * default to `confirmed: true` server-side and invert the decision.
-     */
-    public function test_confirm_admin_action_sends_false_explicitly(): void
+    public function test_confirm_admin_action_sends_the_confirmation_token(): void
     {
         Http::fake([
-            '*/admin/confirm' => Http::response(['action_id' => 'act_1', 'status' => 'cancelled']),
+            '*/admin/confirm' => Http::response(['action_id' => 'act_1', 'status' => 'completed']),
         ]);
 
-        app(AiCoreClient::class)->confirmAdminAction('act_1', confirmed: false);
+        app(AiCoreClient::class)->confirmAdminAction('act_1', 'tok_abc123');
 
         Http::assertSent(function ($request) {
             $body = $request->data();
 
             return $body['action_id'] === 'act_1'
-                && array_key_exists('confirmed', $body)
-                && $body['confirmed'] === false;
+                && $body['confirmation_token'] === 'tok_abc123';
         });
     }
 
-    public function test_confirm_admin_action_sends_true(): void
+    public function test_reject_admin_action_sends_reason_when_present(): void
     {
         Http::fake([
-            '*/admin/confirm' => Http::response(['action_id' => 'act_1', 'status' => 'executed']),
+            '*/admin/reject' => Http::response(['action_id' => 'act_1', 'status' => 'rejected']),
         ]);
 
-        app(AiCoreClient::class)->confirmAdminAction('act_1', confirmed: true);
+        app(AiCoreClient::class)->rejectAdminAction('act_1', 'not needed');
 
-        Http::assertSent(fn ($request) => $request->data()['confirmed'] === true);
+        Http::assertSent(fn ($request) => $request->data() === ['action_id' => 'act_1', 'reason' => 'not needed']);
+    }
+
+    public function test_reject_admin_action_omits_empty_reason(): void
+    {
+        Http::fake([
+            '*/admin/reject' => Http::response(['action_id' => 'act_1', 'status' => 'rejected']),
+        ]);
+
+        app(AiCoreClient::class)->rejectAdminAction('act_1');
+
+        Http::assertSent(fn ($request) => $request->data() === ['action_id' => 'act_1']);
     }
 }

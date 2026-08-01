@@ -156,12 +156,9 @@ class AiCoreClient
     // Admin AI agent
     // -------------------------------------------------------------------
 
-    public function adminActions(?string $status = null, int $limit = 20): array
+    public function adminActions(int $limit = 20): array
     {
-        return $this->get('/admin/actions', array_filter([
-            'status' => $status,
-            'limit' => $limit,
-        ]));
+        return $this->get('/admin/actions', ['limit' => $limit]);
     }
 
     public function adminAction(string $actionId): array
@@ -169,28 +166,43 @@ class AiCoreClient
         return $this->get("/admin/actions/{$actionId}");
     }
 
-    public function sendAdminCommand(string $command, array $context = []): array
+    /**
+     * Send an admin command - either free text (classified server-side into
+     * one of the predefined actions, see AdminCommandParser) or a structured
+     * action_name + parameters (required for actions that need real
+     * parameters, e.g. generate_bulk_coupons).
+     *
+     * PHP has no distinct empty-object/empty-array type, so an empty
+     * `parameters` array serializes to JSON `[]` - the AI Core expects a
+     * dict (`{}`) or the key omitted entirely. Omit falsy-but-meaningful
+     * fields explicitly with `!== null` rather than array_filter()'s default
+     * callback, which would also drop `reason: ''` or other legitimate
+     * empty-but-intentional values.
+     */
+    public function sendAdminCommand(?string $command = null, ?string $actionName = null, array $parameters = [], string $reason = ''): array
     {
-        // PHP has no distinct empty-object type, so an empty array serializes
-        // to JSON `[]` - the AI Core expects `context` to be a dict (`{}`) or
-        // omitted entirely. Omit it when empty rather than sending `[]`.
         return $this->post('/admin/command', array_filter([
             'command' => $command,
-            'context' => $context ?: null,
+            'action_name' => $actionName,
+            'parameters' => $parameters ?: null,
+            'reason' => $reason ?: null,
         ], fn ($value) => $value !== null));
     }
 
-    public function confirmAdminAction(string $actionId, bool $confirmed = true, array $modifications = []): array
+    public function confirmAdminAction(string $actionId, string $confirmationToken): array
     {
-        // NOTE: array_filter()'s default callback drops falsy values,
-        // including `false` - it must NOT be used on `confirmed` here, or a
-        // rejection (confirmed: false) would be silently dropped from the
-        // payload and default to true server-side, inverting the decision.
-        return $this->post('/admin/confirm', array_filter([
+        return $this->post('/admin/confirm', [
             'action_id' => $actionId,
-            'confirmed' => $confirmed,
-            'modifications' => $modifications ?: null,
-        ], fn ($value) => $value !== null));
+            'confirmation_token' => $confirmationToken,
+        ]);
+    }
+
+    public function rejectAdminAction(string $actionId, string $reason = ''): array
+    {
+        return $this->post('/admin/reject', array_filter([
+            'action_id' => $actionId,
+            'reason' => $reason,
+        ], fn ($value) => $value !== ''));
     }
 
     // -------------------------------------------------------------------
