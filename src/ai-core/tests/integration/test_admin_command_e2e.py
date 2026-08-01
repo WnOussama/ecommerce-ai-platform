@@ -200,6 +200,33 @@ class TestAdminCommandEndToEnd:
         assert second_body["status"] == "failed"
         assert "wait" in (second_body["error"] or "").lower()
 
+    async def test_bulk_coupons_with_string_parameters_does_not_500(self, tenant_id):
+        """Regression: the backoffice's KeyValue form field only ever sends
+        string values (JSON has no way to distinguish "2" from 2 there) -
+        comparing a string against int limits raised a 500 TypeError,
+        found by actually driving the admin UI rather than by mocking."""
+        from app.main import create_application
+
+        app = create_application()
+        transport = ASGITransport(app=app)
+        headers = {"X-Tenant-ID": str(tenant_id)}
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/v1/admin/command",
+                json={
+                    "action_name": "generate_bulk_coupons",
+                    "parameters": {"max_count": "2", "discount_percent": "10"},
+                    "reason": "string params from KeyValue field",
+                },
+                headers=headers,
+            )
+
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["status"] == "pending_confirmation"
+        assert body["dry_run"]["is_valid"] is True
+
     async def test_reject_action_cancels_pending_confirmation(self, tenant_id):
         from app.main import create_application
 

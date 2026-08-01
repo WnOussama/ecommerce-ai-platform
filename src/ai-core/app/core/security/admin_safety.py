@@ -513,6 +513,24 @@ class AdminAISafetySystem:
 
         return dry_run
 
+    @staticmethod
+    def _numeric_param(parameters: Dict[str, Any], key: str, default: float = 0) -> float:
+        """
+        Coerces a parameter to a number.
+
+        Parameters arrive over HTTP as JSON, and some callers (e.g. the
+        backoffice's KeyValue form field, which only ever produces
+        strings) send numeric-looking strings rather than real numbers -
+        comparing those directly against int/float limits below raised
+        TypeError, discovered by actually driving the admin UI rather
+        than by mocking the request.
+        """
+        value = parameters.get(key, default)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
     async def _simulate_action(
         self,
         action_id: str,
@@ -531,8 +549,8 @@ class AdminAISafetySystem:
 
         # Validation selon le type d'action
         if action_name == "generate_bulk_coupons":
-            count = parameters.get("max_count", 0)
-            discount = parameters.get("discount_percent", 0)
+            count = int(self._numeric_param(parameters, "max_count"))
+            discount = self._numeric_param(parameters, "discount_percent")
 
             affected_count = count
 
@@ -567,7 +585,7 @@ class AdminAISafetySystem:
 
         elif action_name == "update_product_prices":
             product_ids = parameters.get("product_ids", [])
-            adjustment = parameters.get("adjustment_percent", 0)
+            adjustment = self._numeric_param(parameters, "adjustment_percent")
 
             affected_count = len(product_ids)
 

@@ -525,8 +525,12 @@ class AdminAgent:
         """Génération réelle de coupons persistés - remplace le
         `{"status": "generated"}` fabriqué qui ne créait jamais rien."""
         customer_ids: List[str] = params.get("customer_ids", [])
-        discount_percent = params.get("discount_percent", 10)
-        validity_days = params.get("validity_days", 7)
+        # Parameters arrive over HTTP as JSON - some callers (e.g. the
+        # backoffice's KeyValue form field) only ever produce strings, so
+        # coerce defensively rather than pass a string into an Integer
+        # column / timedelta(days=...).
+        discount_percent = int(float(params.get("discount_percent", 10) or 10))
+        validity_days = int(float(params.get("validity_days", 7) or 7))
 
         repo = CouponRepository(self.db, self.tenant_id)
         codes: List[str] = []
