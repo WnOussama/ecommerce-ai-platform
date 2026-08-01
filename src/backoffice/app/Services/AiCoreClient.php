@@ -136,6 +136,15 @@ class AiCoreClient
         return $this->get('/analytics/timeseries', ['metric' => $metric, 'time_range' => $timeRange]);
     }
 
+    /**
+     * Per-tenant token/cost totals, avg latency, cost-per-conversation, and
+     * the most expensive recent messages - backs the Cost & Messages page.
+     */
+    public function costReport(string $timeRange = 'last_30_days', int $limit = 20): array
+    {
+        return $this->get('/analytics/cost-report', ['time_range' => $timeRange, 'limit' => $limit]);
+    }
+
     public function couponAnalytics(string $timeRange = 'last_30_days'): array
     {
         return $this->get('/analytics/coupons', ['time_range' => $timeRange]);

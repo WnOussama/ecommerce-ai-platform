@@ -150,4 +150,19 @@ class AiCoreClientTest extends TestCase
                 && $request['time_range'] === 'last_7_days';
         });
     }
+
+    public function test_cost_report_sends_time_range_and_limit(): void
+    {
+        Http::fake([
+            '*/analytics/cost-report*' => Http::response(['total_messages' => 0]),
+        ]);
+
+        app(AiCoreClient::class)->costReport('last_7_days', 5);
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), '/analytics/cost-report')
+                && $request['time_range'] === 'last_7_days'
+                && $request['limit'] === 5;
+        });
+    }
 }
