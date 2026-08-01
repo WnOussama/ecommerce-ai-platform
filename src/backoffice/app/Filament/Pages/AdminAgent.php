@@ -50,7 +50,14 @@ class AdminAgent extends Page implements HasForms
 
     public ?array $data = [];
 
-    public ?array $result = null;
+    /**
+     * The conversation transcript for this session - not persisted, mirrors
+     * the previous page's single "$result" but keeps history instead of
+     * overwriting it on every turn. Each entry is either
+     * ['role' => 'user', 'text' => string] or
+     * ['role' => 'agent', 'result' => array] / ['role' => 'agent', 'error' => string].
+     */
+    public array $messages = [];
 
     public function mount(): void
     {
@@ -70,7 +77,7 @@ class AdminAgent extends Page implements HasForms
                 Textarea::make('command')
                     ->label('Commande en langage naturel')
                     ->placeholder('Ex: Analyse les demandes clients de la semaine')
-                    ->rows(3)
+                    ->rows(2)
                     ->required(fn (Get $get) => blank($get('action_name')))
                     ->visible(fn (Get $get) => blank($get('action_name'))),
 
@@ -92,46 +99,64 @@ class AdminAgent extends Page implements HasForms
     {
         $state = $this->form->getState();
 
+        $this->messages[] = [
+            'role' => 'user',
+            'text' => filled($state['action_name'] ?? null)
+                ? (self::ACTIONS[$state['action_name']] ?? $state['action_name'])
+                : ($state['command'] ?? ''),
+        ];
+
         try {
-            $this->result = app(AiCoreClient::class)->sendAdminCommand(
+            $result = app(AiCoreClient::class)->sendAdminCommand(
                 command: $state['command'] ?? null,
                 actionName: $state['action_name'] ?? null,
                 parameters: $state['parameters'] ?? [],
                 reason: $state['reason'] ?? '',
             );
         } catch (AiCoreException $e) {
-            Notification::make()->title('Erreur')->body($e->getMessage())->danger()->send();
+            $this->messages[] = ['role' => 'agent', 'error' => $e->getMessage()];
 
             return;
         }
 
-        $this->notifyForResult($this->result);
+        $this->messages[] = ['role' => 'agent', 'result' => $result];
+        $this->notifyForResult($result);
+
+        $this->form->fill();
     }
 
     public function confirmAction(string $actionId, string $confirmationToken): void
     {
+        $this->messages[] = ['role' => 'user', 'text' => '→ Confirmer'];
+
         try {
-            $this->result = app(AiCoreClient::class)->confirmAdminAction($actionId, $confirmationToken);
+            $result = app(AiCoreClient::class)->confirmAdminAction($actionId, $confirmationToken);
         } catch (AiCoreException $e) {
-            Notification::make()->title('Erreur')->body($e->getMessage())->danger()->send();
+            $this->messages[] = ['role' => 'agent', 'error' => $e->getMessage()];
 
             return;
         }
 
-        $this->notifyForResult($this->result);
+        $this->messages[] = ['role' => 'agent', 'result' => $result];
+        $this->notifyForResult($result);
     }
 
     public function rejectAction(string $actionId): void
     {
+        $this->messages[] = ['role' => 'user', 'text' => '→ Rejeter'];
+
         try {
-            app(AiCoreClient::class)->rejectAdminAction($actionId);
+            $result = app(AiCoreClient::class)->rejectAdminAction($actionId);
         } catch (AiCoreException $e) {
-            Notification::make()->title('Erreur')->body($e->getMessage())->danger()->send();
+            $this->messages[] = ['role' => 'agent', 'error' => $e->getMessage()];
 
             return;
         }
 
-        $this->result = null;
+        $this->messages[] = [
+            'role' => 'agent',
+            'result' => ['action_name' => '', 'status' => $result['status'] ?? 'rejected', 'success' => true, 'data' => []],
+        ];
 
         Notification::make()->title('Action rejetée')->success()->send();
     }

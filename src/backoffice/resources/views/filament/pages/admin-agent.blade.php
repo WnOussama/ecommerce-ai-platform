@@ -1,67 +1,38 @@
 <x-filament-panels::page>
-    <form wire:submit="sendCommand" class="space-y-4">
-        {{ $this->form }}
-
-        <x-filament::button type="submit">
-            Envoyer à l'agent IA
-        </x-filament::button>
-    </form>
-
-    @if ($result)
-        <div class="mt-6 space-y-4">
-            <x-filament::section :heading="'Action: ' . ($result['action_name'] ?? 'inconnue')">
-                <div class="flex items-center gap-2 mb-3">
-                    <x-filament::badge :color="match ($result['status'] ?? null) {
-                        'completed' => 'success',
-                        'pending_confirmation', 'pending_human_approval' => 'warning',
-                        'rejected', 'expired' => 'gray',
-                        default => 'danger',
-                    }">
-                        {{ $result['status'] ?? 'échec' }}
-                    </x-filament::badge>
-                </div>
-
-                @if (!empty($result['error']))
-                    <p class="text-sm text-danger-600 dark:text-danger-400">{{ $result['error'] }}</p>
-                @endif
-
-                @if (!empty($result['dry_run']))
-                    <div class="mt-3 rounded-lg border border-gray-200 dark:border-white/10 p-3 space-y-1">
-                        <p class="text-xs font-medium uppercase text-gray-500">Simulation (dry run)</p>
-                        <p class="text-sm">Éléments affectés : {{ $result['dry_run']['affected_items_count'] ?? 0 }}</p>
-                        @foreach (($result['dry_run']['warnings'] ?? []) as $warning)
-                            <p class="text-sm text-warning-600 dark:text-warning-400">⚠ {{ $warning }}</p>
-                        @endforeach
+    <div class="space-y-4">
+        <div
+            x-data
+            x-init="$nextTick(() => $el.scrollTop = $el.scrollHeight)"
+            wire:key="admin-agent-transcript-{{ count($messages) }}"
+            class="rounded-xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 max-h-[32rem] overflow-y-auto p-4 space-y-4"
+        >
+            @forelse ($messages as $i => $message)
+                @if ($message['role'] === 'user')
+                    <div class="flex justify-end">
+                        <div class="max-w-[85%] rounded-2xl rounded-tr-sm bg-primary-600 text-white px-4 py-2 text-sm">
+                            {{ $message['text'] }}
+                        </div>
+                    </div>
+                @else
+                    <div class="flex justify-start" wire:key="agent-message-{{ $i }}">
+                        <div class="max-w-[90%] w-full sm:w-auto rounded-2xl rounded-tl-sm bg-gray-100 dark:bg-white/10 px-4 py-3 text-sm space-y-2">
+                            @include('filament.pages.partials.admin-agent-message', ['message' => $message])
+                        </div>
                     </div>
                 @endif
-
-                @if (($result['status'] ?? null) === 'pending_confirmation' && !empty($result['confirmation_token']))
-                    <div class="mt-3 flex gap-2">
-                        <x-filament::button
-                            size="sm"
-                            wire:click="confirmAction('{{ $result['action_id'] }}', '{{ $result['confirmation_token'] }}')"
-                        >
-                            Confirmer
-                        </x-filament::button>
-                        <x-filament::button
-                            size="sm"
-                            color="danger"
-                            wire:click="rejectAction('{{ $result['action_id'] }}')"
-                        >
-                            Rejeter
-                        </x-filament::button>
-                    </div>
-                @endif
-
-                @if (!empty($result['data']['analysis']))
-                    <div class="mt-3 whitespace-pre-line text-sm">{{ $result['data']['analysis'] }}</div>
-                @elseif (!empty($result['data']))
-                    <div class="mt-3">
-                        <x-filament::badge color="gray">Données</x-filament::badge>
-                        <pre class="mt-2 text-xs overflow-x-auto rounded-lg bg-gray-50 dark:bg-white/5 p-3">{{ json_encode($result['data'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>
-                    </div>
-                @endif
-            </x-filament::section>
+            @empty
+                <p class="text-sm text-gray-500 text-center py-12">
+                    Posez une question en langage naturel ou choisissez une action pour commencer.
+                </p>
+            @endforelse
         </div>
-    @endif
+
+        <form wire:submit="sendCommand" class="space-y-4">
+            {{ $this->form }}
+
+            <x-filament::button type="submit">
+                Envoyer à l'agent IA
+            </x-filament::button>
+        </form>
+    </div>
 </x-filament-panels::page>
