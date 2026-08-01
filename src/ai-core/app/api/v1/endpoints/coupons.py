@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database.connection import get_async_session
 from app.infrastructure.database.repositories.coupon_repo import CouponRepository
+from app.infrastructure.database.repositories.rule_repo import RuleRepository
 
 logger = logging.getLogger(__name__)
 
@@ -26,20 +27,30 @@ router = APIRouter()
 
 
 # =============================================================================
-# POLITIQUE DE REMISE - règles déterministes, pas un score ML
+# POLITIQUE DE REMISE - la politique par `reason` (cart_abandonment,
+# loyalty, winback...) vit désormais dans la table `rules`, tenant par
+# tenant (voir RuleRepository.get_by_action_reason) - plus un module
+# constant identique pour tout le monde. Ce fallback ne s'applique que si
+# le tenant n'a configuré aucune règle `generate_coupon` pour la raison
+# donnée.
 # =============================================================================
 
-# (discount_percent, validity_days) par raison de génération.
-_DISCOUNT_POLICY = {
-    "cart_abandonment": (10, 2),  # urgence courte pour relancer le panier
-    "loyalty": (15, 30),
-    "winback": (20, 14),
-}
 _DEFAULT_POLICY = (10, 7)
 
 
-def _policy_for(reason: Optional[str]) -> tuple[int, int]:
-    return _DISCOUNT_POLICY.get(reason or "", _DEFAULT_POLICY)
+async def _policy_for(db: AsyncSession, tenant_id: UUID, reason: Optional[str]) -> tuple[int, int]:
+    if not reason:
+        return _DEFAULT_POLICY
+
+    rule = await RuleRepository(db, tenant_id).get_by_action_reason(reason)
+    if not rule:
+        return _DEFAULT_POLICY
+
+    action = rule.action or {}
+    return (
+        action.get("discount_percent", _DEFAULT_POLICY[0]),
+        action.get("validity_days", _DEFAULT_POLICY[1]),
+    )
 
 
 # =============================================================================
@@ -138,7 +149,7 @@ async def generate_coupon(
     `reason` - not a trained model, and the response no longer claims one.
     """
     tenant_id = _require_tenant_id(request)
-    discount_percent, validity_days = _policy_for(body.reason)
+    discount_percent, validity_days = await _policy_for(db, tenant_id, body.reason)
 
     repo = CouponRepository(db, tenant_id)
     code = repo.generate_code()

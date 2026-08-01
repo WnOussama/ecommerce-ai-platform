@@ -38,7 +38,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.infrastructure.database.connection import AsyncSessionLocal
 from app.infrastructure.database.repositories.analytics_repo import AnalyticsRepository
 from app.infrastructure.database.repositories.conversation_repo import ConversationRepository
+from app.infrastructure.database.repositories.coupon_repo import CouponRepository
 from app.infrastructure.database.repositories.message_repo import MessageRepository
+from app.infrastructure.database.repositories.rule_repo import RuleRepository
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +78,8 @@ class UnitOfWork:
         self._conversations: Optional[ConversationRepository] = None
         self._messages: Optional[MessageRepository] = None
         self._analytics: Optional[AnalyticsRepository] = None
+        self._rules: Optional[RuleRepository] = None
+        self._coupons: Optional[CouponRepository] = None
 
     @property
     def tenant_id(self) -> UUID:
@@ -110,6 +114,20 @@ class UnitOfWork:
             raise RuntimeError("UnitOfWork not initialized. Use 'async with' context manager.")
         return self._analytics
 
+    @property
+    def rules(self) -> RuleRepository:
+        """Retourne le repository Rule."""
+        if not self._rules:
+            raise RuntimeError("UnitOfWork not initialized. Use 'async with' context manager.")
+        return self._rules
+
+    @property
+    def coupons(self) -> CouponRepository:
+        """Retourne le repository Coupon."""
+        if not self._coupons:
+            raise RuntimeError("UnitOfWork not initialized. Use 'async with' context manager.")
+        return self._coupons
+
     async def __aenter__(self) -> "UnitOfWork":
         """Entre dans le contexte - ouvre la session et initialise les repositories."""
         # Créer session si pas fournie
@@ -121,6 +139,8 @@ class UnitOfWork:
         self._conversations = ConversationRepository(self._session, self._tenant_id)
         self._messages = MessageRepository(self._session, self._tenant_id)
         self._analytics = AnalyticsRepository(self._session, self._tenant_id)
+        self._rules = RuleRepository(self._session, self._tenant_id)
+        self._coupons = CouponRepository(self._session, self._tenant_id)
 
         logger.debug("UnitOfWork started", extra={"tenant_id": str(self._tenant_id)})
 

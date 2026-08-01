@@ -23,6 +23,7 @@ from app.api.v1.endpoints import (
     faq,
     health,
     recommendations,
+    rules,
     tenants,
 )
 from app.core.config.settings import settings
@@ -159,6 +160,8 @@ def create_application() -> FastAPI:
     )
 
     app.include_router(coupons.router, prefix=f"{api_prefix}/coupons", tags=["Coupons"])
+
+    app.include_router(rules.router, prefix=f"{api_prefix}/rules", tags=["Rules"])
 
     app.include_router(faq.router, prefix=f"{api_prefix}/faq", tags=["FAQ"])
 

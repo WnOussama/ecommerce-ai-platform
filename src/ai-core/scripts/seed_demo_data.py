@@ -123,6 +123,74 @@ async def seed_products(session: AsyncSession, tenant_id: str) -> None:
     logger.info("Produits: %d créés, %d mis à jour", created, updated)
 
 
+# Politique de remise par défaut - anciennement un dict module-level figé
+# dans coupons.py (_DISCOUNT_POLICY), maintenant des règles tenant réelles.
+DEMO_RULES = [
+    {
+        "name": "Relance panier abandonné",
+        "description": "Urgence courte pour relancer un panier laissé de côté.",
+        "conditions": {"keywords_any": ["panier", "abandonné", "abandon"]},
+        "action": {
+            "type": "generate_coupon",
+            "reason": "cart_abandonment",
+            "discount_percent": 10,
+            "validity_days": 2,
+        },
+        "priority": 0,
+    },
+    {
+        "name": "Récompense fidélité",
+        "description": "Remise pour un client fidèle qui redemande un code promo.",
+        "conditions": {"intent": "coupon_request", "keywords_any": ["fidèle", "fidélité"]},
+        "action": {
+            "type": "generate_coupon",
+            "reason": "loyalty",
+            "discount_percent": 15,
+            "validity_days": 30,
+        },
+        "priority": 1,
+    },
+    {
+        "name": "Relance client inactif",
+        "description": "Winback pour un client qui n'a pas commandé depuis longtemps.",
+        "conditions": {"keywords_any": ["revenir", "reviens", "longtemps"]},
+        "action": {
+            "type": "generate_coupon",
+            "reason": "winback",
+            "discount_percent": 20,
+            "validity_days": 14,
+        },
+        "priority": 2,
+    },
+]
+
+
+async def seed_rules(session: AsyncSession, tenant_id: str) -> None:
+    from uuid import UUID
+
+    from app.infrastructure.database.repositories.rule_repo import RuleRepository
+
+    repo = RuleRepository(session, UUID(tenant_id))
+    existing = await repo.list_all()
+    existing_names = {r.name for r in existing}
+
+    created = 0
+    for rule_def in DEMO_RULES:
+        if rule_def["name"] in existing_names:
+            continue
+        await repo.create(
+            name=rule_def["name"],
+            conditions=rule_def["conditions"],
+            action=rule_def["action"],
+            description=rule_def["description"],
+            priority=rule_def["priority"],
+        )
+        created += 1
+
+    await session.commit()
+    logger.info("Règles: %d créées, %d déjà présentes", created, len(existing_names))
+
+
 async def index_catalog(session: AsyncSession, tenant_id: str) -> None:
     from app.services.rag.factory import get_embedding_service, get_vector_store
     from app.services.rag.product_indexer import ProductIndexer
@@ -190,6 +258,7 @@ async def main() -> None:
     async with session_factory() as session:
         tenant_id = await seed_tenant(session)
         await seed_products(session, tenant_id)
+        await seed_rules(session, tenant_id)
         await index_catalog(session, tenant_id)
 
     await verify_retrieval(tenant_id)
