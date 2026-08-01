@@ -2,17 +2,23 @@
 
 namespace App\Filament\Widgets;
 
-use App\Exceptions\AiCoreException;
-use App\Services\AiCoreClient;
+use App\Filament\Widgets\Concerns\FetchesTimeseries;
 use Filament\Widgets\ChartWidget;
 
 class ConversationsChart extends ChartWidget
 {
+    use FetchesTimeseries;
+
     protected static ?string $heading = 'Conversations';
 
     protected static ?int $sort = 3;
 
     public ?string $filter = 'last_30_days';
+
+    protected function metric(): string
+    {
+        return 'conversations';
+    }
 
     protected function getFilters(): ?array
     {
@@ -25,13 +31,7 @@ class ConversationsChart extends ChartWidget
 
     protected function getData(): array
     {
-        try {
-            $result = app(AiCoreClient::class)->timeseries('conversations', $this->filter ?? 'last_30_days');
-        } catch (AiCoreException) {
-            return ['datasets' => [], 'labels' => []];
-        }
-
-        $points = $result['points'] ?? [];
+        $points = $this->points();
 
         return [
             'datasets' => [

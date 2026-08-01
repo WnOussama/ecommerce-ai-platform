@@ -81,4 +81,43 @@ class DashboardChartsTest extends TestCase
 
         Livewire::test(ConversationsChart::class)->assertOk();
     }
+
+    /**
+     * Regression: a tenant with genuinely zero activity for the period got
+     * a silently blank chart (Filament's ChartWidget always renders a
+     * <canvas>, empty data or not) - indistinguishable from a broken
+     * widget. getDescription() must say so explicitly.
+     */
+    public function test_empty_period_shows_a_no_data_message_not_a_blank_chart(): void
+    {
+        Http::fake([
+            '*/analytics/timeseries*' => Http::response([
+                'metric' => 'conversations',
+                'time_range' => 'last_30_days',
+                'points' => [
+                    ['label' => '2026-07-30', 'value' => 0],
+                    ['label' => '2026-07-31', 'value' => 0],
+                ],
+            ]),
+        ]);
+
+        Livewire::test(ConversationsChart::class)
+            ->assertOk()
+            ->assertSee('Aucune activité sur cette période.');
+    }
+
+    public function test_nonempty_period_does_not_show_the_no_data_message(): void
+    {
+        Http::fake([
+            '*/analytics/timeseries*' => Http::response([
+                'metric' => 'conversations',
+                'time_range' => 'last_30_days',
+                'points' => [['label' => '2026-07-31', 'value' => 4]],
+            ]),
+        ]);
+
+        Livewire::test(ConversationsChart::class)
+            ->assertOk()
+            ->assertDontSee('Aucune activité sur cette période.');
+    }
 }

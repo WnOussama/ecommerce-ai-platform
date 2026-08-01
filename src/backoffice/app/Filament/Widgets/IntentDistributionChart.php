@@ -2,13 +2,14 @@
 
 namespace App\Filament\Widgets;
 
-use App\Exceptions\AiCoreException;
-use App\Services\AiCoreClient;
+use App\Filament\Widgets\Concerns\FetchesTimeseries;
 use App\Support\Intents;
 use Filament\Widgets\ChartWidget;
 
 class IntentDistributionChart extends ChartWidget
 {
+    use FetchesTimeseries;
+
     protected static ?string $heading = 'Répartition des intentions';
 
     protected static ?int $sort = 6;
@@ -23,6 +24,11 @@ class IntentDistributionChart extends ChartWidget
      */
     protected const PALETTE = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7'];
 
+    protected function metric(): string
+    {
+        return 'intent_distribution';
+    }
+
     protected function getFilters(): ?array
     {
         return [
@@ -34,13 +40,7 @@ class IntentDistributionChart extends ChartWidget
 
     protected function getData(): array
     {
-        try {
-            $result = app(AiCoreClient::class)->timeseries('intent_distribution', $this->filter ?? 'last_30_days');
-        } catch (AiCoreException) {
-            return ['datasets' => [], 'labels' => []];
-        }
-
-        $points = collect($result['points'] ?? [])->sortByDesc('value')->values();
+        $points = collect($this->points())->sortByDesc('value')->values();
         $total = $points->sum('value');
 
         if ($total <= 0) {

@@ -2,17 +2,23 @@
 
 namespace App\Filament\Widgets;
 
-use App\Exceptions\AiCoreException;
-use App\Services\AiCoreClient;
+use App\Filament\Widgets\Concerns\FetchesTimeseries;
 use Filament\Widgets\ChartWidget;
 
 class LlmCostChart extends ChartWidget
 {
+    use FetchesTimeseries;
+
     protected static ?string $heading = 'Coût LLM ($)';
 
     protected static ?int $sort = 4;
 
     public ?string $filter = 'last_30_days';
+
+    protected function metric(): string
+    {
+        return 'llm_cost';
+    }
 
     protected function getFilters(): ?array
     {
@@ -25,13 +31,7 @@ class LlmCostChart extends ChartWidget
 
     protected function getData(): array
     {
-        try {
-            $result = app(AiCoreClient::class)->timeseries('llm_cost', $this->filter ?? 'last_30_days');
-        } catch (AiCoreException) {
-            return ['datasets' => [], 'labels' => []];
-        }
-
-        $points = $result['points'] ?? [];
+        $points = $this->points();
 
         return [
             'datasets' => [
