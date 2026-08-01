@@ -10,12 +10,13 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 
 from app.core.config.settings import settings
 from app.core.monitoring import get_metrics_collector
 from app.core.security.guardrails import GuardrailCategory, GuardrailResult, guardrails
 from app.infrastructure.database.models.conversation import ConversationStatus
-from app.infrastructure.database.models.message import MessageRole
+from app.infrastructure.database.models.message import Message, MessageRole
 from app.infrastructure.database.unit_of_work import UnitOfWork
 from app.infrastructure.llm import get_llm_provider
 from app.services.rag.factory import get_retrieval_service
@@ -87,6 +88,24 @@ class ConversationHistory(BaseModel):
     started_at: datetime
     last_message_at: datetime
     status: str
+
+
+class ConversationSummary(BaseModel):
+    """One row in the conversation browser's list."""
+
+    conversation_id: str
+    user_identifier: str
+    status: str
+    message_count: int
+    last_message_at: datetime
+    created_at: datetime
+
+
+class ConversationListResponse(BaseModel):
+    conversations: List[ConversationSummary]
+    total: int
+    limit: int
+    offset: int
 
 
 class FeedbackRequest(BaseModel):
@@ -739,6 +758,79 @@ def _generate_suggestions(intent: str, has_products: bool = False) -> List[str]:
         base_suggestions = ["Voir les détails", "Ajouter au panier"] + base_suggestions[:2]
 
     return base_suggestions[:4]  # Limiter à 4 suggestions
+
+
+@router.get("/conversations", response_model=ConversationListResponse)
+async def list_conversations(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    status: Optional[str] = None,
+):
+    """
+    List conversations for the tenant, most recent first - backs the
+    backoffice's conversation browser. No such endpoint existed before;
+    only a lookup by a known conversation_id (GET /history/{id}) did.
+    """
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if not tenant_id:
+        raise HTTPException(status_code=401, detail="Tenant context required")
+
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+    except (ValueError, AttributeError, TypeError):
+        raise HTTPException(
+            status_code=404,
+            detail="Conversations require a real tenant (dev header bypass has no persisted data)",
+        )
+
+    status_filter = None
+    if status:
+        try:
+            status_filter = ConversationStatus(status)
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"Unknown status: {status}")
+
+    async with UnitOfWork(tenant_uuid) as uow:
+        conversations = await uow.conversations.list_recent(
+            limit=limit, offset=offset, status=status_filter
+        )
+        total = await uow.conversations.count_all(status=status_filter)
+
+        conversation_ids = [c.id for c in conversations]
+        message_stats: Dict[Any, Any] = {}
+        if conversation_ids:
+            stmt = (
+                select(
+                    Message.conversation_id,
+                    func.count().label("cnt"),
+                    func.max(Message.created_at).label("last_message_at"),
+                )
+                .where(
+                    Message.tenant_id == tenant_uuid,
+                    Message.conversation_id.in_(conversation_ids),
+                )
+                .group_by(Message.conversation_id)
+            )
+            rows = (await uow.session.execute(stmt)).all()
+            message_stats = {r.conversation_id: (r.cnt, r.last_message_at) for r in rows}
+
+    return ConversationListResponse(
+        conversations=[
+            ConversationSummary(
+                conversation_id=str(c.id),
+                user_identifier=c.user_identifier,
+                status=c.status.value,
+                message_count=message_stats.get(c.id, (0, None))[0],
+                last_message_at=message_stats.get(c.id, (0, c.created_at))[1] or c.created_at,
+                created_at=c.created_at,
+            )
+            for c in conversations
+        ],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/history/{conversation_id}", response_model=ConversationHistory)
