@@ -150,6 +150,16 @@ class AiCoreClient
         return $this->get('/analytics/coupons', ['time_range' => $timeRange]);
     }
 
+    /**
+     * Real demand analytics (most requested products, unmet demand,
+     * intent distribution, peak hours, coupon conversion, low stock) -
+     * backs the Insights page.
+     */
+    public function insightsSummary(string $timeRange = 'last_30_days'): array
+    {
+        return $this->get('/insights/summary', ['time_range' => $timeRange]);
+    }
+
     // -------------------------------------------------------------------
     // Tenant
     // -------------------------------------------------------------------

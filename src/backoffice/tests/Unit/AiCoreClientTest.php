@@ -194,4 +194,16 @@ class AiCoreClientTest extends TestCase
 
         Http::assertSent(fn ($request) => $request['status'] === 'resolved');
     }
+
+    public function test_insights_summary_sends_time_range(): void
+    {
+        Http::fake([
+            '*/insights/summary*' => Http::response(['most_requested_products' => []]),
+        ]);
+
+        app(AiCoreClient::class)->insightsSummary('last_7_days');
+
+        Http::assertSent(fn ($request) => str_contains($request->url(), '/insights/summary')
+            && $request['time_range'] === 'last_7_days');
+    }
 }
