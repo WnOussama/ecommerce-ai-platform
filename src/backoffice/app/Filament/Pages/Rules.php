@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Exceptions\AiCoreException;
 use App\Services\AiCoreClient;
+use App\Support\Intents;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -30,21 +31,6 @@ class Rules extends Page implements HasForms
     protected static ?string $title = 'Règles du chatbot';
 
     protected static string $view = 'filament.pages.rules';
-
-    /**
-     * Intents the chatbot's classifier (_classify_intent in chat.py) can
-     * actually produce - a rule targeting anything else would never match.
-     */
-    public const INTENTS = [
-        'order_status' => 'Suivi de commande',
-        'product_search' => 'Recherche produit',
-        'price_inquiry' => 'Question prix',
-        'shipping_info' => 'Livraison',
-        'return_request' => 'Retour/remboursement',
-        'coupon_request' => 'Demande de code promo',
-        'recommendation' => 'Recommandation',
-        'greeting' => 'Salutation',
-    ];
 
     public const ACTION_TYPES = [
         'canned_response' => 'Réponse toute faite (court-circuite le LLM)',
@@ -92,7 +78,7 @@ class Rules extends Page implements HasForms
 
                 Select::make('intent')
                     ->label('Intention (optionnel)')
-                    ->options(self::INTENTS)
+                    ->options(collect(Intents::LABELS)->except('general')->all())
                     ->placeholder('N\'importe quelle intention'),
 
                 TextInput::make('keywords_any')

@@ -135,4 +135,19 @@ class AiCoreClientTest extends TestCase
         Http::assertSent(fn ($request) => $request->method() === 'DELETE'
             && $request->url() === 'http://localhost:8000/api/v1/rules/rule_1');
     }
+
+    public function test_timeseries_sends_metric_and_time_range(): void
+    {
+        Http::fake([
+            '*/analytics/timeseries*' => Http::response(['metric' => 'conversations', 'points' => []]),
+        ]);
+
+        app(AiCoreClient::class)->timeseries('conversations', 'last_7_days');
+
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), '/analytics/timeseries')
+                && $request['metric'] === 'conversations'
+                && $request['time_range'] === 'last_7_days';
+        });
+    }
 }

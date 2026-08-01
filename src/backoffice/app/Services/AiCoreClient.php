@@ -126,6 +126,16 @@ class AiCoreClient
         return $this->get('/analytics/customers', ['time_range' => $timeRange]);
     }
 
+    /**
+     * Real per-day (or per-intent, for "intent_distribution") aggregates -
+     * backs the dashboard's chart widgets. $metric is one of: conversations,
+     * llm_cost, guardrail_blocks, intent_distribution.
+     */
+    public function timeseries(string $metric, string $timeRange = 'last_30_days'): array
+    {
+        return $this->get('/analytics/timeseries', ['metric' => $metric, 'time_range' => $timeRange]);
+    }
+
     public function couponAnalytics(string $timeRange = 'last_30_days'): array
     {
         return $this->get('/analytics/coupons', ['time_range' => $timeRange]);
