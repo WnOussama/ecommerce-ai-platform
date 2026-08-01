@@ -79,6 +79,14 @@ class ConfirmActionRequest(BaseModel):
     admin_user_id: Optional[str] = None
 
 
+class RejectActionRequest(BaseModel):
+    """Rejette une action en attente de confirmation/approbation."""
+
+    action_id: str
+    reason: str = ""
+    admin_user_id: Optional[str] = None
+
+
 class AdminActionRecord(BaseModel):
     """Enregistrement d'une action admin passée, lu depuis analytics_events."""
 
@@ -267,6 +275,29 @@ async def confirm_action(request: Request, body: ConfirmActionRequest):
         dry_run=response.dry_run,
         metadata={"processing_time_ms": response.processing_time_ms},
     )
+
+
+@router.post("/reject")
+async def reject_action(request: Request, body: RejectActionRequest):
+    """Reject a pending action (confirmation or human approval stage)."""
+    tenant_id = _require_tenant_uuid(request)
+    admin_user_id = _admin_user_id(request, body.admin_user_id)
+
+    safety = _get_safety_system()
+    pending, error = await safety.reject_action(body.action_id, admin_user_id, body.reason)
+    if error:
+        raise HTTPException(status_code=400, detail=error)
+
+    await _record_action(
+        tenant_id,
+        pending.id,
+        pending.action_name,
+        "rejected",
+        admin_user_id,
+        error=body.reason or None,
+    )
+
+    return {"action_id": pending.id, "status": pending.status.value}
 
 
 @router.get("/actions", response_model=List[AdminActionRecord])

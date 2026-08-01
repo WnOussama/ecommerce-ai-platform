@@ -200,6 +200,43 @@ class TestAdminCommandEndToEnd:
         assert second_body["status"] == "failed"
         assert "wait" in (second_body["error"] or "").lower()
 
+    async def test_reject_action_cancels_pending_confirmation(self, tenant_id):
+        from app.main import create_application
+
+        app = create_application()
+        transport = ASGITransport(app=app)
+        headers = {"X-Tenant-ID": str(tenant_id)}
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            initial = await client.post(
+                "/api/v1/admin/command",
+                json={
+                    "action_name": "suggest_marketing_strategy",
+                    "parameters": {"objective": "retention"},
+                },
+                headers=headers,
+            )
+            action_id = initial.json()["action_id"]
+
+            reject = await client.post(
+                "/api/v1/admin/reject",
+                json={"action_id": action_id, "reason": "not needed right now"},
+                headers=headers,
+            )
+            assert reject.status_code == 200, reject.text
+            assert reject.json()["status"] == "rejected"
+
+            # A rejected action can no longer be confirmed.
+            confirm_attempt = await client.post(
+                "/api/v1/admin/confirm",
+                json={
+                    "action_id": action_id,
+                    "confirmation_token": initial.json()["confirmation_token"],
+                },
+                headers=headers,
+            )
+        assert confirm_attempt.json()["success"] is False
+
     async def test_unknown_command_is_rejected_not_executed(self, tenant_id):
         from app.main import create_application
 
