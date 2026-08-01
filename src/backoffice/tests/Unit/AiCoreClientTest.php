@@ -165,4 +165,33 @@ class AiCoreClientTest extends TestCase
                 && $request['limit'] === 5;
         });
     }
+
+    public function test_list_conversations_omits_status_when_not_given(): void
+    {
+        Http::fake([
+            '*/chat/conversations*' => Http::response(['conversations' => [], 'total' => 0]),
+        ]);
+
+        app(AiCoreClient::class)->listConversations(20, 0);
+
+        Http::assertSent(function ($request) {
+            $query = $request->data();
+
+            return str_contains($request->url(), '/chat/conversations')
+                && $query['limit'] === 20
+                && $query['offset'] === 0
+                && ! array_key_exists('status', $query);
+        });
+    }
+
+    public function test_list_conversations_includes_status_when_given(): void
+    {
+        Http::fake([
+            '*/chat/conversations*' => Http::response(['conversations' => [], 'total' => 0]),
+        ]);
+
+        app(AiCoreClient::class)->listConversations(20, 0, 'resolved');
+
+        Http::assertSent(fn ($request) => $request['status'] === 'resolved');
+    }
 }

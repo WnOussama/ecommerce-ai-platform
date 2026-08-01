@@ -270,6 +270,15 @@ class AiCoreClient
     // Chat / conversations
     // -------------------------------------------------------------------
 
+    public function listConversations(int $limit = 20, int $offset = 0, ?string $status = null): array
+    {
+        return $this->get('/chat/conversations', array_filter([
+            'limit' => $limit,
+            'offset' => $offset,
+            'status' => $status,
+        ], fn ($value) => $value !== null));
+    }
+
     public function conversationHistory(string $conversationId, int $limit = 50): array
     {
         return $this->get("/chat/history/{$conversationId}", ['limit' => $limit]);
