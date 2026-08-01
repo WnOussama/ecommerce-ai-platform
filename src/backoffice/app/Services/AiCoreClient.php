@@ -77,6 +77,19 @@ class AiCoreClient
         return $response->json() ?? [];
     }
 
+    protected function delete(string $path): void
+    {
+        try {
+            $response = $this->request()->delete($path);
+        } catch (ConnectionException $e) {
+            throw AiCoreException::connectionFailed($e->getMessage());
+        }
+
+        if ($response->failed()) {
+            throw AiCoreException::fromStatus($response->status(), $response->body());
+        }
+    }
+
     /**
      * True if the AI Core API is reachable (used for a connection-status
      * indicator - this hits the public /health endpoint, no auth needed).
@@ -203,6 +216,35 @@ class AiCoreClient
             'action_id' => $actionId,
             'reason' => $reason,
         ], fn ($value) => $value !== ''));
+    }
+
+    // -------------------------------------------------------------------
+    // Rules
+    // -------------------------------------------------------------------
+
+    public function listRules(): array
+    {
+        return $this->get('/rules');
+    }
+
+    public function getRule(string $ruleId): array
+    {
+        return $this->get("/rules/{$ruleId}");
+    }
+
+    public function createRule(array $data): array
+    {
+        return $this->post('/rules', $data);
+    }
+
+    public function updateRule(string $ruleId, array $data): array
+    {
+        return $this->put("/rules/{$ruleId}", $data);
+    }
+
+    public function deleteRule(string $ruleId): void
+    {
+        $this->delete("/rules/{$ruleId}");
     }
 
     // -------------------------------------------------------------------

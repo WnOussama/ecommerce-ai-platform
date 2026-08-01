@@ -92,4 +92,47 @@ class AiCoreClientTest extends TestCase
 
         Http::assertSent(fn ($request) => $request->data() === ['action_id' => 'act_1']);
     }
+
+    public function test_create_rule_posts_to_rules_endpoint(): void
+    {
+        Http::fake([
+            '*/rules' => Http::response(['id' => 'rule_1', 'name' => 'Test rule']),
+        ]);
+
+        app(AiCoreClient::class)->createRule([
+            'name' => 'Test rule',
+            'conditions' => ['intent' => 'greeting'],
+            'action' => ['type' => 'canned_response', 'text' => 'Hi'],
+        ]);
+
+        Http::assertSent(function ($request) {
+            return $request->url() === 'http://localhost:8000/api/v1/rules'
+                && $request->method() === 'POST'
+                && $request->data()['name'] === 'Test rule';
+        });
+    }
+
+    public function test_update_rule_puts_to_rule_endpoint(): void
+    {
+        Http::fake([
+            '*/rules/rule_1' => Http::response(['id' => 'rule_1', 'name' => 'Updated']),
+        ]);
+
+        app(AiCoreClient::class)->updateRule('rule_1', ['name' => 'Updated']);
+
+        Http::assertSent(fn ($request) => $request->method() === 'PUT'
+            && $request->url() === 'http://localhost:8000/api/v1/rules/rule_1');
+    }
+
+    public function test_delete_rule_sends_delete_request(): void
+    {
+        Http::fake([
+            '*/rules/rule_1' => Http::response('', 204),
+        ]);
+
+        app(AiCoreClient::class)->deleteRule('rule_1');
+
+        Http::assertSent(fn ($request) => $request->method() === 'DELETE'
+            && $request->url() === 'http://localhost:8000/api/v1/rules/rule_1');
+    }
 }
