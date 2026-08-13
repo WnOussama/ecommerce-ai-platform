@@ -8,6 +8,7 @@ valide - aucune vérification réelle n'existait. Ces tests exercent le
 endpoint HTTP réel de bout en bout contre une vraie base Postgres.
 """
 
+import json
 import os
 
 import pytest
@@ -71,9 +72,41 @@ async def tenant_id(db_session: AsyncSession):
     )
     await db_session.commit()
 
+    # discount policy per `reason` now lives in the tenant's rules table
+    # (see RuleRepository.get_by_action_reason), not a hardcoded module
+    # constant - seed the two reasons this test exercises.
+    for reason, discount_percent, validity_days in [
+        ("cart_abandonment", 10, 2),
+        ("loyalty", 15, 30),
+    ]:
+        await db_session.execute(
+            text(
+                "INSERT INTO rules (id, tenant_id, name, conditions, action, priority, "
+                "is_active, usage_count, created_at, updated_at) "
+                "VALUES (:id, :tenant_id, :name, CAST('{}' AS JSONB), "
+                "CAST(:action AS JSONB), 0, true, 0, :now, :now)"
+            ),
+            {
+                "id": uuid.uuid4(),
+                "tenant_id": new_id,
+                "name": f"Policy: {reason}",
+                "action": json.dumps(
+                    {
+                        "type": "generate_coupon",
+                        "reason": reason,
+                        "discount_percent": discount_percent,
+                        "validity_days": validity_days,
+                    }
+                ),
+                "now": datetime.utcnow(),
+            },
+        )
+    await db_session.commit()
+
     yield new_id
 
     await db_session.execute(text("DELETE FROM coupons WHERE tenant_id = :id"), {"id": new_id})
+    await db_session.execute(text("DELETE FROM rules WHERE tenant_id = :id"), {"id": new_id})
     await db_session.execute(text("DELETE FROM tenants WHERE id = :id"), {"id": new_id})
     await db_session.commit()
 
@@ -143,6 +176,24 @@ class TestCouponsEndToEnd:
             assert listing.status_code == 200
             codes = [c["code"] for c in listing.json()["coupons"]]
             assert gen_resp_2.json()["coupon"]["code"] in codes
+
+    async def test_unconfigured_reason_falls_back_to_default_policy(self, tenant_id):
+        """A reason with no matching rule for this tenant gets the safety-net
+        default (10%, not the old hardcoded per-reason table)."""
+        from app.main import create_application
+
+        app = create_application()
+        transport = ASGITransport(app=app)
+        headers = {"X-Tenant-ID": str(tenant_id)}
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/v1/coupons/generate",
+                json={"customer_id": "cust_e2e_3", "reason": "no_rule_configured_for_this"},
+                headers=headers,
+            )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["coupon"]["discount_value"] == 10.0
 
     async def test_coupon_from_another_tenant_is_not_valid(self, tenant_id, db_session):
         import uuid

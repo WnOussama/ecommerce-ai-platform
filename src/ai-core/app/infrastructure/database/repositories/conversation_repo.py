@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database.models.conversation import Conversation, ConversationStatus
@@ -69,6 +69,35 @@ class ConversationRepository:
         )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def list_recent(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        status: Optional[ConversationStatus] = None,
+    ) -> List[Conversation]:
+        """Conversations du tenant, les plus récentes en premier - pour le
+        navigateur de conversations du backoffice (aucun endpoint de liste
+        n'existait jusqu'ici, seulement get_by_id)."""
+        stmt = select(Conversation).where(Conversation.tenant_id == self._tenant_id)
+        if status is not None:
+            stmt = stmt.where(Conversation.status == status)
+        stmt = stmt.order_by(Conversation.created_at.desc()).limit(limit).offset(offset)
+
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def count_all(self, status: Optional[ConversationStatus] = None) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(Conversation)
+            .where(Conversation.tenant_id == self._tenant_id)
+        )
+        if status is not None:
+            stmt = stmt.where(Conversation.status == status)
+
+        result = await self._session.execute(stmt)
+        return result.scalar() or 0
 
     async def get_by_id_for_update(
         self,

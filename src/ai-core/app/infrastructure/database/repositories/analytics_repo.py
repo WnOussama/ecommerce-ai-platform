@@ -180,6 +180,47 @@ class AnalyticsRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_by_type(
+        self,
+        event_type: str,
+        limit: int = 50,
+    ) -> List[AnalyticsEvent]:
+        """
+        Événements d'un type donné, les plus récents en premier - utilisé
+        par GET /admin/actions (voir admin.py) pour lister l'historique des
+        actions admin, faute de table dédiée pour celles-ci.
+        """
+        stmt = (
+            select(AnalyticsEvent)
+            .where(
+                AnalyticsEvent.tenant_id == self._tenant_id,
+                AnalyticsEvent.event_type == event_type,
+            )
+            .order_by(AnalyticsEvent.created_at.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_by_entity(
+        self,
+        entity_type: str,
+        entity_id: UUID,
+    ) -> Optional[AnalyticsEvent]:
+        """Le dernier événement pour cette entité (ex: entity_type="admin_action")."""
+        stmt = (
+            select(AnalyticsEvent)
+            .where(
+                AnalyticsEvent.tenant_id == self._tenant_id,
+                AnalyticsEvent.entity_type == entity_type,
+                AnalyticsEvent.entity_id == entity_id,
+            )
+            .order_by(AnalyticsEvent.created_at.desc())
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def count_by_type(
         self,
         event_type: str,

@@ -1,0 +1,54 @@
+\chapter{Tests et validation}
+\label{chap:tests}
+
+\section*{Introduction}
+\addcontentsline{toc}{section}{Introduction}
+
+Ce chapitre présente la démarche de tests mise en \oe{}uvre tout au long du projet, ainsi que les résultats obtenus sur la version finale livrée. Conformément à la \emph{definition of done} adoptée dès le premier sprint (\cref{chap:cadre-general}), aucune fonctionnalité n'a été considérée terminée sans couverture de test correspondante.
+
+\section{Stratégie de tests}
+
+Trois niveaux de tests ont été mis en \oe{}uvre, chacun avec un objectif distinct.
+
+\subsection{Tests unitaires}
+
+Les tests unitaires couvrent la logique pure, sans dépendance externe (base de données, cache, réseau). C'est en particulier le cas de l'évaluateur de règles (\texttt{RuleEvaluator}), testé à l'aide d'objets de substitution légers plutôt que de véritables enregistrements en base, ce qui permet une exécution rapide et déterministe. Treize scénarios y sont couverts : correspondance sur l'intention, sur un mot-clé parmi plusieurs, sur l'ensemble de mots-clés requis, absence de correspondance, priorité entre règles concurrentes, et le cas limite d'une règle sans aucune condition (qui, par construction, ne doit jamais correspondre par accident).
+
+\subsection{Tests d'intégration}
+
+Les tests d'intégration s'exécutent contre une véritable instance PostgreSQL (ignorés automatiquement si aucune instance n'est joignable, pour ne pas bloquer un environnement de développement incomplet) et valident des scénarios de bout en bout via de véritables appels HTTP à l'application. C'est à ce niveau qu'ont été validés, par exemple : la création réelle d'un coupon en base par une règle de type \texttt{generate\_coupon}, l'incrémentation du compteur d'utilisation d'une règle après plusieurs déclenchements, le court-circuit effectif du modèle de langage par une réponse préétablie (vérifié à l'aide d'un fournisseur de modèle de langage instrumenté, garantissant qu'il n'est jamais sollicité dans ce cas), les trois paliers de risque du système de sécurité de l'agent d'administration, ou encore l'exactitude des indicateurs du service d'analyse de la demande sur un jeu de données de test dont le résultat attendu est calculé manuellement puis comparé à la valeur produite par le système.
+
+\subsection{Tests applicatifs (backoffice)}
+
+Côté backoffice, les tests s'appuient sur le simulateur HTTP de Laravel pour isoler chaque page Filament de l'API réelle (réponses simulées), et vérifient à la fois le comportement nominal et la dégradation gracieuse en cas d'indisponibilité du \emph{ai-core} (page fonctionnelle affichant un message d'erreur plutôt qu'une erreur fatale).
+
+\subsection{Vérification manuelle}
+
+Les tests automatisés ne suffisant pas à eux seuls à garantir la qualité perçue d'une interface, chaque page du backoffice a par ailleurs été vérifiée manuellement en conditions réelles : démarrage de la pile applicative complète, injection de données de test représentatives via l'API, puis inspection visuelle du rendu. Cette étape a permis de détecter des défauts qu'aucun test automatisé n'aurait révélés : une erreur de type sur un paramètre transmis sous forme de chaîne par un formulaire (\cref{chap:realisation}, Sprint 5), ou l'absence de distinction visuelle entre un graphique légitimement vide et un graphique en échec (Sprint 6).
+
+\section{Résultats}
+
+\begin{table}[h]
+\centering
+\caption{Synthèse de la couverture de tests à la livraison finale}
+\label{tab:tests-resultats}
+\begin{tabular}{@{}p{5cm}p{3cm}p{6cm}@{}}
+\toprule
+\textbf{Composant} & \textbf{Tests passants} & \textbf{Outils} \\
+\midrule
+\emph{ai-core} (Python) & 563 & pytest (unitaires + intégration) \\
+Backoffice (PHP) & 36 & PHPUnit / Livewire testing \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Au-delà des tests fonctionnels, chaque livraison a été systématiquement validée par les outils d'analyse statique du projet : \texttt{ruff check} et \texttt{ruff format --check} côté Python, \texttt{pint --test} (respect des conventions de style Laravel) côté PHP -- les deux exécutés sans erreur sur la version finale.
+
+\section{Exemple : validation du calcul de la demande non satisfaite}
+
+Un exemple illustre la rigueur recherchée dans les tests d'intégration : le calcul de la \emph{demande non satisfaite} (recherches client n'ayant renvoyé aucun résultat produit pertinent) nécessitait d'associer chaque réponse infructueuse de l'assistant au message utilisateur qui l'avait précédée. Une première implémentation, fondée sur un rapprochement par proximité temporelle, s'est révélée non déterministe en cas de messages horodatés de façon identique lors des tests. Le calcul a été repensé pour s'appuyer sur l'invariant réel du système -- chaque message utilisateur est immédiatement suivi de la réponse de l'assistant dans le même flux de traitement -- en associant chaque paire par rang au sein de la conversation plutôt que par horodatage, rendant le résultat déterministe et vérifiable par un test d'intégration exact.
+
+\section*{Conclusion}
+\addcontentsline{toc}{section}{Conclusion}
+
+La démarche de tests mise en place a permis de livrer une version du système dont le comportement -- y compris les cas limites et les mécanismes de sécurité -- est vérifié de façon reproductible, condition jugée nécessaire au regard de la problématique de confiance posée en introduction de ce rapport.

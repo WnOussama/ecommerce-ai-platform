@@ -13,7 +13,8 @@ import asyncio
 import logging
 import os
 import signal
-from datetime import datetime
+import uuid
+from datetime import datetime, timedelta
 from typing import Any, Callable, Dict
 
 from app.core.config.settings import settings
@@ -257,21 +258,33 @@ class BulkOperationHandler:
         )
 
         try:
-            from app.domain.services.admin.agent import AdminAgent
+            from app.infrastructure.database.unit_of_work import UnitOfWork
 
             customers = payload.get("customers", [])
             coupon_config = payload.get("coupon_config", {})
+            discount_percent = coupon_config.get("discount_percent", 10)
+            validity_days = coupon_config.get("validity_days", 7)
+            reason = coupon_config.get("reason")
 
-            admin_agent = AdminAgent(tenant_id=tenant_id)
-
+            tenant_uuid = uuid.UUID(str(tenant_id))
             generated = 0
             failed = 0
 
             for customer in customers:
                 try:
-                    await admin_agent.generate_coupon(
-                        customer_id=customer["id"], config=coupon_config
-                    )
+                    async with UnitOfWork(tenant_uuid) as uow:
+                        code = uow.coupons.generate_code()
+                        expires_at = datetime.utcnow() + timedelta(days=validity_days)
+                        await uow.coupons.create(
+                            code=code,
+                            discount_percent=discount_percent,
+                            discount_amount=None,
+                            min_purchase=None,
+                            expires_at=expires_at,
+                            reason=reason,
+                            customer_id=customer["id"],
+                        )
+                        await uow.commit()
                     generated += 1
                 except Exception as e:
                     logger.warning(f"Failed to generate coupon for customer {customer['id']}: {e}")

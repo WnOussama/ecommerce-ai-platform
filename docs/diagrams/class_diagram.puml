@@ -5,7 +5,7 @@ skinparam class {
     BorderColor #333333
 }
 
-title Diagramme de Classes - E-commerce AI Platform
+title Diagramme de Classes - E-commerce AI Platform (architecture réelle livrée)
 
 package "Domain Entities" #E8F5E9 {
     class Tenant {
@@ -30,6 +30,7 @@ package "Domain Entities" #E8F5E9 {
         +conversation_id: UUID
         +role: MessageRole
         +content: str
+        +extra_data: JSONB
     }
 
     enum MessageRole {
@@ -37,44 +38,119 @@ package "Domain Entities" #E8F5E9 {
         ASSISTANT
         SYSTEM
     }
-}
 
-package "Agents" #FFF3E0 {
-    abstract class BaseAgent {
-        #llm_gateway: LLMGateway
-        #rag_service: RAGService
-        +{abstract} process()
+    class Product {
+        +id: UUID
+        +tenant_id: UUID
+        +external_id: str
+        +name: str
+        +price: float
+        +quantity: int
     }
 
-    class ClientAgent {
-        -intent_classifier: IntentClassifier
-        +process_message(): AIResponse
+    class Coupon {
+        +id: UUID
+        +tenant_id: UUID
+        +rule_id: UUID
+        +code: str
+        +discount_percent: float
+        +used_at: datetime
+    }
+
+    class Rule {
+        +id: UUID
+        +tenant_id: UUID
+        +name: str
+        +conditions: JSONB
+        +action: JSONB
+        +priority: int
+        +is_active: bool
+        +usage_count: int
+    }
+}
+
+package "Rules Engine" #FFF9C4 {
+    class RuleRepository {
+        +list_active(): List[Rule]
+        +get_by_action_reason(reason): Rule
+        +increment_usage(rule_id): void
+    }
+
+    class RuleEvaluator {
+        +{static} evaluate(rules, intent, message): RuleMatch
+    }
+}
+
+package "Admin Agent" #FFF3E0 {
+    class AdminCommandParser {
+        +parse(request): ParsedCommand
     }
 
     class AdminAgent {
-        -command_validator: Validator
-        +execute_command(): AdminResponse
+        -db: AsyncSession
+        -tenant_id: UUID
+        -safety: AdminAISafetySystem
+        +execute_command(request): AdminResponse
+        -_dispatch(action_name, parameters)
+        -_handle_get_analytics()
+        -_handle_marketing_strategy()
+        -_handle_bulk_coupons()
     }
 
-    class IntentClassifier {
-        +classify(): Tuple[IntentType, float]
+    class AdminAISafetySystem {
+        -cache_client: RedisClient
+        +request_confirmation(action): PendingAction
+        +confirm_action(id, token): AdminResponse
+        +reject_action(id, reason): AdminResponse
+        +execute_action(id): AdminResponse
+        +rollback_action(id): AdminResponse
+    }
+
+    class PendingAction {
+        +action_id: UUID
+        +action_name: str
+        +risk_level: RiskLevel
+        +status: str
+        +to_dict(): dict
+        +{static} from_dict(data): PendingAction
+    }
+
+    class AdminAuditLogger {
+        +record(action, result): void
     }
 }
 
-package "Shared Services" #E3F2FD {
-    class LLMGateway {
-        +generate(): LLMResponse
-        +generate_embeddings(): List
+package "Insights" #E1F5FE {
+    class InsightsService {
+        -db: AsyncSession
+        -tenant_id: UUID
+        +most_requested_products(): List[ProductDemand]
+        +unmet_demand(): List[UnmetSearch]
+        +intent_distribution(): dict
+        +peak_hours(): List[dict]
+        +coupon_conversion(): dict
+        +low_stock_products(): List[Product]
+        +summary(since): InsightsSummary
     }
 
-    class RAGService {
-        +search(): RAGResult
-        +index_documents(): void
+    class ProductDemand {
+        +external_id: str
+        +name: str
+        +request_count: int
     }
 
-    class PromptDefense {
-        +validate_input(): SecurityResult
-        +validate_output(): SecurityResult
+    class UnmetSearch {
+        +message: str
+        +created_at: datetime
+    }
+
+    class InsightsSummary
+}
+
+package "Sécurité" #F3E5F5 {
+    class GuardrailsOrchestrator {
+        +check_input(message): SecurityReport
+        +check_output(response, context): SecurityReport
     }
 }
 
@@ -87,20 +163,52 @@ package "Infrastructure" #FCE4EC {
     class OpenAIProvider
     class AnthropicProvider
     class MockProvider
+
+    class RetrievalService {
+        +search_products(query): List[Product]
+        +index_documents(): void
+    }
+
+    class UnitOfWork {
+        +conversations: ConversationRepository
+        +messages: MessageRepository
+        +rules: RuleRepository
+        +coupons: CouponRepository
+        +analytics: AnalyticsRepository
+        +commit(): void
+    }
 }
 
-' Relations
+' Relations - Domain
 Tenant "1" *-- "many" Conversation
 Conversation "1" *-- "many" Message
-BaseAgent <|-- ClientAgent
-BaseAgent <|-- AdminAgent
-ClientAgent *-- IntentClassifier
-ClientAgent --> RAGService
-ClientAgent --> LLMGateway
-LLMGateway o-- BaseLLMProvider
+Tenant "1" *-- "many" Rule
+Tenant "1" *-- "many" Product
+Rule "1" o-- "many" Coupon : rule_id
+
+' Relations - Rules Engine
+RuleRepository ..> Rule
+RuleEvaluator ..> Rule : evalue (pur, sans BD)
+RuleEvaluator ..> Coupon : genere via action\ngenerate_coupon
+
+' Relations - Admin Agent
+AdminAgent --> AdminCommandParser
+AdminAgent --> AdminAISafetySystem
+AdminAgent --> InsightsService : _handle_get_analytics
+AdminAgent --> AdminAuditLogger
+AdminAISafetySystem *-- PendingAction
+
+' Relations - Insights
+InsightsService --> ProductDemand
+InsightsService --> UnmetSearch
+InsightsService --> InsightsSummary
+
+' Relations - Infrastructure
 BaseLLMProvider <|-- OpenAIProvider
 BaseLLMProvider <|-- AnthropicProvider
 BaseLLMProvider <|-- MockProvider
+AdminAgent ..> BaseLLMProvider : suggest_marketing_strategy uniquement
+UnitOfWork --> RuleRepository
+UnitOfWork --> RetrievalService
 
 @enduml
-

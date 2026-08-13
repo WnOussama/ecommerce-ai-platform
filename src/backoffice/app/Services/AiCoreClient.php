@@ -77,6 +77,19 @@ class AiCoreClient
         return $response->json() ?? [];
     }
 
+    protected function delete(string $path): void
+    {
+        try {
+            $response = $this->request()->delete($path);
+        } catch (ConnectionException $e) {
+            throw AiCoreException::connectionFailed($e->getMessage());
+        }
+
+        if ($response->failed()) {
+            throw AiCoreException::fromStatus($response->status(), $response->body());
+        }
+    }
+
     /**
      * True if the AI Core API is reachable (used for a connection-status
      * indicator - this hits the public /health endpoint, no auth needed).
@@ -113,9 +126,38 @@ class AiCoreClient
         return $this->get('/analytics/customers', ['time_range' => $timeRange]);
     }
 
+    /**
+     * Real per-day (or per-intent, for "intent_distribution") aggregates -
+     * backs the dashboard's chart widgets. $metric is one of: conversations,
+     * llm_cost, guardrail_blocks, intent_distribution.
+     */
+    public function timeseries(string $metric, string $timeRange = 'last_30_days'): array
+    {
+        return $this->get('/analytics/timeseries', ['metric' => $metric, 'time_range' => $timeRange]);
+    }
+
+    /**
+     * Per-tenant token/cost totals, avg latency, cost-per-conversation, and
+     * the most expensive recent messages - backs the Cost & Messages page.
+     */
+    public function costReport(string $timeRange = 'last_30_days', int $limit = 20): array
+    {
+        return $this->get('/analytics/cost-report', ['time_range' => $timeRange, 'limit' => $limit]);
+    }
+
     public function couponAnalytics(string $timeRange = 'last_30_days'): array
     {
         return $this->get('/analytics/coupons', ['time_range' => $timeRange]);
+    }
+
+    /**
+     * Real demand analytics (most requested products, unmet demand,
+     * intent distribution, peak hours, coupon conversion, low stock) -
+     * backs the Insights page.
+     */
+    public function insightsSummary(string $timeRange = 'last_30_days'): array
+    {
+        return $this->get('/insights/summary', ['time_range' => $timeRange]);
     }
 
     // -------------------------------------------------------------------
@@ -156,12 +198,9 @@ class AiCoreClient
     // Admin AI agent
     // -------------------------------------------------------------------
 
-    public function adminActions(?string $status = null, int $limit = 20): array
+    public function adminActions(int $limit = 20): array
     {
-        return $this->get('/admin/actions', array_filter([
-            'status' => $status,
-            'limit' => $limit,
-        ]));
+        return $this->get('/admin/actions', ['limit' => $limit]);
     }
 
     public function adminAction(string $actionId): array
@@ -169,33 +208,86 @@ class AiCoreClient
         return $this->get("/admin/actions/{$actionId}");
     }
 
-    public function sendAdminCommand(string $command, array $context = []): array
+    /**
+     * Send an admin command - either free text (classified server-side into
+     * one of the predefined actions, see AdminCommandParser) or a structured
+     * action_name + parameters (required for actions that need real
+     * parameters, e.g. generate_bulk_coupons).
+     *
+     * PHP has no distinct empty-object/empty-array type, so an empty
+     * `parameters` array serializes to JSON `[]` - the AI Core expects a
+     * dict (`{}`) or the key omitted entirely. Omit falsy-but-meaningful
+     * fields explicitly with `!== null` rather than array_filter()'s default
+     * callback, which would also drop `reason: ''` or other legitimate
+     * empty-but-intentional values.
+     */
+    public function sendAdminCommand(?string $command = null, ?string $actionName = null, array $parameters = [], string $reason = ''): array
     {
-        // PHP has no distinct empty-object type, so an empty array serializes
-        // to JSON `[]` - the AI Core expects `context` to be a dict (`{}`) or
-        // omitted entirely. Omit it when empty rather than sending `[]`.
         return $this->post('/admin/command', array_filter([
             'command' => $command,
-            'context' => $context ?: null,
+            'action_name' => $actionName,
+            'parameters' => $parameters ?: null,
+            'reason' => $reason ?: null,
         ], fn ($value) => $value !== null));
     }
 
-    public function confirmAdminAction(string $actionId, bool $confirmed = true, array $modifications = []): array
+    public function confirmAdminAction(string $actionId, string $confirmationToken): array
     {
-        // NOTE: array_filter()'s default callback drops falsy values,
-        // including `false` - it must NOT be used on `confirmed` here, or a
-        // rejection (confirmed: false) would be silently dropped from the
-        // payload and default to true server-side, inverting the decision.
-        return $this->post('/admin/confirm', array_filter([
+        return $this->post('/admin/confirm', [
             'action_id' => $actionId,
-            'confirmed' => $confirmed,
-            'modifications' => $modifications ?: null,
-        ], fn ($value) => $value !== null));
+            'confirmation_token' => $confirmationToken,
+        ]);
+    }
+
+    public function rejectAdminAction(string $actionId, string $reason = ''): array
+    {
+        return $this->post('/admin/reject', array_filter([
+            'action_id' => $actionId,
+            'reason' => $reason,
+        ], fn ($value) => $value !== ''));
+    }
+
+    // -------------------------------------------------------------------
+    // Rules
+    // -------------------------------------------------------------------
+
+    public function listRules(): array
+    {
+        return $this->get('/rules');
+    }
+
+    public function getRule(string $ruleId): array
+    {
+        return $this->get("/rules/{$ruleId}");
+    }
+
+    public function createRule(array $data): array
+    {
+        return $this->post('/rules', $data);
+    }
+
+    public function updateRule(string $ruleId, array $data): array
+    {
+        return $this->put("/rules/{$ruleId}", $data);
+    }
+
+    public function deleteRule(string $ruleId): void
+    {
+        $this->delete("/rules/{$ruleId}");
     }
 
     // -------------------------------------------------------------------
     // Chat / conversations
     // -------------------------------------------------------------------
+
+    public function listConversations(int $limit = 20, int $offset = 0, ?string $status = null): array
+    {
+        return $this->get('/chat/conversations', array_filter([
+            'limit' => $limit,
+            'offset' => $offset,
+            'status' => $status,
+        ], fn ($value) => $value !== null));
+    }
 
     public function conversationHistory(string $conversationId, int $limit = 50): array
     {

@@ -13,16 +13,15 @@ Covers:
 import pytest
 
 from app.core.security.admin_safety import (
-    RiskLevel,
-    ActionStatus,
-    ApprovalType,
+    ACTION_DEFINITIONS,
     ActionDefinition,
+    ActionStatus,
+    AdminAISafetySystem,
+    ApprovalType,
     DryRunResult,
     PendingAction,
-    AdminAISafetySystem,
-    ACTION_DEFINITIONS,
+    RiskLevel,
 )
-
 
 # =============================================================================
 # RISK LEVEL & ENUMS
@@ -46,17 +45,26 @@ class TestRiskLevel:
 class TestActionStatus:
     """ActionStatus covers the full lifecycle."""
 
-    @pytest.mark.parametrize("status", [
-        "draft", "pending_confirmation", "pending_human_approval",
-        "approved", "executing", "completed", "failed",
-        "rolled_back", "rejected", "expired",
-    ])
+    @pytest.mark.parametrize(
+        "status",
+        [
+            "draft",
+            "pending_confirmation",
+            "pending_human_approval",
+            "approved",
+            "executing",
+            "completed",
+            "failed",
+            "rolled_back",
+            "rejected",
+            "expired",
+        ],
+    )
     def test_all_statuses_exist(self, status):
         assert ActionStatus(status).value == status
 
 
 class TestApprovalType:
-
     def test_none_for_readonly(self):
         assert ApprovalType.NONE == "none"
 
@@ -247,6 +255,31 @@ class TestAdminAISafetySystem:
         )
         # Should have validation error because 5000 > max_affected_items
         assert result.is_valid is False or len(result.warnings) > 0
+
+    @pytest.mark.asyncio
+    async def test_dry_run_bulk_coupons_accepts_string_parameters(self, safety):
+        """Regression: parameters arrive over HTTP as JSON, and some callers
+        (e.g. the backoffice's KeyValue form field) only ever produce
+        strings - comparing "2" > 1000 raised TypeError, found by actually
+        driving the admin UI rather than by mocking the request."""
+        result = await safety.create_dry_run(
+            tenant_id="tenant_abc12345",
+            action_name="generate_bulk_coupons",
+            parameters={"max_count": "2", "discount_percent": "10"},
+            initiated_by="admin_user",
+        )
+        assert result.is_valid is True
+        assert result.affected_items_count == 2
+
+    @pytest.mark.asyncio
+    async def test_dry_run_update_prices_accepts_string_adjustment(self, safety):
+        result = await safety.create_dry_run(
+            tenant_id="tenant_abc12345",
+            action_name="update_product_prices",
+            parameters={"product_ids": ["p1"], "adjustment_percent": "10"},
+            initiated_by="admin_user",
+        )
+        assert result.is_valid is True
 
     @pytest.mark.asyncio
     async def test_dry_run_sets_expiration(self, safety):

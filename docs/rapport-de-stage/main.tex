@@ -1,0 +1,149 @@
+% ============================================================================
+% Rapport de stage - Cycle Ingénieur ESPRIT
+% Assistant IA e-commerce & Backoffice - Prodexo
+% ============================================================================
+%
+% Compilation : pdflatex main.tex && pdflatex main.tex && makeglossaries main && pdflatex main.tex
+% (ou tectonic main.tex, testé pendant la rédaction de ce rapport)
+%
+% NOTE : ce document utilise une page de garde générique. Si ESPRIT fournit
+% une classe officielle (esprit.cls) ou un template de page de garde avec
+% logos, remplacez le contenu de chapitres/00_page_garde.tex par le template
+% officiel plutôt que d'adapter celui-ci.
+% ============================================================================
+
+\documentclass[12pt, a4paper, oneside]{report}
+
+% --- Encodage et langue ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+% NOTE : ce document utilise \oe{} plutôt que le caractère "\oe{}" littéral, pour
+% rester compilable aussi bien avec pdflatex qu'avec XeTeX/LuaTeX (tectonic).
+
+% --- Mise en page ---
+\usepackage[a4paper, left=3cm, right=2.5cm, top=2.5cm, bottom=2.5cm]{geometry}
+\usepackage{setspace}
+\onehalfspacing
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{emptypage}
+
+% --- Graphismes et couleurs ---
+\usepackage{graphicx}
+\usepackage{xcolor}
+\definecolor{esprit_bordeaux}{RGB}{130,0,20}
+\definecolor{prodexo_bleu}{RGB}{20,60,110}
+\definecolor{codegray}{RGB}{245,245,245}
+
+% --- Tableaux ---
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{colortbl}
+
+% --- Listes et code ---
+\usepackage{enumitem}
+\usepackage{listings}
+\lstset{
+  backgroundcolor=\color{codegray},
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  keywordstyle=\color{prodexo_bleu}\bfseries,
+  commentstyle=\color{gray}\itshape,
+  stringstyle=\color{esprit_bordeaux},
+  showstringspaces=false,
+  tabsize=2,
+  captionpos=b,
+}
+
+% --- Mathématiques (chargé avant cleveref, requis par ce dernier) ---
+\usepackage{amsmath}
+
+% --- Liens et références ---
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=prodexo_bleu,
+  citecolor=prodexo_bleu,
+  urlcolor=prodexo_bleu,
+  pdftitle={Rapport de stage - Assistant IA e-commerce et Backoffice},
+  pdfauthor={Oussama Wannassi},
+}
+\usepackage[capitalize]{cleveref}
+
+% --- Bibliographie ---
+% NOTE : bibliographie gérée manuellement (\input{annexes/bibliographie.tex})
+% plutôt que via biblatex+biber, pour rester compilable sans dépendance
+% externe (biber accuse un décalage de version fréquent avec biblatex selon
+% les distributions LaTeX). Les mêmes références restent disponibles au
+% format .bib (bibliographie.bib) si vous préférez rebasculer sur biblatex.
+
+% --- Acronymes / glossaire ---
+\usepackage[toc, acronym]{glossaries}
+\makeglossaries
+\input{annexes/glossaire.tex}
+
+% --- En-têtes / pieds de page ---
+\pagestyle{fancy}
+\fancyhf{}
+\renewcommand{\headrulewidth}{0.4pt}
+\fancyhead[L]{\small\leftmark}
+\fancyhead[R]{\small Rapport de stage -- Oussama Wannassi}
+\fancyfoot[C]{\thepage}
+
+\titleformat{\chapter}[display]
+  {\normalfont\huge\bfseries\color{prodexo_bleu}}
+  {\chaptertitlename\ \thechapter}{20pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{0pt}{40pt}
+
+\begin{document}
+
+% ----------------------------------------------------------------------------
+% Pages liminaires
+% ----------------------------------------------------------------------------
+\pagenumbering{roman}
+
+\input{chapitres/00_page_garde.tex}
+
+\input{chapitres/01_remerciements.tex}
+
+\input{chapitres/02_resume.tex}
+
+\tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+\printglossary[type=\acronymtype, title={Liste des abréviations}]
+\clearpage
+
+% ----------------------------------------------------------------------------
+% Corps du rapport
+% ----------------------------------------------------------------------------
+\pagenumbering{arabic}
+
+\input{chapitres/03_introduction_generale.tex}
+\input{chapitres/04_cadre_general.tex}
+\input{chapitres/05_analyse_specification.tex}
+\input{chapitres/06_conception.tex}
+\input{chapitres/07_realisation.tex}
+\input{chapitres/08_tests_validation.tex}
+\input{chapitres/09_conclusion_generale.tex}
+
+% ----------------------------------------------------------------------------
+% Annexes et bibliographie
+% ----------------------------------------------------------------------------
+\appendix
+\input{annexes/bibliographie.tex}
+
+\input{annexes/annexe_a_extraits_code.tex}
+\input{annexes/annexe_b_dictionnaire_donnees.tex}
+
+\end{document}

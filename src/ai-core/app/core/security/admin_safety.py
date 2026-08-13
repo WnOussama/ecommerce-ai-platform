@@ -41,6 +41,7 @@ Architecture de Sécurité Admin AI:
 └─────────────────────────────────────────────────────────────────────────────────┘
 """
 
+import json
 import logging
 import secrets
 from dataclasses import dataclass, field
@@ -290,6 +291,88 @@ class PendingAction:
     rollback_data: Optional[Dict[str, Any]] = None
     rollback_expires_at: Optional[datetime] = None
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Sérialise pour stockage Redis - voir AdminAISafetySystem._store_pending."""
+        return {
+            "id": self.id,
+            "tenant_id": self.tenant_id,
+            "action_name": self.action_name,
+            "parameters": self.parameters,
+            "dry_run": self.dry_run.to_dict() if self.dry_run else None,
+            "status": self.status.value,
+            "risk_level": self.risk_level.value,
+            "approval_type": self.approval_type.value,
+            "confirmation_token": self.confirmation_token,
+            "confirmation_count": self.confirmation_count,
+            "confirmed_at": self.confirmed_at.isoformat() if self.confirmed_at else None,
+            "approver_id": self.approver_id,
+            "approval_reason": self.approval_reason,
+            "approved_at": self.approved_at.isoformat() if self.approved_at else None,
+            "initiated_by": self.initiated_by,
+            "reason": self.reason,
+            "created_at": self.created_at.isoformat(),
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "can_execute_at": self.can_execute_at.isoformat() if self.can_execute_at else None,
+            "rollback_data": self.rollback_data,
+            "rollback_expires_at": self.rollback_expires_at.isoformat()
+            if self.rollback_expires_at
+            else None,
+        }
+
+    @staticmethod
+    def from_dict(d: Dict[str, Any]) -> "PendingAction":
+        dry_run_data = d.get("dry_run")
+        dry_run = None
+        if dry_run_data:
+            dry_run = DryRunResult(
+                action_id=dry_run_data["action_id"],
+                action_name=dry_run_data["action_name"],
+                affected_items_count=dry_run_data.get("affected_items_count", 0),
+                affected_items_preview=dry_run_data.get("affected_items_preview", []),
+                changes_summary=dry_run_data.get("changes_summary", {}),
+                estimated_impact=dry_run_data.get("estimated_impact", {}),
+                warnings=dry_run_data.get("warnings", []),
+                validation_errors=dry_run_data.get("validation_errors", []),
+                risk_level=RiskLevel(dry_run_data["risk_level"]),
+                approval_required=ApprovalType(dry_run_data["approval_required"]),
+                created_at=datetime.fromisoformat(dry_run_data["created_at"])
+                if dry_run_data.get("created_at")
+                else datetime.utcnow(),
+                expires_at=datetime.fromisoformat(dry_run_data["expires_at"])
+                if dry_run_data.get("expires_at")
+                else None,
+            )
+
+        return PendingAction(
+            id=d["id"],
+            tenant_id=d["tenant_id"],
+            action_name=d["action_name"],
+            parameters=d.get("parameters", {}),
+            dry_run=dry_run,
+            status=ActionStatus(d["status"]),
+            risk_level=RiskLevel(d["risk_level"]),
+            approval_type=ApprovalType(d["approval_type"]),
+            confirmation_token=d.get("confirmation_token", ""),
+            confirmation_count=d.get("confirmation_count", 0),
+            confirmed_at=datetime.fromisoformat(d["confirmed_at"])
+            if d.get("confirmed_at")
+            else None,
+            approver_id=d.get("approver_id"),
+            approval_reason=d.get("approval_reason"),
+            approved_at=datetime.fromisoformat(d["approved_at"]) if d.get("approved_at") else None,
+            initiated_by=d.get("initiated_by", ""),
+            reason=d.get("reason", ""),
+            created_at=datetime.fromisoformat(d["created_at"]),
+            expires_at=datetime.fromisoformat(d["expires_at"]) if d.get("expires_at") else None,
+            can_execute_at=datetime.fromisoformat(d["can_execute_at"])
+            if d.get("can_execute_at")
+            else None,
+            rollback_data=d.get("rollback_data"),
+            rollback_expires_at=datetime.fromisoformat(d["rollback_expires_at"])
+            if d.get("rollback_expires_at")
+            else None,
+        )
+
 
 # =============================================================================
 # ADMIN AI SAFETY SYSTEM
@@ -309,6 +392,13 @@ class AdminAISafetySystem:
     - Rollback
     """
 
+    # TTL généreux côté Redis - la durée de vie réelle d'une action est
+    # contrôlée par expires_at/rollback_expires_at (vérifiés à chaque
+    # lecture), cette TTL n'est qu'un filet de sécurité pour ne pas
+    # accumuler indéfiniment des actions oubliées. Couvre la plus longue
+    # fenêtre de rollback existante (72h pour CRITICAL) avec de la marge.
+    _PENDING_TTL_SECONDS = 7 * 24 * 3600
+
     def __init__(
         self,
         cache_client=None,
@@ -319,9 +409,56 @@ class AdminAISafetySystem:
         self._db = db_repository
         self._notifications = notification_service
 
-        # Storage local (fallback)
+        # Storage local - utilisé uniquement si aucun cache_client n'est
+        # fourni. En production, sans cache_client, l'état ne survit pas à
+        # un redémarrage ou n'est pas partagé entre workers - voir
+        # _store_pending/_get_pending pour le chemin Redis réel.
         self._pending_actions: Dict[str, PendingAction] = {}
         self._human_approval_queue: List[str] = []
+
+    # =========================================================================
+    # STORAGE (Redis si cache_client fourni, sinon dict en mémoire)
+    # =========================================================================
+
+    def _pending_key(self, action_id: str) -> str:
+        return f"admin_pending_action:{action_id}"
+
+    def _human_queue_key(self, tenant_id: str) -> str:
+        return f"admin_human_queue:{tenant_id}"
+
+    async def _store_pending(self, pending: PendingAction) -> None:
+        if self._cache:
+            await self._cache.set(
+                self._pending_key(pending.id),
+                json.dumps(pending.to_dict()),
+                ex=self._PENDING_TTL_SECONDS,
+            )
+        else:
+            self._pending_actions[pending.id] = pending
+
+    async def _get_pending(self, action_id: str) -> Optional[PendingAction]:
+        if self._cache:
+            data = await self._cache.get(self._pending_key(action_id))
+            return PendingAction.from_dict(json.loads(data)) if data else None
+        return self._pending_actions.get(action_id)
+
+    async def _delete_pending(self, action_id: str) -> None:
+        if self._cache:
+            await self._cache.delete(self._pending_key(action_id))
+        else:
+            self._pending_actions.pop(action_id, None)
+
+    async def _add_to_human_queue(self, pending: PendingAction) -> None:
+        if self._cache:
+            await self._cache.lpush(self._human_queue_key(pending.tenant_id), pending.id)
+        else:
+            self._human_approval_queue.append(pending.id)
+
+    async def _remove_from_human_queue(self, pending: PendingAction) -> None:
+        if self._cache:
+            await self._cache.lrem(self._human_queue_key(pending.tenant_id), 0, pending.id)
+        elif pending.id in self._human_approval_queue:
+            self._human_approval_queue.remove(pending.id)
 
     # =========================================================================
     # DRY RUN
@@ -376,6 +513,24 @@ class AdminAISafetySystem:
 
         return dry_run
 
+    @staticmethod
+    def _numeric_param(parameters: Dict[str, Any], key: str, default: float = 0) -> float:
+        """
+        Coerces a parameter to a number.
+
+        Parameters arrive over HTTP as JSON, and some callers (e.g. the
+        backoffice's KeyValue form field, which only ever produces
+        strings) send numeric-looking strings rather than real numbers -
+        comparing those directly against int/float limits below raised
+        TypeError, discovered by actually driving the admin UI rather
+        than by mocking the request.
+        """
+        value = parameters.get(key, default)
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
     async def _simulate_action(
         self,
         action_id: str,
@@ -394,8 +549,8 @@ class AdminAISafetySystem:
 
         # Validation selon le type d'action
         if action_name == "generate_bulk_coupons":
-            count = parameters.get("max_count", 0)
-            discount = parameters.get("discount_percent", 0)
+            count = int(self._numeric_param(parameters, "max_count"))
+            discount = self._numeric_param(parameters, "discount_percent")
 
             affected_count = count
 
@@ -430,7 +585,7 @@ class AdminAISafetySystem:
 
         elif action_name == "update_product_prices":
             product_ids = parameters.get("product_ids", [])
-            adjustment = parameters.get("adjustment_percent", 0)
+            adjustment = self._numeric_param(parameters, "adjustment_percent")
 
             affected_count = len(product_ids)
 
@@ -536,7 +691,7 @@ class AdminAISafetySystem:
         # Status selon le type d'approbation
         if definition.approval_type == ApprovalType.HUMAN:
             pending.status = ActionStatus.PENDING_HUMAN_APPROVAL
-            self._human_approval_queue.append(pending.id)
+            await self._add_to_human_queue(pending)
 
             # Notifier les admins
             await self._notify_human_approval_required(pending)
@@ -544,7 +699,7 @@ class AdminAISafetySystem:
             pending.status = ActionStatus.PENDING_CONFIRMATION
 
         # Stocker
-        self._pending_actions[pending.id] = pending
+        await self._store_pending(pending)
 
         logger.info(
             "Confirmation requested",
@@ -572,7 +727,7 @@ class AdminAISafetySystem:
 
         Pour HIGH risk: nécessite double confirmation.
         """
-        pending = self._pending_actions.get(action_id)
+        pending = await self._get_pending(action_id)
 
         if not pending:
             return None, "Action not found"
@@ -585,6 +740,7 @@ class AdminAISafetySystem:
 
         if datetime.utcnow() > pending.expires_at:
             pending.status = ActionStatus.EXPIRED
+            await self._store_pending(pending)
             return pending, "Action expired"
 
         # Incrémenter le compteur de confirmation
@@ -601,15 +757,18 @@ class AdminAISafetySystem:
                         "confirmation_count": pending.confirmation_count,
                     },
                 )
+                await self._store_pending(pending)
                 return pending, None  # Attendre la 2ème confirmation
 
         # Vérifier le délai obligatoire
         if pending.can_execute_at and datetime.utcnow() < pending.can_execute_at:
             wait_seconds = (pending.can_execute_at - datetime.utcnow()).total_seconds()
+            await self._store_pending(pending)
             return pending, f"Must wait {int(wait_seconds)} seconds before execution"
 
         # Action confirmée
         pending.status = ActionStatus.APPROVED
+        await self._store_pending(pending)
 
         logger.info(
             "Action confirmed",
@@ -637,7 +796,7 @@ class AdminAISafetySystem:
 
         Doit être fait par un admin différent de l'initiateur.
         """
-        pending = self._pending_actions.get(action_id)
+        pending = await self._get_pending(action_id)
 
         if not pending:
             return None, "Action not found"
@@ -656,8 +815,8 @@ class AdminAISafetySystem:
         pending.status = ActionStatus.APPROVED
 
         # Retirer de la queue
-        if pending.id in self._human_approval_queue:
-            self._human_approval_queue.remove(pending.id)
+        await self._remove_from_human_queue(pending)
+        await self._store_pending(pending)
 
         logger.info(
             "Action approved by human",
@@ -678,7 +837,7 @@ class AdminAISafetySystem:
         rejection_reason: str,
     ) -> Tuple[PendingAction, Optional[str]]:
         """Rejette une action en attente d'approbation"""
-        pending = self._pending_actions.get(action_id)
+        pending = await self._get_pending(action_id)
 
         if not pending:
             return None, "Action not found"
@@ -689,9 +848,13 @@ class AdminAISafetySystem:
         ):
             return None, "Action cannot be rejected"
 
+        was_pending_human = pending.status == ActionStatus.PENDING_HUMAN_APPROVAL
         pending.status = ActionStatus.REJECTED
         pending.approval_reason = rejection_reason
         pending.approver_id = rejector_id
+        await self._store_pending(pending)
+        if was_pending_human:
+            await self._remove_from_human_queue(pending)
 
         logger.warning(
             "Action rejected",
@@ -707,6 +870,16 @@ class AdminAISafetySystem:
 
     async def get_pending_approvals(self, tenant_id: str) -> List[PendingAction]:
         """Liste les actions en attente d'approbation humaine"""
+        if self._cache:
+            raw_ids = await self._cache.lrange(self._human_queue_key(tenant_id), 0, -1)
+            results = []
+            for raw_id in raw_ids:
+                action_id = raw_id.decode() if isinstance(raw_id, bytes) else raw_id
+                pending = await self._get_pending(action_id)
+                if pending:
+                    results.append(pending)
+            return results
+
         return [
             self._pending_actions[aid]
             for aid in self._human_approval_queue
@@ -729,7 +902,7 @@ class AdminAISafetySystem:
             action_id: ID de l'action
             executor: Fonction qui exécute réellement l'action
         """
-        pending = self._pending_actions.get(action_id)
+        pending = await self._get_pending(action_id)
 
         if not pending:
             return None, "Action not found"
@@ -747,12 +920,14 @@ class AdminAISafetySystem:
             )
 
         pending.status = ActionStatus.EXECUTING
+        await self._store_pending(pending)
 
         try:
             # Exécuter l'action
             result = await executor(pending)
 
             pending.status = ActionStatus.COMPLETED
+            await self._store_pending(pending)
 
             logger.info(
                 "Action executed successfully",
@@ -767,6 +942,7 @@ class AdminAISafetySystem:
 
         except Exception as e:
             pending.status = ActionStatus.FAILED
+            await self._store_pending(pending)
 
             logger.error(
                 "Action execution failed",
@@ -792,7 +968,7 @@ class AdminAISafetySystem:
         """
         Annule une action exécutée (si rollback supporté).
         """
-        pending = self._pending_actions.get(action_id)
+        pending = await self._get_pending(action_id)
 
         if not pending:
             return False, "Action not found"
@@ -811,6 +987,7 @@ class AdminAISafetySystem:
             await self._apply_rollback(pending)
 
             pending.status = ActionStatus.ROLLED_BACK
+            await self._store_pending(pending)
 
             logger.warning(
                 "Action rolled back",

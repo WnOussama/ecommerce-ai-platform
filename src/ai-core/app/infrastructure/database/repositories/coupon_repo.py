@@ -49,6 +49,7 @@ class CouponRepository:
         reason: Optional[str] = None,
         customer_id: Optional[str] = None,
         conversation_id: Optional[UUID] = None,
+        rule_id: Optional[UUID] = None,
     ) -> Coupon:
         coupon = Coupon(
             tenant_id=self._tenant_id,
@@ -59,6 +60,7 @@ class CouponRepository:
             expires_at=expires_at,
             reason=reason,
             conversation_id=conversation_id,
+            rule_id=rule_id,
             extra_data={"customer_id": customer_id} if customer_id else {},
         )
         self._session.add(coupon)

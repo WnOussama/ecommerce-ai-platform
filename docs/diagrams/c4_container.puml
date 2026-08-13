@@ -1,49 +1,49 @@
 @startuml C4_Container
 
 !include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
 LAYOUT_WITH_LEGEND()
 
-title C4 Container Diagram - E-commerce AI Platform
+title C4 Container Diagram - E-commerce AI Platform (as actually deployed)
 
-Person(client, "Client E-commerce", "Visiteur/Acheteur")
-Person(admin, "Administrateur", "Marchand")
+Person(client, "Client E-commerce", "Visiteur/Acheteur du site marchand")
+Person(admin, "Administrateur", "Gère les règles, consulte les insights")
 
-System_Ext(prestashop, "PrestaShop", "E-commerce platform")
-System_Ext(openai, "OpenAI API", "GPT-4")
-System_Ext(anthropic, "Anthropic API", "Claude")
+System_Ext(prestashop, "PrestaShop", "Catalogue produits/catégories - pas de commandes")
+System_Ext(llm, "OpenAI / Anthropic", "LLM_PROVIDER=mock en dev (aucun coût, aucune clé requise)")
 
 System_Boundary(platform, "E-commerce AI Platform") {
-    Container(widget, "Chat Widget", "JavaScript", "Widget intégré")
-    Container(dashboard, "Admin Dashboard", "Laravel", "Interface admin")
-    Container(api, "AI Core API", "FastAPI", "API REST principale")
-    Container(client_agent, "Client Agent", "Python", "Agent interactions client")
-    Container(admin_agent, "Admin Agent", "Python", "Agent opérations admin")
-    Container(llm_gateway, "LLM Gateway", "Python", "Abstraction LLM")
-    Container(rag_service, "RAG Service", "Python", "Retrieval Augmented Generation")
-    Container(security, "Security Layer", "Python", "Guardrails 6 couches")
-    ContainerDb(postgres, "PostgreSQL", "SQL", "Tenants, Messages")
-    ContainerDb(chromadb, "ChromaDB", "Vector DB", "Embeddings")
-    ContainerDb(redis, "Redis", "Cache", "Sessions, Rate limit")
-    Container(sync_worker, "Sync Worker", "Python", "Sync catalogue")
+    Container(backoffice, "Backoffice", "Laravel / Filament", "Client REST pur - aucun accès direct a la base (imposé par l'architecture, pas seulement la convention)")
+
+    Container_Boundary(aicore, "AI Core API - FastAPI (monolithe, un seul processus déployé)") {
+        Component(chat_ep, "Chat", "endpoint", "Guardrails -> règles tenant -> RAG -> LLM -> persistance")
+        Component(rules_ep, "Rules Engine", "evaluator + repository", "conditions/action JSONB, évaluées par priorité")
+        Component(admin_agent, "Admin Agent", "AdminCommandParser + AdminAISafetySystem", "actions prédéfinies uniquement, dry-run -> confirmation -> exécution")
+        Component(insights_ep, "Insights / Analytics", "service", "agrégats réels sur messages/conversations/products/coupons")
+    }
+
+    ContainerDb(postgres, "PostgreSQL", "SQL", "Propriétaire exclusif: AI Core (Alembic)")
+    ContainerDb(chromadb, "ChromaDB", "Vector DB", "Embeddings produits pour le RAG")
+    ContainerDb(redis, "Redis", "Cache", "Rate limiting + état des actions admin (AdminAISafetySystem)")
 }
 
-Rel(client, widget, "Questions", "HTTPS")
-Rel(widget, api, "REST", "JSON")
-Rel(admin, dashboard, "Gère", "HTTPS")
-Rel(dashboard, api, "REST", "JSON")
-Rel(api, client_agent, "Route")
-Rel(api, admin_agent, "Route")
-Rel(client_agent, llm_gateway, "Generate")
-Rel(client_agent, rag_service, "Retrieve")
-Rel(client_agent, security, "Validate")
-Rel(llm_gateway, openai, "API", "HTTPS")
-Rel(llm_gateway, anthropic, "API", "HTTPS")
-Rel(api, postgres, "CRUD", "TCP")
-Rel(rag_service, chromadb, "Query", "HTTP")
-Rel(api, redis, "Cache", "TCP")
-Rel(sync_worker, prestashop, "Fetch", "REST")
-Rel(sync_worker, chromadb, "Index", "HTTP")
+Rel(client, chat_ep, "Pose une question", "HTTPS/JSON")
+Rel(admin, backoffice, "Configure les règles, consulte", "HTTPS")
+Rel(backoffice, aicore, "REST uniquement", "HTTPS/JSON")
+
+Rel(chat_ep, rules_ep, "Évalue après classification d'intention")
+Rel(chat_ep, llm, "Génère la réponse (ou court-circuité par une règle canned_response)")
+Rel(admin_agent, llm, "suggest_marketing_strategy uniquement")
+
+Rel(aicore, postgres, "CRUD (SQLAlchemy async)", "TCP")
+Rel(chat_ep, chromadb, "Recherche produits pertinents", "HTTP")
+Rel(aicore, redis, "Rate limit + pending actions", "TCP")
+
+Note right of prestashop
+  Pas de synchronisation automatique en continu dans le
+  déploiement actuel - le catalogue est indexé via
+  scripts/seed_demo_data.py ou un job manuel.
+end note
 
 @enduml
-
