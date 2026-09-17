@@ -327,6 +327,7 @@ async def send_message(request: Request, body: ChatMessageRequest):
     # usage de règle, persistance de la réponse.
     # =========================================================================
     actions: List[ChatAction] = []
+    response_text = turn.response
     if turn.coupon_decision:
         coupon_data = await _generate_coupon_from_rule(
             tenant_id,
@@ -337,6 +338,19 @@ async def send_message(request: Request, body: ChatMessageRequest):
         )
         if coupon_data:
             actions.append(ChatAction(type="generate_coupon", data=coupon_data))
+            # Real, confirmed live bug: the orchestrator generates response_text
+            # BEFORE this coupon exists (turn_orchestrator.py's ChatTurnResult is
+            # a pure decision, this endpoint does the actual DB write after) -
+            # the LLM has no way to know the code, so it never appeared anywhere
+            # the shopper could see it, not in the reply text nor in the
+            # persisted conversation log, even though a real coupon WAS created
+            # every time. Appending it here, in the same style as coupons.py's
+            # own _STRATEGY_MESSAGES templates.
+            response_text = (
+                f"{response_text}\n\nVotre code : {coupon_data['code']} "
+                f"(-{coupon_data['discount_percent']}%, valable jusqu'au "
+                f"{coupon_data['expires_at'][:10]})."
+            )
 
     if turn.rule_match:
         await _record_rule_triggered(
@@ -362,7 +376,7 @@ async def send_message(request: Request, body: ChatMessageRequest):
     await _log_assistant_message(
         tenant_id,
         conversation_id,
-        turn.response,
+        response_text,
         extra_data={
             "intent": turn.intent,
             "rag_used": body.use_rag,
@@ -388,7 +402,7 @@ async def send_message(request: Request, body: ChatMessageRequest):
     return ChatMessageResponse(
         conversation_id=conversation_id,
         message_id=message_id,
-        response=turn.response,
+        response=response_text,
         intent=turn.intent,
         confidence=turn.confidence,
         actions=actions,
