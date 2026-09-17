@@ -139,14 +139,14 @@ services:
     container_name: saas_mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${PS_DB_PASSWORD:-admin}
+      MYSQL_ROOT_PASSWORD: ${PS_DB_PASSWORD:?PS_DB_PASSWORD is required}
       MYSQL_DATABASE: ${PS_DB_NAME:-prestashop}
     volumes:
       - mysql_data:/var/lib/mysql
     networks:
       - saas_network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${PS_DB_PASSWORD:-admin}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${PS_DB_PASSWORD:?PS_DB_PASSWORD is required}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -168,7 +168,7 @@ services:
       DB_SERVER: mysql
       DB_NAME: ${PS_DB_NAME:-prestashop}
       DB_USER: root
-      DB_PASSWD: ${PS_DB_PASSWORD:-admin}
+      DB_PASSWD: ${PS_DB_PASSWORD:?PS_DB_PASSWORD is required}
       PS_DOMAIN: ${PS_DOMAIN:-localhost:8080}
       PS_INSTALL_AUTO: 1
       PS_ERASE_DB: 0
@@ -184,7 +184,7 @@ services:
       # gets built; PHP errors are still visible via docker logs regardless.
       PS_DEV_MODE: 0
       ADMIN_MAIL: ${PS_ADMIN_EMAIL:-admin@example.com}
-      ADMIN_PASSWD: ${PS_ADMIN_PASSWORD:-Admin123!}
+      ADMIN_PASSWD: ${PS_ADMIN_PASSWORD:?PS_ADMIN_PASSWORD is required}
     ports:
       - "8080:80"
     volumes:
@@ -297,7 +297,7 @@ services:
     restart: unless-stopped
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD is required}
       - GF_USERS_ALLOW_SIGN_UP=false
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
