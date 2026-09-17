@@ -57,6 +57,26 @@
             messagesEl.scrollTop = messagesEl.scrollHeight;
         }
 
+        // `navigate_to` is only set by controllers/front/chat.php when the AI
+        // found a real product match (see withNavigation() there) - never
+        // fabricated client-side. The delay lets the shopper read the
+        // assistant's reply before the page changes instead of yanking them
+        // away mid-sentence; the notice makes the redirect legible rather
+        // than a surprise tab change.
+        var NAVIGATE_DELAY_MS = 1800;
+
+        function maybeNavigate(data) {
+            if (!data || !data.navigate_to) {
+                return;
+            }
+
+            appendMessage('Je vous emmène sur la page du produit...', 'bot nav-notice');
+
+            window.setTimeout(function () {
+                window.location.href = data.navigate_to;
+            }, NAVIGATE_DELAY_MS);
+        }
+
         toggle.addEventListener('click', function () {
             panel.classList.toggle('open');
 
@@ -106,6 +126,7 @@
                     }
 
                     appendMessage(result.data.response || '...', 'bot');
+                    maybeNavigate(result.data);
                 })
                 .catch(function () {
                     appendMessage(

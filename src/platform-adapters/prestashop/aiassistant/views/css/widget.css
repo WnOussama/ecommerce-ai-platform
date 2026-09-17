@@ -82,6 +82,11 @@
     align-self: flex-start;
 }
 
+.ai-assistant-message.nav-notice {
+    font-style: italic;
+    color: #666;
+}
+
 .ai-assistant-input-row {
     display: flex;
     border-top: 1px solid #eee;

@@ -57,7 +57,42 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
             exit;
         }
 
-        echo json_encode($result['data']);
+        echo json_encode($this->withNavigation($result['data']));
         exit;
+    }
+
+    /**
+     * The AI Core response carries real PrestaShop product ids (see
+     * app/services/rag/retrieval_service.py - `product_id` is the synced
+     * catalog's external_id) but has no notion of this shop's URL
+     * structure (friendly URLs, language, multistore...) - that's this
+     * shop's own routing, resolved here with Link::getProductLink()
+     * rather than asked of the AI Core. Adds a `url` on every product in
+     * the response, plus a top-level `navigate_to` pointing at the best
+     * RAG match (widget.js auto-navigates there after showing the reply)
+     * - `products` is already sorted by similarity descending (see
+     * retrieval_service.py::search, `results.sort(...reverse=True)`), so
+     * the first entry is the best match.
+     */
+    private function withNavigation(array $data)
+    {
+        if (empty($data['products']) || !is_array($data['products'])) {
+            return $data;
+        }
+
+        $link = $this->context->link;
+
+        foreach ($data['products'] as &$product) {
+            if (isset($product['id'])) {
+                $product['url'] = $link->getProductLink((int) $product['id']);
+            }
+        }
+        unset($product);
+
+        if (isset($data['products'][0]['url'])) {
+            $data['navigate_to'] = $data['products'][0]['url'];
+        }
+
+        return $data;
     }
 }
