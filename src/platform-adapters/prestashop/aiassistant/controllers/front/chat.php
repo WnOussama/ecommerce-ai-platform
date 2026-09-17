@@ -69,10 +69,21 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
      * shop's own routing, resolved here with Link::getProductLink()
      * rather than asked of the AI Core. Adds a `url` on every product in
      * the response, plus a top-level `navigate_to` pointing at the best
-     * RAG match (widget.js auto-navigates there after showing the reply)
-     * - `products` is already sorted by similarity descending (see
-     * retrieval_service.py::search, `results.sort(...reverse=True)`), so
-     * the first entry is the best match.
+     * RAG match, but ONLY when the classified intent is actually about
+     * finding a product.
+     *
+     * Real, confirmed live bug: RAG's min_similarity=0.3 threshold (see
+     * app/services/rag/factory.py) is deliberately low, and this shop's
+     * embeddings are a deterministic hash (no OpenAI key configured - see
+     * app/services/rag/embedding_service.py::MockEmbeddingService), not a
+     * semantically meaningful one - so a pure policy question like "What's
+     * your return policy?" (intent=return_request) still comes back with
+     * ~0.5-0.57 similarity "matches" that are just noise, and the widget
+     * was silently redirecting the shopper to an unrelated product page
+     * mid-conversation, before they'd even read the reply. `products` is
+     * already sorted similarity-descending (retrieval_service.py::search,
+     * `results.sort(...reverse=True)`), so index 0 is the best (still
+     * possibly irrelevant) match.
      */
     private function withNavigation(array $data)
     {
@@ -89,7 +100,8 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
         }
         unset($product);
 
-        if (isset($data['products'][0]['url'])) {
+        $navigationIntents = ['product_search', 'recommendation'];
+        if (in_array($data['intent'] ?? null, $navigationIntents, true) && isset($data['products'][0]['url'])) {
             $data['navigate_to'] = $data['products'][0]['url'];
         }
 
