@@ -40,6 +40,10 @@ or the endpoint honestly returns `501 Not Implemented`.
   Dashboard with real chart widgets, a chat-transcript admin agent page,
   rules CRUD, cost/message tracking, a conversations browser, and the
   insights page above.
+- **PrestaShop storefront demo** - a real PrestaShop 8 instance
+  (`infrastructure/docker/docker-compose.dev.yml`) running the
+  `aiassistant` module (`src/platform-adapters/prestashop/aiassistant`),
+  a working chat widget wired to the AI Core API on an actual storefront.
 
 ## Architecture
 
@@ -78,11 +82,13 @@ src/
 ├── ai-core/                 # FastAPI backend (owns Postgres exclusively)
 │   ├── app/
 │   │   ├── api/v1/endpoints/    # chat, rules, admin, analytics, insights,
-│   │   │                        # recommendations, coupons, faq, tenants
+│   │   │                        # recommendations, coupons, faq, tenants, sync
 │   │   ├── core/security/       # guardrails, admin_safety (dry-run/confirm/rollback)
 │   │   ├── domain/services/admin/  # AdminAgent - predefined-action executor
+│   │   ├── infrastructure/llm/  # GroqLLMProvider - the only LLM provider
 │   │   ├── infrastructure/database/ # SQLAlchemy models, repositories, UnitOfWork
-│   │   └── services/            # rules evaluator, insights, RAG/retrieval
+│   │   └── services/            # chat turn orchestrator, rules evaluator,
+│   │                             # insights, RAG/retrieval
 │   └── tests/                   # unit, integration (real Postgres), ai_evaluation
 │
 ├── platform-adapters/        # e-commerce plugins
@@ -103,7 +109,11 @@ infrastructure/
 
 docs/
 ├── diagrams/                 # PlantUML (C4 container, sequences, rules flow)
-└── api/                      # exported OpenAPI schema
+├── api/                      # exported OpenAPI schema
+├── deployment/                # containerized deploy procedure
+├── runbooks/                  # local-dev runbook (native + containerized paths)
+├── rapport-de-stage/          # internship report (LaTeX)
+└── presentation/              # soutenance deck + speaker script
 ```
 
 ## Quick start
@@ -115,9 +125,15 @@ cp infrastructure/docker/.env.example infrastructure/docker/.env
 ```
 
 Edit `.env`:
-- `LLM_PROVIDER=mock` works out of the box, no API key, no cost - this is
-  what the test suite runs against. Set `openai` or `anthropic` (with the
-  matching `*_API_KEY`) for real model responses.
+- `LLM_GROQ_API_KEY` - **required**, no mock and no fallback. Get a free
+  key at [console.groq.com/keys](https://console.groq.com/keys); the app
+  raises a clear startup error if it's missing or malformed. The test
+  suite doesn't need this - it runs against an isolated test double
+  (`tests/support/stub_llm_provider.py`), never a real key or network call.
+- `LLM_OPENAI_API_KEY` - optional, only powers RAG product-search
+  embeddings (Groq has no embeddings API). Without it, RAG search falls
+  back to a deterministic mock embedding service (pipeline works, results
+  aren't semantically meaningful - see `docs/runbooks/local-dev.md`).
 - `BACKOFFICE_APP_KEY` - generate with `php artisan key:generate --show`
   from `src/backoffice` (needs a local PHP/Composer install), or leave it
   and let the container fail once with a clear error telling you to set it.
@@ -139,6 +155,7 @@ docker exec saas_ai_core python -m scripts.seed_demo_data
 |---|---|---|
 | AI Core API | http://localhost:8000 | `/docs` for Swagger, `/health` for the healthcheck |
 | Backoffice | http://127.0.0.1:8090/admin | use `127.0.0.1`, not `localhost` |
+| PrestaShop storefront | http://localhost:8080 | chat widget demo (`aiassistant` module) |
 | Grafana | http://localhost:3000 | admin/admin by default |
 | Prometheus | http://localhost:9090 | |
 
@@ -148,7 +165,8 @@ stack and opens a Cloudflare Quick Tunnel.
 ## Tests
 
 ```bash
-# ai-core (506+ tests: unit + integration against real Postgres + AI eval)
+# ai-core (430+ tests: unit + integration against real Postgres + AI eval -
+# no Groq key or network needed, the LLM is a test double, see tests/support/)
 docker exec saas_ai_core sh -c "cd /app && python -m pytest tests/ -q"
 docker exec saas_ai_core sh -c "cd /app && ruff check . && ruff format --check ."
 
@@ -171,6 +189,11 @@ vendor/bin/pint --test
 - **Multi-tenancy in dev** uses an `X-Tenant-ID` header accepted only when
   `ENVIRONMENT=development`; there's no tenant signup/API-key issuance flow
   yet (see `docs/deployment/docker.md`).
+- **One real LLM, no mock.** Groq is the only chat provider
+  (`app/infrastructure/llm/provider_factory.py`) - a missing/invalid key
+  raises at startup instead of silently degrading to a canned response.
+  RAG embeddings are a separate concern (Groq has no embeddings API) and
+  do have a mock fallback for dev/test convenience.
 
 ## License
 

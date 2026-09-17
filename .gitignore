@@ -125,3 +125,16 @@ Homestead.json
 Homestead.yaml
 .phpunit.result.cache
 
+# LaTeX build artifacts (docs/rapport-de-stage/) - only main.pdf is tracked
+docs/rapport-de-stage/*.acn
+docs/rapport-de-stage/*.acr
+docs/rapport-de-stage/*.alg
+docs/rapport-de-stage/*.aux
+docs/rapport-de-stage/*.glg
+docs/rapport-de-stage/*.glo
+docs/rapport-de-stage/*.gls
+docs/rapport-de-stage/*.ist
+docs/rapport-de-stage/*.log
+docs/rapport-de-stage/*.out
+docs/rapport-de-stage/*.toc
+
