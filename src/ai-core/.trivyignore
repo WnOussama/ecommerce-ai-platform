@@ -1,0 +1,24 @@
+# Verified-inapplicable ChromaDB advisories, not blind suppressions - see
+# each entry for why. Re-check this file whenever chromadb is upgraded.
+#
+# chromadb==0.4.22 is pinned (see requirements.txt's comment: newer
+# chromadb needs NumPy 2.x, this app pins NumPy <2.0). Both CVEs below are
+# in chromadb's SERVER (its FastAPI app: multi-tenant auth, the
+# authenticated HTTP API). This app never runs that server or exposes it
+# on a network - every usage is `chromadb.PersistentClient(...)` (grep
+# confirms: only PersistentClient appears anywhere in app/), an embedded,
+# in-process, single-tenant local client with no HTTP listener and no
+# concept of "authenticated users" at all. Neither is reachable in this
+# deployment. (A third, related advisory - CVE-2026-45829, pre-auth code
+# injection on the same server - exists upstream for chromadb but Trivy
+# doesn't flag it against this exact pinned version; not suppressed here
+# since it was never actually reported.)
+
+# ChromaDB: code injection vulnerability (chromadb's HTTP server). No
+# fixed version listed upstream as of this scan.
+CVE-2026-45833
+
+# ChromaDB: authenticated users can read/write/delete any tenant's
+# collection (chromadb's HTTP server multi-tenant authorization). No
+# fixed version listed upstream as of this scan.
+CVE-2026-45830
