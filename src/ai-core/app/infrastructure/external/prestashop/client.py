@@ -350,6 +350,20 @@ class PrestaShopClient:
                     },
                 )
 
+        # `quantity` on /products is confirmed live to sit at "0" for every
+        # product regardless of real stock (PrestaShop only keeps it fresh
+        # on /stock_availables) - every synced product read as out-of-stock
+        # until this overlay. Best-effort: a malformed/unexpected response
+        # here (e.g. in tests, which mock a single fixed response shared by
+        # both calls) just leaves each product's originally-parsed quantity
+        # untouched rather than failing the whole sync.
+        if products:
+            real_stock = await self._fetch_real_stock([p.id for p in products])
+            products = [
+                p.model_copy(update={"quantity": real_stock[p.id]}) if p.id in real_stock else p
+                for p in products
+            ]
+
         # Note: L'API PrestaShop ne retourne pas toujours le total
         # On estime s'il y a plus de résultats
         total = offset + len(products)
@@ -371,6 +385,38 @@ class PrestaShopClient:
             limit=limit,
             offset=offset,
         )
+
+    async def _fetch_real_stock(self, product_ids: List[int]) -> Dict[int, int]:
+        """Real quantities from /stock_availables, keyed by product id.
+
+        Best-effort: returns {} (leaving callers' originally-parsed, stale
+        quantity untouched) on any error or unexpected response shape,
+        rather than failing the product fetch over a stock lookup.
+        """
+        if not product_ids:
+            return {}
+
+        ids_filter = "[" + "|".join(str(i) for i in product_ids) + "]"
+        try:
+            data = await self._request(
+                "GET",
+                "/stock_availables",
+                params={
+                    "filter[id_product]": ids_filter,
+                    "display": "[id_product,quantity]",
+                },
+            )
+            entries = data.get("stock_availables", [])
+            if not isinstance(entries, list):
+                entries = [entries] if entries else []
+            return {int(e["id_product"]): int(e["quantity"]) for e in entries}
+        except Exception as e:
+            logger.warning(
+                "Failed to fetch real stock from /stock_availables, "
+                "quantities may be stale",
+                extra={"tenant_id": self.tenant_id, "error": str(e)},
+            )
+            return {}
 
     async def get_product(self, product_id: int) -> Product:
         """
