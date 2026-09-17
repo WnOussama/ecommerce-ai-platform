@@ -110,7 +110,10 @@ def _generate_suggestions(intent: str, has_products: bool = False) -> List[str]:
 
 
 def _build_system_context(
-    tenant_id: str, products_context: str = "", extra_instruction: Optional[str] = None
+    tenant_id: str,
+    products_context: str = "",
+    extra_instruction: Optional[str] = None,
+    faq_context: str = "",
 ) -> str:
     # tenant_id (un UUID interne) a longtemps été injecté tel quel dans le
     # prompt ("Tenant: {tenant_id}") sans aucune utilité pour le LLM - pur
@@ -132,15 +135,26 @@ message: use it, don't ask again for information you were already given, \
 and stay consistent with what you said earlier in this exchange.
 
 Never mention a specific product name, price, shipping cost or URL unless
-it comes explicitly from the product context provided below. If no product
-context is provided and the question is about specific products or prices,
+it comes explicitly from the product context provided below. Likewise for
+store policy questions (shipping, returns, payment, terms...): if no FAQ
+context is provided below, or none of it actually answers the question,
 say honestly that you don't have that information and invite the customer
-to check the site or contact support, rather than inventing a plausible-
-sounding answer.
+to check the site or contact support - never invent a plausible-sounding
+policy (a specific delivery window, a return deadline, a named condition)
+that isn't grounded in the context given to you.
 """
 
     if extra_instruction:
         base_context = f"{base_context}\n{extra_instruction}\n"
+
+    if faq_context:
+        base_context = f"""{base_context}
+{faq_context}
+
+Use this real store policy information (generated from the shop's own policy
+pages) to answer policy questions. If it doesn't cover what was asked, say so
+honestly instead of guessing.
+"""
 
     if products_context:
         return f"""{base_context}
@@ -203,6 +217,7 @@ class ChatTurnOrchestrator:
         use_rag: bool = True,
         top_k: int = 5,
         history: Optional[List[Dict[str, str]]] = None,
+        faq_context: str = "",
     ) -> ChatTurnResult:
         metrics = self._metrics
 
@@ -323,6 +338,7 @@ class ChatTurnOrchestrator:
                 tenant_id=tenant_id,
                 products_context=products_context,
                 extra_instruction=rule_instruction,
+                faq_context=faq_context,
             )
 
             # =================================================================

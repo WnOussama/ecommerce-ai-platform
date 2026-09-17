@@ -222,6 +222,7 @@ async def send_message(request: Request, body: ChatMessageRequest):
     history = await _load_recent_history(
         tenant_id, conversation_id, user_log.message.id if user_log.message else None
     )
+    faq_context = await _load_faq_context(tenant_id)
 
     turn = await _chat_turn_orchestrator.process_turn(
         tenant_id=tenant_id,
@@ -232,6 +233,7 @@ async def send_message(request: Request, body: ChatMessageRequest):
         use_rag=body.use_rag,
         top_k=body.top_k,
         history=history,
+        faq_context=faq_context,
     )
 
     processing_time_ms = int((time.time() - start_time) * 1000)
@@ -640,6 +642,40 @@ async def _load_recent_history(
         if m.id != exclude_message_id and m.role in role_map
     ]
     return history[-_MAX_HISTORY_MESSAGES:]
+
+
+async def _load_faq_context(tenant_id: str) -> str:
+    """
+    Formats the tenant's generated FAQ (see app/services/faq/generator.py)
+    as compact context for the chat prompt. Without this, a policy
+    question ("what's your delivery policy?") had the LLM invent a
+    plausible-sounding answer (a made-up delivery window, EU/non-EU
+    caveats, ...) from its own general knowledge instead of the shop's
+    real, already-generated FAQ content - confirmed live: the real CMS
+    page says "dispatched within 2 days... via UPS", the ungrounded reply
+    said "3-5 business days... express options... outside the EU". Best-
+    effort - mêmes garde-fous que le reste de ce fichier.
+    """
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+    except (ValueError, AttributeError, TypeError):
+        return ""
+
+    try:
+        async with UnitOfWork(tenant_uuid) as uow:
+            items = await uow.faq.get_all()
+    except Exception as e:
+        logger.warning(
+            "Skipping FAQ context load for this request",
+            extra={"tenant_id": tenant_id, "error": str(e)},
+        )
+        return ""
+
+    if not items:
+        return ""
+
+    lines = [f"- Q: {item.question}\n  A: {item.answer}" for item in items]
+    return "Real store policy FAQ:\n" + "\n".join(lines)
 
 
 async def _load_active_rules(tenant_id: str) -> List[RuleLike]:

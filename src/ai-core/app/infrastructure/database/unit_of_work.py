@@ -39,6 +39,7 @@ from app.infrastructure.database.connection import AsyncSessionLocal
 from app.infrastructure.database.repositories.analytics_repo import AnalyticsRepository
 from app.infrastructure.database.repositories.conversation_repo import ConversationRepository
 from app.infrastructure.database.repositories.coupon_repo import CouponRepository
+from app.infrastructure.database.repositories.faq_repo import FAQRepository
 from app.infrastructure.database.repositories.message_repo import MessageRepository
 from app.infrastructure.database.repositories.rule_repo import RuleRepository
 
@@ -80,6 +81,7 @@ class UnitOfWork:
         self._analytics: Optional[AnalyticsRepository] = None
         self._rules: Optional[RuleRepository] = None
         self._coupons: Optional[CouponRepository] = None
+        self._faq: Optional[FAQRepository] = None
 
     @property
     def tenant_id(self) -> UUID:
@@ -128,6 +130,13 @@ class UnitOfWork:
             raise RuntimeError("UnitOfWork not initialized. Use 'async with' context manager.")
         return self._coupons
 
+    @property
+    def faq(self) -> FAQRepository:
+        """Retourne le repository FAQItem."""
+        if not self._faq:
+            raise RuntimeError("UnitOfWork not initialized. Use 'async with' context manager.")
+        return self._faq
+
     async def __aenter__(self) -> "UnitOfWork":
         """Entre dans le contexte - ouvre la session et initialise les repositories."""
         # Créer session si pas fournie
@@ -141,6 +150,7 @@ class UnitOfWork:
         self._analytics = AnalyticsRepository(self._session, self._tenant_id)
         self._rules = RuleRepository(self._session, self._tenant_id)
         self._coupons = CouponRepository(self._session, self._tenant_id)
+        self._faq = FAQRepository(self._session, self._tenant_id)
 
         logger.debug("UnitOfWork started", extra={"tenant_id": str(self._tenant_id)})
 

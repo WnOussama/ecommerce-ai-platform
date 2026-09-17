@@ -278,3 +278,20 @@ class CategoryListResponse(BaseModel):
                 tree[parent_id] = []
             tree[parent_id].append(cat)
         return tree
+
+
+class CMSPage(BaseModel):
+    """
+    Page CMS PrestaShop (ressource webservice `content_management_system`) -
+    les pages de politique par défaut de la boutique (livraison, retours,
+    CGV, à propos...). Source réelle pour la génération automatique de FAQ
+    (voir app/services/faq/generator.py) - `content_text` est déjà
+    dépouillé de son HTML.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    title: str
+    content_text: str = Field(description="Contenu de la page, HTML retiré")
+    active: bool = True

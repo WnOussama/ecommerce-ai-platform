@@ -20,6 +20,7 @@ from app.infrastructure.database.base import (
 from app.infrastructure.database.models.analytics import AnalyticsEvent
 from app.infrastructure.database.models.conversation import Conversation, ConversationStatus
 from app.infrastructure.database.models.coupon import Coupon, CouponStatus
+from app.infrastructure.database.models.faq import FAQItem
 from app.infrastructure.database.models.message import Message, MessageRole
 
 # Legacy models (à migrer progressivement)
@@ -47,6 +48,7 @@ __all__ = [
     "Coupon",
     "CouponStatus",
     "AnalyticsEvent",
+    "FAQItem",
     # Legacy (deprecated)
     "ProductModel",
 ]

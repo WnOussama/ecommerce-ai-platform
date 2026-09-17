@@ -33,6 +33,7 @@ from app.infrastructure.external.prestashop.exceptions import (
 from app.infrastructure.external.prestashop.models import (
     Category,
     CategoryListResponse,
+    CMSPage,
     Product,
     ProductImage,
     ProductListResponse,
@@ -689,6 +690,67 @@ class PrestaShopClient:
             meta_title=self._get_localized_value(data.get("meta_title", "")),
             meta_description=self._get_localized_value(data.get("meta_description", "")),
         )
+
+    # =========================================================================
+    # CMS PAGES (source for automatic FAQ generation - see app/services/faq/)
+    # =========================================================================
+
+    async def get_cms_pages(self, active_only: bool = True) -> List[CMSPage]:
+        """
+        Récupère les pages CMS de la boutique (livraison, CGV, à propos...)
+        - resource webservice `content_management_system` (nommage
+          confirmé en interrogeant /api/ : ni "cms" ni "content" n'existent
+          côté PrestaShop 8, malgré ce que suggère la doc de plus haut
+          niveau). Nécessite que la clé webservice ait la permission GET
+          dessus (décochée par défaut sur une clé fraîchement créée).
+
+        Utilisé par app/services/faq/generator.py comme UNIQUE source
+        réelle pour générer des FAQ - jamais fabriquées.
+        """
+        params: Dict[str, Any] = {"display": "full"}
+
+        data = await self._request("GET", "/content_management_system", params=params)
+
+        pages_data = data.get("content_management_system", [])
+        if not isinstance(pages_data, list):
+            pages_data = [pages_data] if pages_data else []
+
+        pages = []
+        for p in pages_data:
+            try:
+                active = str(p.get("active", "1")) == "1"
+                if active_only and not active:
+                    continue
+
+                pages.append(
+                    CMSPage(
+                        id=int(p.get("id")),
+                        title=self._get_localized_value(p.get("meta_title", "")) or "Untitled",
+                        content_text=self._strip_html(
+                            self._get_localized_value(p.get("content", ""))
+                        ),
+                        active=active,
+                    )
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to parse CMS page",
+                    extra={"tenant_id": self.tenant_id, "cms_id": p.get("id"), "error": str(e)},
+                )
+
+        return pages
+
+    @staticmethod
+    def _strip_html(html: str) -> str:
+        """Texte brut d'un champ CMS - suffisant pour un prompt LLM, pas besoin
+        d'une dépendance HTML dédiée (bs4/lxml) pour ce seul usage."""
+        import html as html_module
+        import re
+
+        text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = html_module.unescape(text)
+        return re.sub(r"\s+", " ", text).strip()
 
     # =========================================================================
     # HELPERS

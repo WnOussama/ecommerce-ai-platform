@@ -66,18 +66,19 @@ def _literals(*words: str) -> List[Keyword]:
 _COMMANDE_NOUN = re.compile(r"\bcommandes?\b")
 
 INTENT_RULES: List[IntentRule] = [
+    # More specific/action-oriented intents are checked first - "product_search"
+    # is last (see below) because its keywords are generic nouns ("product",
+    # "article") that show up inside OTHER intents' phrasing too ("return a
+    # product", "recommend an article") and would otherwise win by accident,
+    # a real bug caught live: "How many days do I have to return a product?"
+    # was misclassified as product_search (matched bare "product") instead of
+    # return_request, triggering an unwanted redirect mid policy-conversation.
     IntentRule(
         "order_status",
         [
             RegexKeyword(_COMMANDE_NOUN),
             *_literals("order", "suivi", "tracking", "colis", "package", "shipment"),
         ],
-    ),
-    IntentRule(
-        "product_search",
-        _literals(
-            "cherche", "recherche", "produit", "article", "trouver", "looking for", "search", "find", "product"
-        ),
     ),
     IntentRule(
         "price_inquiry", _literals("prix", "price", "coût", "cost", "tarif", "combien", "how much")
@@ -99,6 +100,12 @@ INTENT_RULES: List[IntentRule] = [
         _literals("recommand", "suggé", "conseil", "similaire", "recommend", "suggest", "similar"),
     ),
     IntentRule("greeting", _literals("bonjour", "hello", "salut", "bonsoir", "hi", "hey")),
+    IntentRule(
+        "product_search",
+        _literals(
+            "cherche", "recherche", "produit", "article", "trouver", "looking for", "search", "find", "product"
+        ),
+    ),
 ]
 
 
