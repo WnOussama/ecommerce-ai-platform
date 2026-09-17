@@ -53,13 +53,22 @@ class TestGroqKeyValidation:
 
 
 class TestFailFastBehavior:
-    """Missing/invalid Groq key must raise, never fall back to a mock."""
+    """Missing/invalid Groq key must raise, never fall back to a mock.
 
+    Patches settings.llm.groq_api_key too, not just the env vars: a
+    developer's local .env (required to run the app at all now that
+    there's no mock) would otherwise let pydantic-settings' own .env
+    loading quietly supply a real key here, defeating the test's point
+    regardless of what LLM_GROQ_API_KEY/GROQ_API_KEY are patched to.
+    """
+
+    @patch("app.core.config.settings.settings.llm.groq_api_key", None)
     @patch.dict(os.environ, {"LLM_GROQ_API_KEY": ""}, clear=False)
     def test_raises_when_no_key(self):
         with pytest.raises(RuntimeError, match="LLM_GROQ_API_KEY"):
             LLMProviderFactory.get_provider(force_new=True)
 
+    @patch("app.core.config.settings.settings.llm.groq_api_key", None)
     @patch.dict(os.environ, {"LLM_GROQ_API_KEY": "gsk_fake_key_12345678901234"}, clear=False)
     def test_raises_when_fake_key(self):
         with pytest.raises(RuntimeError, match="LLM_GROQ_API_KEY"):
