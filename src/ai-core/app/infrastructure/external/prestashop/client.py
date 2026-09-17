@@ -764,10 +764,15 @@ class PrestaShopClient:
             if not img_id:
                 continue
 
-            # Construire l'URL de l'image
-            # Format: {shop_url}/{id_product}-{id_image}.jpg
-            # Note: simplifié, l'URL réelle dépend de la config PrestaShop
-            url = f"{self.config.shop_url}/img/p/{img_id}.jpg"
+            # PrestaShop nests image files one folder per digit of the image
+            # id (e.g. image id 24 -> img/p/2/4/24.jpg, id 1234 ->
+            # img/p/1/2/3/4/1234.jpg) - confirmed live against a real
+            # PrestaShop 8 instance. The previous flat img/p/{id}.jpg (a
+            # PrestaShop <=1.4 convention, per this method's own former
+            # comment admitting it was "simplified") 404'd for every
+            # product's cover_image_url, live, with no image ever showing.
+            folder_path = "/".join(str(img_id))
+            url = f"{self.config.shop_url}/img/p/{folder_path}/{img_id}.jpg"
 
             images.append(
                 ProductImage(
