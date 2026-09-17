@@ -54,66 +54,42 @@ class FAQSearchResponse(BaseModel):
 @router.post("/search", response_model=FAQSearchResponse)
 async def search_faq(request: Request, body: FAQSearchRequest):
     """
-    Search FAQ using semantic search.
-    Uses vector embeddings for better matching.
+    FAQ search is not implemented - there is no FAQ table, no indexed FAQ
+    content, and nothing populates one. This endpoint used to return the
+    same hardcoded "Comment retourner un produit?" result for every query
+    regardless of what was actually asked, and /categories invented count
+    numbers (10/8/5) that were never backed by real data - both silently
+    lied about having a working feature. Honestly reporting "not
+    implemented" instead, matching this project's own policy for any
+    metric/feature without a real data source (see README).
     """
     tenant_id = getattr(request.state, "tenant_id", None)
 
     if not tenant_id:
         raise HTTPException(status_code=401, detail="Tenant context required")
 
-    logger.info("Searching FAQ", extra={"tenant_id": tenant_id, "query": body.query[:50]})
-
-    # TODO: Implement actual FAQ search via ChromaDB
-    # from app.infrastructure.vector_store.service import VectorStoreService
-    # vector_store = VectorStoreService()
-    # results = await vector_store.search_faqs(tenant_id, body.query, body.limit)
-
-    # Placeholder response
-    return FAQSearchResponse(
-        results=[
-            FAQItem(
-                id="faq_001",
-                question="Comment retourner un produit?",
-                answer="Vous pouvez retourner un produit sous 14 jours...",
-                category="Retours",
-                relevance_score=0.95,
-            )
-        ],
-        query=body.query,
-        total_found=1,
+    raise HTTPException(
+        status_code=501,
+        detail=(
+            "FAQ search is not implemented - there is no FAQ content store "
+            "for this tenant yet. Policy questions in chat are answered "
+            "honestly by the LLM (it says it doesn't have that information) "
+            "rather than a fabricated result here."
+        ),
     )
 
 
 @router.get("/{faq_id}")
 async def get_faq_item(request: Request, faq_id: str):
-    """
-    Get a specific FAQ item by ID.
-    """
-    getattr(request.state, "tenant_id", None)
-
-    # TODO: Fetch from database
-    return FAQItem(
-        id=faq_id,
-        question="Question placeholder",
-        answer="Answer placeholder",
-        category="General",
-        relevance_score=1.0,
-    )
+    """Not implemented - see search_faq()."""
+    if not getattr(request.state, "tenant_id", None):
+        raise HTTPException(status_code=401, detail="Tenant context required")
+    raise HTTPException(status_code=501, detail="FAQ is not implemented - no FAQ content store exists.")
 
 
 @router.get("/categories")
 async def get_faq_categories(request: Request):
-    """
-    Get all FAQ categories for a tenant.
-    """
-    getattr(request.state, "tenant_id", None)
-
-    # TODO: Fetch categories
-    return {
-        "categories": [
-            {"id": "shipping", "name": "Livraison", "count": 10},
-            {"id": "returns", "name": "Retours", "count": 8},
-            {"id": "payment", "name": "Paiement", "count": 5},
-        ]
-    }
+    """Not implemented - see search_faq()."""
+    if not getattr(request.state, "tenant_id", None):
+        raise HTTPException(status_code=401, detail="Tenant context required")
+    raise HTTPException(status_code=501, detail="FAQ is not implemented - no FAQ content store exists.")
