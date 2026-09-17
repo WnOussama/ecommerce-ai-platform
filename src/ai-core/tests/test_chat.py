@@ -1,5 +1,7 @@
 """
-Tests pour le Chat API - Compatible avec LLM_PROVIDER=mock
+Tests pour le Chat API - le LLM Groq réel est remplacé par
+tests/support/stub_llm_provider.py (voir la fixture autouse
+_stub_llm_provider dans tests/conftest.py) - pas de réseau, pas de clé.
 """
 
 import os
@@ -8,8 +10,6 @@ from unittest.mock import patch, AsyncMock
 from fastapi.testclient import TestClient
 from httpx import AsyncClient, ASGITransport
 
-# Force mock provider pour les tests
-os.environ["LLM_PROVIDER"] = "mock"
 os.environ["DB_PASSWORD"] = "test_password_123"
 os.environ["SECURITY_JWT_SECRET_KEY"] = "test_jwt_secret_key_32_characters_min"
 
@@ -139,98 +139,6 @@ class TestChatEndpoint:
 
         # Accepte 200 ou rejection du tenant
         assert response.status_code in [200, 401, 403]
-
-
-class TestMockLLMProvider:
-    """Tests spécifiques pour le Mock LLM."""
-
-    def test_mock_provider_is_used(self):
-        """Vérifie que le mock provider est utilisé."""
-        from app.infrastructure.llm import get_llm_provider
-
-        provider = get_llm_provider()
-        assert provider.get_model_name() == "mock-llm-v1"
-
-    def test_mock_provider_is_available(self):
-        """Le mock provider doit toujours être disponible."""
-        from app.infrastructure.llm import get_llm_provider
-
-        provider = get_llm_provider()
-        assert provider.is_available() is True
-
-    @pytest.mark.asyncio
-    async def test_mock_provider_chat_returns_string(self):
-        """Le mock provider doit retourner une chaîne."""
-        from app.infrastructure.llm import get_llm_provider
-
-        provider = get_llm_provider()
-        response = await provider.chat("Bonjour")
-
-        assert isinstance(response, str)
-        assert len(response) > 0
-
-    @pytest.mark.asyncio
-    async def test_mock_provider_responds_to_price_query(self):
-        """Le mock doit répondre aux questions de prix."""
-        from app.infrastructure.llm import get_llm_provider
-
-        provider = get_llm_provider()
-        response = await provider.chat("Quel est le prix ?")
-
-        assert isinstance(response, str)
-        # La réponse doit mentionner un prix ou être pertinente
-        assert any(word in response.lower() for word in ["prix", "€", "tarif", "produit", "aide"])
-
-    @pytest.mark.asyncio
-    async def test_mock_provider_responds_to_stock_query(self):
-        """Le mock doit répondre aux questions de stock."""
-        from app.infrastructure.llm import get_llm_provider
-
-        provider = get_llm_provider()
-        response = await provider.chat("Ce produit est-il disponible ?")
-
-        assert isinstance(response, str)
-        assert len(response) > 10
-
-
-class TestLLMProviderFactory:
-    """Tests pour la factory LLM."""
-
-    def test_factory_returns_mock_when_configured(self):
-        """La factory doit retourner mock quand LLM_PROVIDER=mock."""
-        from app.infrastructure.llm import LLMProviderFactory
-
-        LLMProviderFactory.reset()
-        os.environ["LLM_PROVIDER"] = "mock"
-
-        provider = LLMProviderFactory.get_provider(force_new=True)
-        assert provider.get_model_name() == "mock-llm-v1"
-
-    def test_factory_fallback_to_mock_without_openai_key(self):
-        """Sans clé OpenAI valide, la factory doit fallback sur mock."""
-        from app.infrastructure.llm import LLMProviderFactory
-
-        LLMProviderFactory.reset()
-        os.environ["LLM_PROVIDER"] = "openai"
-        os.environ["LLM_OPENAI_API_KEY"] = ""  # Pas de clé
-
-        provider = LLMProviderFactory.get_provider(force_new=True)
-        # Doit fallback sur mock
-        assert provider.get_model_name() == "mock-llm-v1"
-
-        # Reset pour les autres tests
-        os.environ["LLM_PROVIDER"] = "mock"
-
-    def test_factory_singleton_behavior(self):
-        """La factory doit retourner la même instance."""
-        from app.infrastructure.llm import LLMProviderFactory
-
-        LLMProviderFactory.reset()
-
-        provider1 = LLMProviderFactory.get_provider()
-        provider2 = LLMProviderFactory.get_provider()
-
-        assert provider1 is provider2
 
 
 class TestChatRAGIntegration:

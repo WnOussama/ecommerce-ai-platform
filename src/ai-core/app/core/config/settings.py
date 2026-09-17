@@ -120,22 +120,22 @@ class VectorStoreSettings(BaseSettings):
 
 
 class LLMSettings(BaseSettings):
-    """Configuration LLM avec support multi-provider"""
+    """Configuration LLM - chat via Groq (seul LLM réel utilisé, pas de mock)."""
 
     model_config = SettingsConfigDict(
         env_prefix="LLM_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    provider: str = "mock"  # mock, openai, anthropic, azure
+    # Groq (free tier - OpenAI-compatible API serving open-weight models) -
+    # seul provider de chat de ce projet, voir infrastructure/llm/provider_factory.py.
+    groq_api_key: Optional[str] = None
+    groq_model: str = "openai/gpt-oss-120b"
 
-    # OpenAI
+    # OpenAI - utilisé uniquement pour les embeddings RAG (app/services/rag/),
+    # Groq n'expose pas d'API d'embeddings. Sans clé, le RAG retombe sur
+    # MockEmbeddingService (voir app/services/rag/factory.py).
     openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4-turbo-preview"
     openai_embedding_model: str = "text-embedding-3-small"
-
-    # Anthropic (backup)
-    anthropic_api_key: Optional[str] = None
-    anthropic_model: str = "claude-3-sonnet-20240229"
 
     # Paramètres génération
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)

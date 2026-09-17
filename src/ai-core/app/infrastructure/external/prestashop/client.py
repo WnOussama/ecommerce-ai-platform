@@ -786,10 +786,19 @@ class PrestaShopClient:
 
         Returns:
             True si la connexion est OK, False sinon
+
+        Note: on interroge /products (limité à 1 résultat) plutôt que la
+        racine /api - la racine liste toutes les ressources disponibles et
+        PrestaShop (vérifié en 8.2.7) plante avec un TypeError PHP dans
+        WebserviceOutputJSON::overrideContent quand cette liste est
+        sérialisée en JSON (bug confirmé côté PrestaShop; XML fonctionne,
+        JSON non, pour ce endpoint précis). /products en JSON fonctionne
+        normalement, donc c'est un check d'auth équivalent sans déclencher
+        ce bug.
         """
         try:
-            # Appel simple pour vérifier l'auth
-            await self._request("GET", "/", params={"display": "id"})
+            # Appel simple pour vérifier l'auth (ressource concrète, pas la racine)
+            await self._request("GET", "/products", params={"limit": "0,1"})
             return True
         except PrestaShopError as e:
             logger.warning(

@@ -23,7 +23,8 @@ services:
       - .env
     environment:
       - ENVIRONMENT=development
-      - LLM_PROVIDER=${LLM_PROVIDER:-mock}
+      - LLM_GROQ_API_KEY=${LLM_GROQ_API_KEY:-}
+      - LLM_OPENAI_API_KEY=${LLM_OPENAI_API_KEY:-}
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=${DB_NAME:-saas_ecommerce}
@@ -125,6 +126,86 @@ services:
         limits:
           cpus: '1'
           memory: 512M
+
+  # ===========================================================================
+  # PRESTASHOP DEMO STOREFRONT - real shop for the aiassistant module
+  #
+  # Separate from the ai-core/backoffice Postgres above: PrestaShop needs its
+  # own MySQL. Not required for the core stack - only for demoing the
+  # storefront widget (src/platform-adapters/prestashop/aiassistant).
+  # ===========================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: saas_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PS_DB_PASSWORD:-admin}
+      MYSQL_DATABASE: ${PS_DB_NAME:-prestashop}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${PS_DB_PASSWORD:-admin}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  prestashop:
+    image: prestashop/prestashop:8-apache
+    container_name: saas_prestashop
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_SERVER: mysql
+      DB_NAME: ${PS_DB_NAME:-prestashop}
+      DB_USER: root
+      DB_PASSWD: ${PS_DB_PASSWORD:-admin}
+      PS_DOMAIN: ${PS_DOMAIN:-localhost:8080}
+      PS_INSTALL_AUTO: 1
+      PS_ERASE_DB: 0
+      PS_LANGUAGE: en
+      PS_COUNTRY: GB
+      # PS_DEV_MODE=1 forces PrestaShop's Symfony kernel into the 'dev'
+      # environment, which needs var/cache/dev/appParameters.php - but the
+      # auto-installer only ever builds the 'prod' cache (confirmed: install
+      # log references appAppKernelProdContainer.php). With dev mode on,
+      # any request that boots the Symfony side (module front controllers)
+      # crashes with "Failed opening required .../var/cache/dev/
+      # appParameters.php". Keep this at 0 to match the cache that actually
+      # gets built; PHP errors are still visible via docker logs regardless.
+      PS_DEV_MODE: 0
+      ADMIN_MAIL: ${PS_ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWD: ${PS_ADMIN_PASSWORD:-Admin123!}
+    ports:
+      - "8080:80"
+    volumes:
+      - prestashop_data:/var/www/html
+      - ../../src/platform-adapters/prestashop/aiassistant:/var/www/html/modules/aiassistant
+      # aiassistant/vendor/ ships PHPUnit's dev-only deps (incl. nikic/php-parser)
+      # for the module's own test suite - never required at runtime (verified: no
+      # `require vendor/autoload.php` anywhere in aiassistant.php/classes/
+      # controllers/). Left mounted, its php-parser collides with PrestaShop
+      # core's own copy and crashes `prestashop:module install` with
+      # "Call to undefined method PhpParser\ParserFactory::create()". Shadow
+      # it with an anonymous volume so PrestaShop's autoloader never sees it -
+      # the host's vendor/ (used by `composer test` locally) is untouched.
+      - /var/www/html/modules/aiassistant/vendor
+    networks:
+      - saas_network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1G
 
   # ===========================================================================
   # CACHE & SESSION - Redis 7
@@ -243,6 +324,10 @@ networks:
 # =============================================================================
 volumes:
   postgres_data:
+    driver: local
+  mysql_data:
+    driver: local
+  prestashop_data:
     driver: local
   redis_data:
     driver: local

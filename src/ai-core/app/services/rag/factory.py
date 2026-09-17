@@ -37,13 +37,13 @@ def get_embedding_service() -> EmbeddingService:
     """
     Retourne une instance du service d'embedding.
 
-    Utilise le mock si LLM_PROVIDER=mock ou pas de clé OpenAI.
+    Utilise le mock si pas de clé OpenAI (Groq n'a pas d'API d'embeddings).
     """
     global _embedding_service
 
     if _embedding_service is None:
         # Vérifier si on doit utiliser le mock
-        use_mock = settings.llm.provider == "mock" or not settings.llm.openai_api_key
+        use_mock = not settings.llm.openai_api_key
 
         if use_mock:
             logger.info("Using MockEmbeddingService")
@@ -69,7 +69,7 @@ def get_vector_store():
 
     if _vector_store is None:
         # En mode test/dev sans ChromaDB installé, utiliser InMemory
-        use_in_memory = settings.is_development or settings.llm.provider == "mock"
+        use_in_memory = settings.is_development
 
         if use_in_memory:
             try:

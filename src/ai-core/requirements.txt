@@ -25,12 +25,21 @@ redis==5.0.1
 aioredis==2.0.1
 
 # LLM & AI
-openai==1.12.0
-anthropic==0.18.1
-tiktoken==0.5.2
-sentence-transformers==2.3.1  # For cross-encoder reranking
+# openai client is reused for both Groq (OpenAI-compatible chat API, see
+# infrastructure/llm/provider_factory.py) and RAG embeddings.
+# >=1.55 required: older 1.x releases pass httpx.AsyncClient(proxies=...),
+# a kwarg httpx removed in 0.28 - GroqLLMProvider.__init__ crashed with
+# "AsyncClient.__init__() got an unexpected keyword argument 'proxies'"
+# until bumped. Stays on the 1.x line deliberately (not the 3.x line,
+# which depends on an experimental "httpx2" package).
+openai==1.109.1
 
 # Vector Store
+# numpy pinned <2.0: chromadb 0.4.22 calls np.float_, removed in NumPy 2.0 -
+# left unpinned it silently resolves to numpy 2.x, chromadb's client fails to
+# init, and the app falls back to an empty in-memory vector store (RAG then
+# finds 0 products even when the catalog isn't empty, no error surfaced).
+numpy==1.26.4
 chromadb==0.4.22
 
 # HTTP

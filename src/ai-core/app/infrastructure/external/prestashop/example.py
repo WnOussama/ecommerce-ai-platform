@@ -13,7 +13,6 @@ import os
 from decimal import Decimal
 
 # Configuration de test - à remplacer par de vraies valeurs
-os.environ.setdefault("LLM_PROVIDER", "mock")
 os.environ.setdefault("DB_PASSWORD", "test_password")
 os.environ.setdefault("SECURITY_JWT_SECRET_KEY", "test_secret_key_32_chars_minimum")
 
