@@ -193,6 +193,11 @@ jobs:
           scan-ref: 'src/ai-core'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
+          # trivyignores is resolved relative to the repo root, not
+          # scan-ref - without this, src/ai-core/.trivyignore (verified
+          # server-only ChromaDB CVEs unreachable via this app's embedded
+          # PersistentClient usage - see that file) was silently ignored.
+          trivyignores: 'src/ai-core/.trivyignore'
 
       - name: Install Bandit
         run: pip install bandit
