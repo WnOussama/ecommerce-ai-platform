@@ -185,13 +185,8 @@ class ChatTurnOrchestrator:
     d'architecture, Candidat 1, et l'ADR 0001).
     """
 
-    BLOCKED_RESPONSE = (
-        "I can't process this request. Could you rephrase your question?"
-    )
-    ERROR_RESPONSE = (
-        "I'm sorry, I'm having a technical issue. "
-        "Could you rephrase your question?"
-    )
+    BLOCKED_RESPONSE = "I can't process this request. Could you rephrase your question?"
+    ERROR_RESPONSE = "I'm sorry, I'm having a technical issue. Could you rephrase your question?"
     ERROR_SUGGESTIONS = ["Try again", "Contact support"]
     CONFIDENCE = 0.85  # Constant tant qu'aucun signal de confiance réel n'existe.
 

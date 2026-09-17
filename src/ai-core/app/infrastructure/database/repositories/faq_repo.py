@@ -32,9 +32,7 @@ class FAQRepository:
         soft-delete ici (voir app/infrastructure/database/models/faq.py) :
         ce n'est pas une table transactionnelle, c'est un cache régénérable.
         """
-        await self._session.execute(
-            delete(FAQItem).where(FAQItem.tenant_id == self._tenant_id)
-        )
+        await self._session.execute(delete(FAQItem).where(FAQItem.tenant_id == self._tenant_id))
 
         created = []
         for item in items:
@@ -94,9 +92,7 @@ class FAQRepository:
 
     async def get_by_id(self, faq_id: UUID) -> Optional[FAQItem]:
         result = await self._session.execute(
-            select(FAQItem).where(
-                and_(FAQItem.tenant_id == self._tenant_id, FAQItem.id == faq_id)
-            )
+            select(FAQItem).where(and_(FAQItem.tenant_id == self._tenant_id, FAQItem.id == faq_id))
         )
         return result.scalar_one_or_none()
 

@@ -43,7 +43,9 @@ router = APIRouter()
 
 
 class CatalogSyncRequest(BaseModel):
-    shop_url: str = Field(..., description="Base URL of the PrestaShop shop, e.g. http://prestashop")
+    shop_url: str = Field(
+        ..., description="Base URL of the PrestaShop shop, e.g. http://prestashop"
+    )
     api_key: str = Field(..., description="PrestaShop WebService API key")
     active_only: bool = True
     reindex: bool = Field(

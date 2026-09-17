@@ -103,7 +103,15 @@ INTENT_RULES: List[IntentRule] = [
     IntentRule(
         "product_search",
         _literals(
-            "cherche", "recherche", "produit", "article", "trouver", "looking for", "search", "find", "product"
+            "cherche",
+            "recherche",
+            "produit",
+            "article",
+            "trouver",
+            "looking for",
+            "search",
+            "find",
+            "product",
         ),
     ),
 ]

@@ -45,4 +45,6 @@ class FAQItem(Base, UUIDMixin, TimestampMixin):
     )
 
     def __repr__(self) -> str:
-        return f"<FAQItem(id={self.id}, category='{self.category}', question='{self.question[:40]}')>"
+        return (
+            f"<FAQItem(id={self.id}, category='{self.category}', question='{self.question[:40]}')>"
+        )

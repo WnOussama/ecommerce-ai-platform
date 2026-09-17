@@ -44,7 +44,9 @@ class FAQGenerateRequest(BaseModel):
     that endpoint's docstring) - the Tenant model has no dedicated columns
     to persist PrestaShop credentials on."""
 
-    shop_url: str = Field(..., description="Base URL of the PrestaShop shop, e.g. http://prestashop")
+    shop_url: str = Field(
+        ..., description="Base URL of the PrestaShop shop, e.g. http://prestashop"
+    )
     api_key: str = Field(..., description="PrestaShop WebService API key")
 
 
@@ -125,7 +127,9 @@ async def generate_faq(request: Request, body: FAQGenerateRequest):
         async with PrestaShopClient(prestashop_config, tenant_id=str(tenant_id)) as client:
             pages = await client.get_cms_pages(active_only=True)
     except PrestaShopError as e:
-        logger.error("FAQ generation failed to reach PrestaShop", extra={"tenant_id": str(tenant_id)})
+        logger.error(
+            "FAQ generation failed to reach PrestaShop", extra={"tenant_id": str(tenant_id)}
+        )
         raise HTTPException(status_code=502, detail=f"PrestaShop connection failed: {e}") from e
 
     llm = get_llm_provider()
@@ -175,9 +179,7 @@ async def search_faq(request: Request, body: FAQSearchRequest):
 
     return FAQSearchResponse(
         results=[
-            FAQItemResponse(
-                id=str(m.id), question=m.question, answer=m.answer, category=m.category
-            )
+            FAQItemResponse(id=str(m.id), question=m.question, answer=m.answer, category=m.category)
             for m in matches
         ],
         query=body.query,

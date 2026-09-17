@@ -458,9 +458,7 @@ async def _log_user_message(tenant_id: str, body: ChatMessageRequest) -> _UserMe
         return _UserMessageLog(conversation_id=fallback_id)
 
     try:
-        idempotency_key = (
-            uuid.UUID(body.idempotency_key) if body.idempotency_key else uuid.uuid4()
-        )
+        idempotency_key = uuid.UUID(body.idempotency_key) if body.idempotency_key else uuid.uuid4()
     except ValueError:
         idempotency_key = uuid.uuid4()
 

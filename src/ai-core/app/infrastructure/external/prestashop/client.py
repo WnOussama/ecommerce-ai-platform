@@ -413,8 +413,7 @@ class PrestaShopClient:
             return {int(e["id_product"]): int(e["quantity"]) for e in entries}
         except Exception as e:
             logger.warning(
-                "Failed to fetch real stock from /stock_availables, "
-                "quantities may be stale",
+                "Failed to fetch real stock from /stock_availables, quantities may be stale",
                 extra={"tenant_id": self.tenant_id, "error": str(e)},
             )
             return {}
