@@ -37,7 +37,13 @@ class StubLLMProvider(BaseLLMProvider):
             "latency_ms": 0,
         }
 
-    async def chat(self, message: str, context: Optional[str] = None, **kwargs) -> str:
+    async def chat(
+        self,
+        message: str,
+        context: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+        **kwargs,
+    ) -> str:
         return _STUB_REPLY
 
     def count_tokens(self, text: str) -> int:

@@ -45,6 +45,20 @@ class AiCoreClient
     }
 
     /**
+     * Récupère l'historique persisté d'une conversation - voir
+     * controllers/front/chat.php::proxyConversationHistory(), utilisé pour
+     * réafficher le fil de discussion après une navigation (le widget
+     * perd son état DOM à chaque rechargement de page, contrairement à la
+     * conversation elle-même, déjà persistée côté AI Core).
+     *
+     * @return array{ok: bool, data?: array, error?: string}
+     */
+    public function getConversationHistory($conversationId)
+    {
+        return $this->request('GET', '/chat/history/'.rawurlencode((string) $conversationId));
+    }
+
+    /**
      * Vérifie que la boutique peut effectivement joindre et s'authentifier
      * auprès de l'AI Core (utilisé lors de la sauvegarde de la config).
      *

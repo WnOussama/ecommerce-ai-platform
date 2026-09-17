@@ -88,23 +88,23 @@ class ChatTurnResult:
 # =============================================================================
 
 _SUGGESTIONS_BY_INTENT: Dict[str, List[str]] = {
-    "order_status": ["Suivre ma commande", "Contacter le support"],
-    "product_search": ["Voir les promotions", "Filtrer par catégorie"],
-    "price_inquiry": ["Comparer les prix", "Voir les offres"],
-    "shipping_info": ["Options de livraison", "Frais de port"],
-    "return_request": ["Politique de retour", "Formulaire de retour"],
-    "coupon_request": ["Offres en cours", "Programme fidélité"],
-    "recommendation": ["Meilleures ventes", "Nouveautés"],
-    "greeting": ["Voir les produits", "Mes commandes"],
-    DEFAULT_INTENT: ["Parcourir le catalogue", "Aide"],
+    "order_status": ["Track my order", "Contact support"],
+    "product_search": ["View promotions", "Filter by category"],
+    "price_inquiry": ["Compare prices", "View offers"],
+    "shipping_info": ["Delivery options", "Shipping costs"],
+    "return_request": ["Return policy", "Return form"],
+    "coupon_request": ["Current offers", "Loyalty program"],
+    "recommendation": ["Best sellers", "New arrivals"],
+    "greeting": ["Browse products", "My orders"],
+    DEFAULT_INTENT: ["Browse catalog", "Help"],
 }
 
 
 def _generate_suggestions(intent: str, has_products: bool = False) -> List[str]:
-    base_suggestions = _SUGGESTIONS_BY_INTENT.get(intent, ["Aide", "Catalogue"])
+    base_suggestions = _SUGGESTIONS_BY_INTENT.get(intent, ["Help", "Catalog"])
 
     if has_products:
-        base_suggestions = ["Voir les détails", "Ajouter au panier"] + base_suggestions[:2]
+        base_suggestions = ["View details", "Add to cart"] + base_suggestions[:2]
 
     return base_suggestions[:4]
 
@@ -112,15 +112,31 @@ def _generate_suggestions(intent: str, has_products: bool = False) -> List[str]:
 def _build_system_context(
     tenant_id: str, products_context: str = "", extra_instruction: Optional[str] = None
 ) -> str:
-    base_context = f"""Tu es un assistant IA pour une boutique e-commerce.
-Tenant: {tenant_id}
-Sois concis, utile et professionnel. Utilise le vouvoiement.
-Ne mentionne jamais de nom de produit, prix, tarif de livraison ou URL
-spécifique sauf s'il provient explicitement du contexte produits fourni
-ci-dessous. Si aucun contexte produits n'est fourni et que la question
-porte sur des produits ou tarifs précis, dis que tu n'as pas cette
-information et invite l'utilisateur à consulter le site ou le support,
-plutôt que d'inventer une réponse plausible.
+    # tenant_id (un UUID interne) a longtemps été injecté tel quel dans le
+    # prompt ("Tenant: {tenant_id}") sans aucune utilité pour le LLM - pur
+    # bruit qui pouvait même ressortir dans la réponse. Retiré ; rien dans
+    # ce prompt ne dépend plus de tenant_id (gardé au paramètre pour ne pas
+    # changer la signature côté appelant).
+    #
+    # English, not French: this platform's storefront (PrestaShop's default
+    # language and all product/category content created for it) is English
+    # - a French-speaking bot on an English shop was itself part of the
+    # "feels irrelevant" complaint that prompted this rewrite.
+    base_context = """You are the customer service assistant for this online store, \
+available in the site's chat widget. Reply the way a real human agent would: \
+naturally, in short sentences, no jargon, no robotic tone, and without \
+introducing yourself in every message. Address the customer politely.
+
+The conversation history (if any) is given to you before the latest \
+message: use it, don't ask again for information you were already given, \
+and stay consistent with what you said earlier in this exchange.
+
+Never mention a specific product name, price, shipping cost or URL unless
+it comes explicitly from the product context provided below. If no product
+context is provided and the question is about specific products or prices,
+say honestly that you don't have that information and invite the customer
+to check the site or contact support, rather than inventing a plausible-
+sounding answer.
 """
 
     if extra_instruction:
@@ -130,8 +146,8 @@ plutôt que d'inventer une réponse plausible.
         return f"""{base_context}
 {products_context}
 
-Utilise ces informations produits pour répondre à la question de l'utilisateur.
-Si les produits ne sont pas pertinents pour la question, réponds normalement sans les mentionner.
+Use this product information to answer the customer's question.
+If the products aren't relevant to the question, answer normally without mentioning them.
 """
 
     return base_context
@@ -156,13 +172,13 @@ class ChatTurnOrchestrator:
     """
 
     BLOCKED_RESPONSE = (
-        "Je ne peux pas traiter cette demande. Pouvez-vous reformuler votre question ?"
+        "I can't process this request. Could you rephrase your question?"
     )
     ERROR_RESPONSE = (
-        "Je suis désolé, je rencontre un problème technique. "
-        "Pouvez-vous reformuler votre question ?"
+        "I'm sorry, I'm having a technical issue. "
+        "Could you rephrase your question?"
     )
-    ERROR_SUGGESTIONS = ["Réessayer", "Contacter le support"]
+    ERROR_SUGGESTIONS = ["Try again", "Contact support"]
     CONFIDENCE = 0.85  # Constant tant qu'aucun signal de confiance réel n'existe.
 
     def __init__(
@@ -186,6 +202,7 @@ class ChatTurnOrchestrator:
         retrieval_service: Optional[ProductRetrievalService] = None,
         use_rag: bool = True,
         top_k: int = 5,
+        history: Optional[List[Dict[str, str]]] = None,
     ) -> ChatTurnResult:
         metrics = self._metrics
 
@@ -236,6 +253,24 @@ class ChatTurnOrchestrator:
         rule_instruction: Optional[str] = None
         if rule_match and rule_match.action.get("type") == "inject_instruction":
             rule_instruction = rule_match.action.get("instruction")
+        elif rule_match and rule_match.action.get("type") == "generate_coupon":
+            # Le code réel n'existe pas encore ici (généré/persisté par
+            # l'appelant après ce tour, voir CouponDecision plus bas et
+            # chat.py::_generate_coupon_from_rule) - sans cette instruction,
+            # le LLM ne sait pas qu'un coupon va être accordé et répond
+            # souvent "je n'ai pas d'information sur les codes promo", texte
+            # auquel le vrai code était ensuite mécaniquement accolé
+            # (incohérent - bug confirmé en test navigateur). On lui dit
+            # d'annoncer la réduction sans jamais inventer le code lui-même.
+            discount_percent = rule_match.action.get("discount_percent")
+            rule_instruction = (
+                "You are about to grant the customer a discount "
+                f"({discount_percent}% if given). Reply with a warm sentence "
+                "announcing this discount; the exact code will be appended "
+                "automatically to the end of your reply by the system, so "
+                "never say you don't have a code available and never make "
+                "up a code yourself."
+            )
 
         products_context = ""
         retrieved_products: List[Dict[str, Any]] = []
@@ -294,9 +329,12 @@ class ChatTurnOrchestrator:
             # ÉTAPE 3: Générer la réponse
             # =================================================================
             with metrics.track_llm_request(tenant_id, llm_provider.get_model_name(), "chat"):
-                response_text = await llm_provider.chat(message=message, context=system_context)
+                response_text = await llm_provider.chat(
+                    message=message, context=system_context, history=history
+                )
 
-            input_tokens = llm_provider.count_tokens(message)
+            history_text = " ".join(turn.get("content", "") for turn in (history or []))
+            input_tokens = llm_provider.count_tokens(f"{history_text} {message}")
             output_tokens = llm_provider.count_tokens(response_text)
             estimated_cost = (
                 input_tokens / 1000 * settings.llm.cost_per_1k_input_tokens

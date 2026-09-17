@@ -68,17 +68,37 @@ _COMMANDE_NOUN = re.compile(r"\bcommandes?\b")
 INTENT_RULES: List[IntentRule] = [
     IntentRule(
         "order_status",
-        [RegexKeyword(_COMMANDE_NOUN), *_literals("order", "suivi", "tracking", "colis")],
+        [
+            RegexKeyword(_COMMANDE_NOUN),
+            *_literals("order", "suivi", "tracking", "colis", "package", "shipment"),
+        ],
     ),
     IntentRule(
-        "product_search", _literals("cherche", "recherche", "produit", "article", "trouver")
+        "product_search",
+        _literals(
+            "cherche", "recherche", "produit", "article", "trouver", "looking for", "search", "find", "product"
+        ),
     ),
-    IntentRule("price_inquiry", _literals("prix", "price", "coût", "tarif", "combien")),
-    IntentRule("shipping_info", _literals("livraison", "shipping", "délai", "expédition")),
-    IntentRule("return_request", _literals("retour", "rembours", "échange", "renvoyer")),
-    IntentRule("coupon_request", _literals("promo", "code", "réduction", "coupon", "remise")),
-    IntentRule("recommendation", _literals("recommand", "suggé", "conseil", "similaire")),
-    IntentRule("greeting", _literals("bonjour", "hello", "salut", "bonsoir")),
+    IntentRule(
+        "price_inquiry", _literals("prix", "price", "coût", "cost", "tarif", "combien", "how much")
+    ),
+    IntentRule(
+        "shipping_info",
+        _literals("livraison", "shipping", "délai", "expédition", "delivery", "arrive"),
+    ),
+    IntentRule(
+        "return_request",
+        _literals("retour", "rembours", "échange", "renvoyer", "return", "refund", "exchange"),
+    ),
+    IntentRule(
+        "coupon_request",
+        _literals("promo", "code", "réduction", "coupon", "remise", "discount", "voucher"),
+    ),
+    IntentRule(
+        "recommendation",
+        _literals("recommand", "suggé", "conseil", "similaire", "recommend", "suggest", "similar"),
+    ),
+    IntentRule("greeting", _literals("bonjour", "hello", "salut", "bonsoir", "hi", "hey")),
 ]
 
 

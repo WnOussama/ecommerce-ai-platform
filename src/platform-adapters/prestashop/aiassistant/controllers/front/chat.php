@@ -22,19 +22,45 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
 
         header('Content-Type: application/json');
 
-        if (!Tools::getValue('ajax') && $_SERVER['REQUEST_METHOD'] !== 'POST') {
-            http_response_code(405);
-            echo json_encode(['error' => 'method_not_allowed']);
-            exit;
-        }
-
         if (!Configuration::get('AIASSISTANT_ENABLED')) {
             http_response_code(503);
             echo json_encode(['error' => 'assistant_disabled']);
             exit;
         }
 
+        // Reprise d'une conversation après un changement de page - le
+        // widget perdait tout son historique affiché à chaque navigation
+        // (son état n'existe que dans le DOM, détruit au rechargement de
+        // page), alors même que conversation_id lui survit dans
+        // sessionStorage et que la conversation entière est déjà persistée
+        // côté AI Core. Proxy en lecture seule vers GET /chat/history/{id}
+        // (voir widget.js::loadHistory()) plutôt qu'une copie côté
+        // PrestaShop de ce que l'AI Core persiste déjà.
+        if ($_SERVER['REQUEST_METHOD'] === 'GET' && Tools::getValue('conversation_id')) {
+            $this->proxyConversationHistory((string) Tools::getValue('conversation_id'));
+            exit;
+        }
+
+        if (!Tools::getValue('ajax') && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+            http_response_code(405);
+            echo json_encode(['error' => 'method_not_allowed']);
+            exit;
+        }
+
         $input = json_decode(Tools::file_get_contents('php://input'), true);
+
+        // Redemption d'un code déjà généré par un tour de chat précédent -
+        // action distincte du flux "envoyer un message", distinguée par la
+        // présence de ce seul champ dans le corps JSON (voir
+        // applyCouponToCart() et widget.js::applyCoupon()). Ne repasse pas
+        // par l'AI Core : le code existe déjà (createCartRuleFromCoupon()
+        // l'a matérialisé en vraie CartRule PrestaShop au moment de sa
+        // génération), il ne reste qu'à l'appliquer au panier courant.
+        if (is_array($input) && isset($input['apply_coupon_code'])) {
+            $this->applyCouponToCart((string) $input['apply_coupon_code']);
+            exit;
+        }
+
         $message = is_array($input) && isset($input['message']) ? (string) $input['message'] : '';
         $conversationId = is_array($input) && isset($input['conversation_id']) ? (string) $input['conversation_id'] : null;
 
@@ -57,8 +83,139 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
             exit;
         }
 
-        echo json_encode($this->withNavigation($result['data']));
+        echo json_encode($this->withRedeemableCoupons($this->withNavigation($result['data'])));
         exit;
+    }
+
+    private function proxyConversationHistory($conversationId)
+    {
+        $client = new AiCoreClient(
+            Configuration::get('AIASSISTANT_API_URL'),
+            Configuration::get('AIASSISTANT_TENANT_ID')
+        );
+
+        $result = $client->getConversationHistory($conversationId);
+
+        if (!$result['ok']) {
+            http_response_code(502);
+            echo json_encode(['error' => $result['error']]);
+            return;
+        }
+
+        echo json_encode($result['data']);
+    }
+
+    /**
+     * Materializes each `generate_coupon` action's code into a real,
+     * active PrestaShop CartRule - without this, ai-core's coupon (real in
+     * its own DB, see app/api/v1/endpoints/chat.py::_generate_coupon_from_rule)
+     * had no PrestaShop-side counterpart at all: zero rows in
+     * ps_cart_rule, no way for a shopper to actually redeem the code the
+     * bot just gave them (confirmed live: empty ps_cart_rule table, no
+     * voucher input anywhere in the storefront because
+     * PS_CART_RULE_FEATURE_ACTIVE was still 0). CartRule::add() flips that
+     * flag automatically, which also makes the theme's own "add a promo
+     * code" field start appearing. Marks the action `redeemable` so
+     * widget.js can offer a one-click "Apply to cart" button instead of
+     * requiring the shopper to type the code themselves.
+     */
+    private function withRedeemableCoupons(array $data)
+    {
+        if (empty($data['actions']) || !is_array($data['actions'])) {
+            return $data;
+        }
+
+        foreach ($data['actions'] as &$action) {
+            if (($action['type'] ?? null) !== 'generate_coupon' || empty($action['data']['code'])) {
+                continue;
+            }
+
+            $action['data']['redeemable'] = $this->createCartRuleFromCoupon($action['data']);
+        }
+        unset($action);
+
+        return $data;
+    }
+
+    private function createCartRuleFromCoupon(array $couponData)
+    {
+        $code = (string) $couponData['code'];
+
+        // Idempotent: ai-core already guarantees code uniqueness for this
+        // coupon (see uow.coupons.generate_code()) - reuse the existing
+        // CartRule on a retry/duplicate call instead of erroring on
+        // PrestaShop's own unique `code` constraint.
+        $existingId = (int) CartRule::getIdByCode($code);
+        if ($existingId) {
+            return true;
+        }
+
+        $cartRule = new CartRule();
+        $cartRule->code = $code;
+        $cartRule->name = [(int) Configuration::get('PS_LANG_DEFAULT') => 'AI Assistant discount'];
+        $cartRule->quantity = 1;
+        $cartRule->quantity_per_user = 1;
+        $cartRule->date_from = date('Y-m-d H:i:s');
+        $cartRule->date_to = !empty($couponData['expires_at'])
+            ? date('Y-m-d H:i:s', strtotime((string) $couponData['expires_at']))
+            : date('Y-m-d H:i:s', strtotime('+7 days'));
+        $cartRule->reduction_percent = (float) ($couponData['discount_percent'] ?? 0);
+        $cartRule->reduction_tax = true;
+        $cartRule->highlight = true;
+        $cartRule->active = true;
+
+        return (bool) $cartRule->add();
+    }
+
+    /**
+     * Applique au panier courant un coupon déjà matérialisé en CartRule
+     * PrestaShop réelle (voir createCartRuleFromCoupon()). Réponse JSON
+     * minimale - pas de schéma partagé avec l'AI Core ici, ce endpoint ne
+     * lui appartient pas.
+     */
+    private function applyCouponToCart($code)
+    {
+        $idCartRule = (int) CartRule::getIdByCode($code);
+
+        if (!$idCartRule) {
+            http_response_code(404);
+            echo json_encode(['error' => 'coupon_not_found']);
+            return;
+        }
+
+        $cartRule = new CartRule($idCartRule);
+
+        if (!Validate::isLoadedObject($cartRule) || !$cartRule->active) {
+            http_response_code(410);
+            echo json_encode(['error' => 'coupon_inactive_or_expired']);
+            return;
+        }
+
+        $cart = $this->context->cart;
+
+        if (!$cart || !$cart->id) {
+            http_response_code(409);
+            echo json_encode(['error' => 'empty_cart']);
+            return;
+        }
+
+        foreach ($cart->getCartRules() as $existing) {
+            if ((int) $existing['id_cart_rule'] === $idCartRule) {
+                echo json_encode(['ok' => true, 'already_applied' => true]);
+                return;
+            }
+        }
+
+        if (!$cart->addCartRule($idCartRule)) {
+            http_response_code(500);
+            echo json_encode(['error' => 'apply_failed']);
+            return;
+        }
+
+        echo json_encode([
+            'ok' => true,
+            'total' => (float) $cart->getOrderTotal(true, Cart::BOTH),
+        ]);
     }
 
     /**

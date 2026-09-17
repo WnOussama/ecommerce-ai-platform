@@ -219,6 +219,9 @@ async def send_message(request: Request, body: ChatMessageRequest):
     rules = await _load_active_rules(tenant_id)
     llm = get_llm_provider()
     retrieval_service = get_retrieval_service() if body.use_rag else None
+    history = await _load_recent_history(
+        tenant_id, conversation_id, user_log.message.id if user_log.message else None
+    )
 
     turn = await _chat_turn_orchestrator.process_turn(
         tenant_id=tenant_id,
@@ -228,6 +231,7 @@ async def send_message(request: Request, body: ChatMessageRequest):
         retrieval_service=retrieval_service,
         use_rag=body.use_rag,
         top_k=body.top_k,
+        history=history,
     )
 
     processing_time_ms = int((time.time() - start_time) * 1000)
@@ -347,8 +351,8 @@ async def send_message(request: Request, body: ChatMessageRequest):
             # every time. Appending it here, in the same style as coupons.py's
             # own _STRATEGY_MESSAGES templates.
             response_text = (
-                f"{response_text}\n\nVotre code : {coupon_data['code']} "
-                f"(-{coupon_data['discount_percent']}%, valable jusqu'au "
+                f"{response_text}\n\nYour code: {coupon_data['code']} "
+                f"(-{coupon_data['discount_percent']}%, valid until "
                 f"{coupon_data['expires_at'][:10]})."
             )
 
@@ -586,6 +590,56 @@ async def _log_assistant_message(
             "Skipping assistant message persistence for this request",
             extra={"tenant_id": tenant_id, "error": str(e)},
         )
+
+
+_MAX_HISTORY_MESSAGES = 20  # ~10 échanges - borne le coût/latence LLM
+
+
+async def _load_recent_history(
+    tenant_id: str, conversation_id: str, exclude_message_id: Optional[uuid.UUID]
+) -> List[Dict[str, str]]:
+    """
+    Charge les derniers tours de la conversation pour les donner au LLM
+    comme mémoire réelle du fil de discussion. Avant ce fix, chaque tour
+    repartait de zéro (seul le message courant était envoyé au LLM, voir
+    turn_orchestrator.py) alors même que la conversation entière était déjà
+    persistée et affichée à l'utilisateur - le bot semblait donc amnésique
+    et redemandait des informations déjà données. exclude_message_id est le
+    message utilisateur qu'on vient de logger pour ce tour (déjà passé
+    séparément comme `message` à l'orchestrateur) - pas de doublon. Best-
+    effort - mêmes garde-fous que le reste de ce fichier.
+    """
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+        conv_uuid = uuid.UUID(conversation_id)
+    except (ValueError, AttributeError, TypeError):
+        return []
+
+    try:
+        async with UnitOfWork(tenant_uuid) as uow:
+            # order_asc=False (le plus récent d'abord) - avec order_asc=True
+            # `limit` aurait gardé les N PREMIERS messages de la conversation
+            # (les plus anciens) pour toujours, au lieu des N derniers, dès
+            # qu'une conversation dépasse _MAX_HISTORY_MESSAGES messages.
+            # Re-inversé ensuite pour redonner l'ordre chronologique attendu
+            # par l'API chat des LLM.
+            messages = await uow.messages.get_by_conversation(
+                conv_uuid, limit=_MAX_HISTORY_MESSAGES + 1, order_asc=False
+            )
+    except Exception as e:
+        logger.warning(
+            "Skipping conversation history load for this request",
+            extra={"tenant_id": tenant_id, "error": str(e)},
+        )
+        return []
+
+    role_map = {MessageRole.USER: "user", MessageRole.ASSISTANT: "assistant"}
+    history = [
+        {"role": role_map[m.role], "content": m.content}
+        for m in reversed(messages)
+        if m.id != exclude_message_id and m.role in role_map
+    ]
+    return history[-_MAX_HISTORY_MESSAGES:]
 
 
 async def _load_active_rules(tenant_id: str) -> List[RuleLike]:

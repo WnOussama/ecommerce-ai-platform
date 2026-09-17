@@ -37,8 +37,17 @@ class BaseLLMProvider(ABC):
         pass
 
     @abstractmethod
-    async def chat(self, message: str, context: Optional[str] = None, **kwargs) -> str:
-        """Interface simplifiée pour le chat."""
+    async def chat(
+        self,
+        message: str,
+        context: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+        **kwargs,
+    ) -> str:
+        """Interface simplifiée pour le chat. `history` (tours précédents de
+        la conversation, `[{"role": "user"|"assistant", "content": ...}]`,
+        ordre chronologique) est optionnel pour rester compatible avec les
+        appels existants qui n'en fournissent pas (ex: admin agent)."""
         pass
 
     @abstractmethod
@@ -106,10 +115,18 @@ class GroqLLMProvider(BaseLLMProvider):
             "latency_ms": latency_ms,
         }
 
-    async def chat(self, message: str, context: Optional[str] = None, **kwargs) -> str:
+    async def chat(
+        self,
+        message: str,
+        context: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+        **kwargs,
+    ) -> str:
         messages = []
         if context:
             messages.append({"role": "system", "content": context})
+        if history:
+            messages.extend(history)
         messages.append({"role": "user", "content": message})
 
         response = await self.generate(messages, **kwargs)

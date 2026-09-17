@@ -51,7 +51,7 @@ class AiAssistant extends Module
             && Configuration::updateValue('AIASSISTANT_API_URL', '')
             && Configuration::updateValue('AIASSISTANT_TENANT_ID', '')
             && Configuration::updateValue('AIASSISTANT_ENABLED', false)
-            && Configuration::updateValue('AIASSISTANT_WELCOME_MESSAGE', $this->l('Bonjour ! Comment puis-je vous aider ?'));
+            && Configuration::updateValue('AIASSISTANT_WELCOME_MESSAGE', $this->l('Hello! How can I help you?'));
     }
 
     public function uninstall()
