@@ -105,7 +105,10 @@ jobs:
 
     env:
       ENVIRONMENT: test
-      LLM_PROVIDER: mock
+      # Explicit opt-in for the X-Tenant-ID test auth bypass (see
+      # SecuritySettings.allow_dev_tenant_header) - CI has no real tenant
+      # API keys to authenticate with.
+      SECURITY_ALLOW_DEV_TENANT_HEADER: "true"
       DB_HOST: localhost
       DB_PORT: 5432
       DB_NAME: test_db

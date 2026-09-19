@@ -49,7 +49,6 @@ jobs:
         run: |
           pip install -r requirements.txt -q
           pip install -r requirements-dev.txt -q
-          LLM_PROVIDER=mock \
           DB_PASSWORD=ci_test_password_123 \
           SECURITY_JWT_SECRET_KEY=ci_jwt_secret_key_minimum_32_characters_long \
           SECURITY_API_KEY_ENCRYPTION_KEY=ci_api_key_encryption_32_chars_minimum \

@@ -11,8 +11,12 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config.settings import settings
+from app.core.security.api_key_security import HMACSignatureValidator
+from app.core.security.secret_box import decrypt_secret
 
 logger = logging.getLogger(__name__)
+
+_signature_validator = HMACSignatureValidator()
 
 DEFAULT_PLAN = "starter"
 
@@ -38,13 +42,9 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         "/docs",
         "/redoc",
         "/openapi.json",
-        # Un prospect n'a pas encore de clé API pour vérifier son email.
-        f"{settings.api_prefix}/tenants/verify/",
     ]
-    # Chemins publics uniquement en correspondance EXACTE (pas de préfixe -
-    # POST {api_prefix}/tenants est le signup public, mais
-    # {api_prefix}/tenants/current etc. doivent rester protégés).
-    PUBLIC_EXACT_PATHS = ["/", f"{settings.api_prefix}/tenants"]
+    # Chemins publics uniquement en correspondance EXACTE (pas de préfixe).
+    PUBLIC_EXACT_PATHS = ["/"]
 
     def __init__(self, app, session_factory=None):
         """
@@ -70,10 +70,12 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
         if self._is_public_path(request.url.path):
             return await call_next(request)
 
-        # Mode développement/test: accepter X-Tenant-ID directement (pas
-        # d'infrastructure API key/tenant réelle en CI - Environment.TEST
-        # est explicitement documenté comme "Exécution des tests (CI/CD)")
-        if settings.is_development or settings.is_test:
+        # Bypass explicite (dev/CI uniquement): accepter X-Tenant-ID sans clé
+        # API. Gardé derrière un flag dédié plutôt que is_development/is_test
+        # - ENVIRONMENT vaut "development" par défaut (settings.py, compose
+        # files), donc lier ce bypass à l'environnement l'active partout où
+        # quelqu'un a simplement oublié de positionner ENVIRONMENT=production.
+        if settings.security.allow_dev_tenant_header:
             tenant_id = request.headers.get("X-Tenant-ID")
             if tenant_id:
                 # En dev, on accepte n'importe quel tenant ID
@@ -111,6 +113,18 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             return JSONResponse(
                 status_code=status.HTTP_403_FORBIDDEN,
                 content={"error": "forbidden", "message": "Tenant account is inactive"},
+            )
+
+        # La clé seule ne suffit plus : la requête doit être signée avec le
+        # secret HMAC du tenant (voir app/core/security/api_key_security.py).
+        # Sans ça, une clé API qui fuite serait rejouable indéfiniment par
+        # quiconque l'intercepte - exactement le problème que ce système
+        # existe pour fermer.
+        sig_error = await self._verify_signature(request, tenant)
+        if sig_error:
+            return JSONResponse(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                content={"error": "unauthorized", "message": sig_error},
             )
 
         # Injecter le contexte dans la requête
@@ -190,6 +204,11 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                     "features": plan["features"],
                     "rate_limit_rpm": plan["rate_limit_rpm"],
                     "is_active": tenant.is_active,
+                    "hmac_secret": (
+                        decrypt_secret(tenant.hmac_secret_encrypted)
+                        if tenant.hmac_secret_encrypted
+                        else None
+                    ),
                 }
 
                 # Mise en cache: pas de TTL, invalidée explicitement par
@@ -199,6 +218,59 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
                 self._tenant_cache[api_key_hash] = tenant_data
 
                 return tenant_data
+
+        return None
+
+    async def _verify_signature(self, request: Request, tenant: dict) -> Optional[str]:
+        """
+        Vérifie la signature HMAC de la requête (voir
+        app/core/security/api_key_security.py et APIClientSigner côté client).
+
+        Returns:
+            Un message d'erreur si la requête doit être rejetée, sinon None.
+        """
+        secret = tenant.get("hmac_secret")
+        if not secret:
+            # Ne devrait pas arriver pour une clé émise après l'ajout de ce
+            # système (activate_and_issue_api_key / rotate_api_key génèrent
+            # toujours les deux ensemble) - mais pas de fallback silencieux
+            # qui réintroduirait le problème que ça résout.
+            logger.error(
+                "Tenant has an API key but no HMAC secret configured",
+                extra={"tenant_id": tenant["id"]},
+            )
+            return "API key has no signing secret configured - rotate your API key"
+
+        timestamp_header = request.headers.get("X-Timestamp")
+        signature_header = request.headers.get("X-Signature")
+
+        if not timestamp_header or not signature_header:
+            return "Request signature required (X-Timestamp, X-Signature headers)"
+
+        try:
+            timestamp = int(timestamp_header)
+        except ValueError:
+            return "Invalid X-Timestamp header"
+
+        # BaseHTTPMiddleware caches the body on first read (Request._body),
+        # so call_next() downstream still sees the full body afterwards.
+        body = await request.body()
+
+        is_valid, error = _signature_validator.validate_signature(
+            provided_signature=signature_header,
+            secret=secret,
+            timestamp=timestamp,
+            method=request.method,
+            path=request.url.path,
+            body=body or None,
+        )
+
+        if not is_valid:
+            logger.warning(
+                "Invalid request signature",
+                extra={"tenant_id": tenant["id"], "path": request.url.path, "reason": error},
+            )
+            return error
 
         return None
 

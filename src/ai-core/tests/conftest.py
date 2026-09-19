@@ -12,7 +12,12 @@ os.environ.setdefault("DB_PORT", "5432")
 os.environ.setdefault("DB_NAME", "test_db")
 os.environ.setdefault("DB_USER", "test_user")
 os.environ.setdefault("SECURITY_JWT_SECRET_KEY", "test_jwt_secret_key_32_chars_minimum_length_here")
+os.environ.setdefault("SECURITY_API_KEY_ENCRYPTION_KEY", "test_api_key_encryption_32_chars_min_here")
 os.environ.setdefault("ENVIRONMENT", "development")
+# Most tests authenticate via the X-Tenant-ID header rather than a real API
+# key; this must be requested explicitly (see SecuritySettings.allow_dev_tenant_header)
+# rather than following automatically from ENVIRONMENT=development.
+os.environ.setdefault("SECURITY_ALLOW_DEV_TENANT_HEADER", "true")
 
 
 @pytest.fixture(autouse=True)

@@ -6,7 +6,6 @@ Exécuter avec les variables d'environnement configurées.
 import os
 os.environ.setdefault('DB_PASSWORD', 'test_password_123')
 os.environ.setdefault('SECURITY_JWT_SECRET_KEY', 'test_jwt_secret_key_32_characters_minimum')
-os.environ.setdefault('LLM_PROVIDER', 'mock')
 
 from app.infrastructure.database.models import (
     Base, Tenant, Conversation, Message, Rule, Coupon, AnalyticsEvent

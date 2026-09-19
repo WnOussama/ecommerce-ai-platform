@@ -111,7 +111,7 @@ class TestTenantRepositorySignupFlow:
         )
         await db_session.commit()
 
-        raw_api_key = await repo.activate_and_issue_api_key(tenant)
+        raw_api_key, raw_hmac_secret = await repo.activate_and_issue_api_key(tenant)
         await db_session.commit()
 
         assert raw_api_key.startswith("sk_")
@@ -119,6 +119,14 @@ class TestTenantRepositorySignupFlow:
         assert tenant.is_active is True
         assert tenant.api_key_hash is not None
         assert tenant.verification_token_hash is None
+
+        # Le secret HMAC doit être stocké chiffré (jamais en clair) mais
+        # rester récupérable en clair pour vérifier une signature.
+        from app.core.security.secret_box import decrypt_secret
+
+        assert tenant.hmac_secret_encrypted is not None
+        assert raw_hmac_secret not in tenant.hmac_secret_encrypted
+        assert decrypt_secret(tenant.hmac_secret_encrypted) == raw_hmac_secret
 
         # La clé émise doit permettre de retrouver le tenant par son hash,
         # exactement comme le fait TenantContextMiddleware._validate_and_get_tenant.
@@ -137,21 +145,26 @@ class TestTenantRepositorySignupFlow:
         tenant, _ = await repo.create_pending(
             name="Ma Boutique", email=f"{unique_slug}@example.com", slug=unique_slug
         )
-        old_key = await repo.activate_and_issue_api_key(tenant)
+        old_key, old_secret = await repo.activate_and_issue_api_key(tenant)
         await db_session.commit()
 
-        new_key = await repo.rotate_api_key(tenant)
+        new_key, new_secret = await repo.rotate_api_key(tenant)
         await db_session.commit()
 
         assert new_key != old_key
+        assert new_secret != old_secret
 
         import hashlib
+
+        from app.core.security.secret_box import decrypt_secret
 
         old_hash = hashlib.sha256(old_key.encode()).hexdigest()
         new_hash = hashlib.sha256(new_key.encode()).hexdigest()
 
         assert await repo.get_by_api_key_hash(old_hash) is None
         assert (await repo.get_by_api_key_hash(new_hash)).id == tenant.id
+        # Le secret stocké doit avoir suivi la rotation, pas juste la clé.
+        assert decrypt_secret(tenant.hmac_secret_encrypted) == new_secret
 
         await db_session.execute(text("DELETE FROM tenants WHERE id = :id"), {"id": tenant.id})
         await db_session.commit()
