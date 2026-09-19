@@ -31,6 +31,7 @@ vendor/bin/phpunit    # skips itself if nothing answers on http://localhost:8000
 - Keep ai-core credentials on the server. Never pass the API URL or tenant id to `widget.js`.
 - Escape user and bot text before inserting it into the page.
 - `customer_id` (guest or customer id) and `cart_total` are read from PrestaShop's session in `chat.php`, never from the browser request.
+- AI cart rules are created non combinable (`cart_rule_restriction`), so two AI coupons cannot stack.
 - The widget can only apply cart rules named `AI Assistant discount`, and PrestaShop's own `checkValidity` must pass. Cross site POSTs are refused by an Origin check.
 
 ## Gotchas

@@ -41,6 +41,7 @@ vendor/bin/pint --test        # format check (CI). Drop --test to fix
 - Some feature tests fail inside the docker container because they assume the default `AICORE_API_URL` (`http://localhost:8000/api/v1`) while the container sets `http://ai-core:8000/api/v1`. Run them with the default URL before calling a failure real.
 - The running docker image has no `tests/` folder. Run PHPUnit in a throwaway container from the same image with `tests/` and `phpunit.xml` mounted, plus `APP_KEY`, an empty `.env`, and sqlite in memory.
 - The Rules page keeps condition and action keys its form does not manage (for example `max_per_hour`), so editing a rule does not erase them.
+- Panel users and sessions live in SQLite on the `backoffice_data` volume, so they survive a container recreate. Create the first admin with `docker exec saas_backoffice php artisan make:filament-user`.
 - The docker image only has a `development` stage and serves with `php artisan serve`. It is not production ready.
 
 ## Agent skills
