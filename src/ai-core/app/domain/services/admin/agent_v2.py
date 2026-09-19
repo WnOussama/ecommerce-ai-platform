@@ -337,7 +337,10 @@ class AdminAgent:
         self, command: AdminCommandRequest, admin_user_id: str, start: float
     ) -> AdminResponse:
         pending, error = await self.safety.confirm_action(
-            command.action_id, command.confirmation_token, admin_user_id
+            command.action_id,
+            command.confirmation_token,
+            admin_user_id,
+            tenant_id=str(self.tenant_id),
         )
         if error:
             return AdminResponse(
@@ -365,7 +368,9 @@ class AdminAgent:
         async def executor(p: PendingAction) -> Dict[str, Any]:
             return await self._dispatch(p.action_name, p.parameters)
 
-        result, exec_error = await self.safety.execute_action(pending.id, executor)
+        result, exec_error = await self.safety.execute_action(
+            pending.id, executor, tenant_id=str(self.tenant_id)
+        )
 
         self.audit.log_action(
             pending.id,

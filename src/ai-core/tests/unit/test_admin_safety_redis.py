@@ -98,6 +98,7 @@ class TestAdminAISafetyRedisBacking:
             action_id=pending.id,
             confirmation_token=pending.confirmation_token,
             confirmed_by="admin_1",
+            tenant_id="t1",
         )
 
         assert error is None
@@ -119,7 +120,7 @@ class TestAdminAISafetyRedisBacking:
         assert pending.approval_type == ApprovalType.SIMPLE
 
         confirmed, error = await safety.confirm_action(
-            pending.id, pending.confirmation_token, "admin_1"
+            pending.id, pending.confirmation_token, "admin_1", tenant_id="t1"
         )
         assert error is None
         assert confirmed.status == ActionStatus.APPROVED
@@ -127,7 +128,7 @@ class TestAdminAISafetyRedisBacking:
         async def executor(action):
             return {"executed": True, "action_name": action.action_name}
 
-        result, exec_error = await safety.execute_action(pending.id, executor)
+        result, exec_error = await safety.execute_action(pending.id, executor, tenant_id="t1")
         assert exec_error is None
         assert result == {"executed": True, "action_name": "suggest_marketing_strategy"}
 
@@ -155,7 +156,7 @@ class TestAdminAISafetyRedisBacking:
         assert pending.approval_type == ApprovalType.DOUBLE
 
         after_first, error = await safety.confirm_action(
-            pending.id, pending.confirmation_token, "admin_1"
+            pending.id, pending.confirmation_token, "admin_1", tenant_id="t1"
         )
         assert error is None
         assert after_first.status == ActionStatus.PENDING_CONFIRMATION  # still waiting
@@ -163,7 +164,7 @@ class TestAdminAISafetyRedisBacking:
         # confirmation_delay_seconds is 60 for this action, so the second
         # confirmation must report the wait rather than approve immediately.
         after_second, error = await safety.confirm_action(
-            pending.id, pending.confirmation_token, "admin_1"
+            pending.id, pending.confirmation_token, "admin_1", tenant_id="t1"
         )
         assert error is not None
         assert "wait" in error.lower()
@@ -191,7 +192,9 @@ class TestAdminAISafetyRedisBacking:
         queue = await safety.get_pending_approvals("t1")
         assert [p.id for p in queue] == [pending.id]
 
-        approved, error = await safety.approve_action(pending.id, "admin_2", "looks fine")
+        approved, error = await safety.approve_action(
+            pending.id, "admin_2", "looks fine", tenant_id="t1"
+        )
         assert error is None
         assert approved.status == ActionStatus.APPROVED
         assert cache._lists["admin_human_queue:t1"] == []
@@ -214,7 +217,9 @@ class TestAdminAISafetyRedisBacking:
             reason="GDPR request",
         )
 
-        _, error = await safety.approve_action(pending.id, "admin_1", "self-approval attempt")
+        _, error = await safety.approve_action(
+            pending.id, "admin_1", "self-approval attempt", tenant_id="t1"
+        )
         assert error == "Approver must be different from initiator"
 
     async def test_falls_back_to_in_memory_dict_without_cache_client(self):
@@ -232,6 +237,75 @@ class TestAdminAISafetyRedisBacking:
         )
 
         assert pending.id in safety._pending_actions
-        confirmed, error = await safety.confirm_action(pending.id, pending.confirmation_token, "a")
+        confirmed, error = await safety.confirm_action(
+            pending.id, pending.confirmation_token, "a", tenant_id="t1"
+        )
         assert error is None
         assert confirmed.status == ActionStatus.APPROVED
+
+    async def _pending_for(self, tenant_id, action_name="suggest_marketing_strategy"):
+        cache = FakeAsyncRedis()
+        safety = AdminAISafetySystem(cache_client=cache)
+        dry_run = await safety.create_dry_run(
+            tenant_id=tenant_id, action_name=action_name, parameters={}, initiated_by="admin_1"
+        )
+        pending = await safety.request_confirmation(
+            dry_run=dry_run, tenant_id=tenant_id, parameters={}, initiated_by="admin_1", reason="r"
+        )
+        return safety, pending
+
+    async def test_another_tenant_cannot_confirm_even_with_the_valid_token(self):
+        safety, pending = await self._pending_for("t1")
+
+        confirmed, error = await safety.confirm_action(
+            pending.id, pending.confirmation_token, "attacker", tenant_id="t2"
+        )
+
+        assert confirmed is None
+        assert error == "Action not found"  # same answer as a missing action: no oracle
+        # untouched for its real owner
+        assert (await safety._get_pending(pending.id)).status == ActionStatus.PENDING_CONFIRMATION
+
+    async def test_another_tenant_cannot_reject_a_pending_action(self):
+        safety, pending = await self._pending_for("t1")
+
+        rejected, error = await safety.reject_action(pending.id, "attacker", "nope", tenant_id="t2")
+
+        assert rejected is None
+        assert error == "Action not found"
+        assert (await safety._get_pending(pending.id)).status == ActionStatus.PENDING_CONFIRMATION
+
+    async def test_another_tenant_cannot_approve_a_critical_action(self):
+        safety, pending = await self._pending_for("t1", "delete_customer_data")
+        assert pending.status == ActionStatus.PENDING_HUMAN_APPROVAL
+
+        approved, error = await safety.approve_action(
+            pending.id, "attacker", "approved", tenant_id="t2"
+        )
+
+        assert approved is None
+        assert error == "Action not found"
+        assert (await safety._get_pending(pending.id)).status == ActionStatus.PENDING_HUMAN_APPROVAL
+
+    async def test_another_tenant_cannot_execute_or_roll_back(self):
+        safety, pending = await self._pending_for("t1")
+        await safety.confirm_action(pending.id, pending.confirmation_token, "a", tenant_id="t1")
+
+        async def executor(action):
+            raise AssertionError("must never run for another tenant")
+
+        result, error = await safety.execute_action(pending.id, executor, tenant_id="t2")
+        assert (result, error) == (None, "Action not found")
+
+        ok, error = await safety.rollback_action(pending.id, "attacker", "r", tenant_id="t2")
+        assert (ok, error) == (False, "Action not found")
+
+    async def test_the_owner_can_still_reject(self):
+        safety, pending = await self._pending_for("t1")
+
+        rejected, error = await safety.reject_action(
+            pending.id, "admin_1", "changed mind", tenant_id="t1"
+        )
+
+        assert error is None
+        assert rejected.status == ActionStatus.REJECTED

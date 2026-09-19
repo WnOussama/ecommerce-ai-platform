@@ -284,7 +284,9 @@ async def reject_action(request: Request, body: RejectActionRequest):
     admin_user_id = _admin_user_id(request, body.admin_user_id)
 
     safety = _get_safety_system()
-    pending, error = await safety.reject_action(body.action_id, admin_user_id, body.reason)
+    pending, error = await safety.reject_action(
+        body.action_id, admin_user_id, body.reason, tenant_id=str(tenant_id)
+    )
     if error:
         raise HTTPException(status_code=400, detail=error)
 

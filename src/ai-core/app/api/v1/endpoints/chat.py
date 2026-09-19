@@ -1086,4 +1086,10 @@ async def end_conversation(request: Request, conversation_id: str):
         if updated:
             await uow.commit()
 
+    if not updated:
+        # Inconnue OU appartenant à un autre tenant (la requête est filtrée par
+        # tenant): même réponse dans les deux cas. Avant, "closed" était renvoyé
+        # même quand rien n'avait été fermé.
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
     return {"status": "closed", "conversation_id": conversation_id}

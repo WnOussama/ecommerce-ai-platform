@@ -416,3 +416,59 @@ class TestChatPersistenceEndToEnd:
         assert "cached" not in first.json()["metadata"]
         assert "cached" not in second.json()["metadata"]
         assert first.json()["conversation_id"] != second.json()["conversation_id"]
+
+    async def test_closing_a_conversation_of_another_tenant_is_a_404_and_changes_nothing(
+        self, tenant_id, db_session: AsyncSession
+    ):
+        from app.main import create_application
+
+        other_tenant = uuid.uuid4()
+        await db_session.execute(
+            text(
+                "INSERT INTO tenants (id, name, slug, is_active, is_verified, settings, created_at, updated_at) "
+                "VALUES (:id, :name, :slug, true, true, '{}', :now, :now)"
+            ),
+            {
+                "id": other_tenant,
+                "name": "Other tenant",
+                "slug": f"other-{other_tenant.hex[:8]}",
+                "now": datetime.utcnow(),
+            },
+        )
+        await db_session.commit()
+
+        transport = ASGITransport(app=create_application())
+        try:
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                sent = await client.post(
+                    "/api/v1/chat/message",
+                    json={"message": "Bonjour", "use_rag": False},
+                    headers={"X-Tenant-ID": str(tenant_id)},
+                )
+                conversation_id = sent.json()["conversation_id"]
+
+                foreign = await client.delete(
+                    f"/api/v1/chat/conversation/{conversation_id}",
+                    headers={"X-Tenant-ID": str(other_tenant)},
+                )
+                assert foreign.status_code == 404
+
+                status = (
+                    await db_session.execute(
+                        text("SELECT status FROM conversations WHERE id = :id"),
+                        {"id": uuid.UUID(conversation_id)},
+                    )
+                ).scalar()
+                assert str(status).upper().endswith("ACTIVE")
+
+                own = await client.delete(
+                    f"/api/v1/chat/conversation/{conversation_id}",
+                    headers={"X-Tenant-ID": str(tenant_id)},
+                )
+                assert own.status_code == 200
+                assert own.json()["status"] == "closed"
+        finally:
+            await db_session.execute(
+                text("DELETE FROM tenants WHERE id = :id"), {"id": other_tenant}
+            )
+            await db_session.commit()

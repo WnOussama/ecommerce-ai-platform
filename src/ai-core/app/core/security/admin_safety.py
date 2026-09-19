@@ -442,6 +442,29 @@ class AdminAISafetySystem:
             return PendingAction.from_dict(json.loads(data)) if data else None
         return self._pending_actions.get(action_id)
 
+    async def _get_pending_for_tenant(
+        self, action_id: str, tenant_id: str
+    ) -> Optional[PendingAction]:
+        """
+        Charge une action en attente SEULEMENT si elle appartient à `tenant_id`.
+
+        La clé Redis ne contient pas le tenant (l'id d'action est un UUID): sans
+        ce contrôle, un tenant qui connaît l'id d'une action d'un autre pouvait
+        la rejeter, l'approuver ou la confirmer. Une action d'un autre tenant
+        est traitée exactement comme une action inexistante ("Action not found"),
+        pour ne rien révéler.
+        """
+        pending = await self._get_pending(action_id)
+        if pending is None:
+            return None
+        if str(pending.tenant_id) != str(tenant_id):
+            logger.warning(
+                "Cross tenant admin action access refused",
+                extra={"action_id": action_id, "caller_tenant_id": str(tenant_id)},
+            )
+            return None
+        return pending
+
     async def _delete_pending(self, action_id: str) -> None:
         if self._cache:
             await self._cache.delete(self._pending_key(action_id))
@@ -721,13 +744,15 @@ class AdminAISafetySystem:
         action_id: str,
         confirmation_token: str,
         confirmed_by: str,
+        *,
+        tenant_id: str,
     ) -> Tuple[PendingAction, Optional[str]]:
         """
         Confirme une action.
 
         Pour HIGH risk: nécessite double confirmation.
         """
-        pending = await self._get_pending(action_id)
+        pending = await self._get_pending_for_tenant(action_id, tenant_id)
 
         if not pending:
             return None, "Action not found"
@@ -790,13 +815,15 @@ class AdminAISafetySystem:
         action_id: str,
         approver_id: str,
         approval_reason: str,
+        *,
+        tenant_id: str,
     ) -> Tuple[PendingAction, Optional[str]]:
         """
         Approbation humaine pour actions CRITICAL.
 
         Doit être fait par un admin différent de l'initiateur.
         """
-        pending = await self._get_pending(action_id)
+        pending = await self._get_pending_for_tenant(action_id, tenant_id)
 
         if not pending:
             return None, "Action not found"
@@ -835,9 +862,11 @@ class AdminAISafetySystem:
         action_id: str,
         rejector_id: str,
         rejection_reason: str,
+        *,
+        tenant_id: str,
     ) -> Tuple[PendingAction, Optional[str]]:
         """Rejette une action en attente d'approbation"""
-        pending = await self._get_pending(action_id)
+        pending = await self._get_pending_for_tenant(action_id, tenant_id)
 
         if not pending:
             return None, "Action not found"
@@ -875,7 +904,7 @@ class AdminAISafetySystem:
             results = []
             for raw_id in raw_ids:
                 action_id = raw_id.decode() if isinstance(raw_id, bytes) else raw_id
-                pending = await self._get_pending(action_id)
+                pending = await self._get_pending_for_tenant(action_id, tenant_id)
                 if pending:
                     results.append(pending)
             return results
@@ -894,6 +923,8 @@ class AdminAISafetySystem:
         self,
         action_id: str,
         executor: Callable[[PendingAction], Awaitable[Dict[str, Any]]],
+        *,
+        tenant_id: str,
     ) -> Tuple[Dict[str, Any], Optional[str]]:
         """
         Exécute une action approuvée.
@@ -902,7 +933,7 @@ class AdminAISafetySystem:
             action_id: ID de l'action
             executor: Fonction qui exécute réellement l'action
         """
-        pending = await self._get_pending(action_id)
+        pending = await self._get_pending_for_tenant(action_id, tenant_id)
 
         if not pending:
             return None, "Action not found"
@@ -964,11 +995,13 @@ class AdminAISafetySystem:
         action_id: str,
         rollback_by: str,
         reason: str,
+        *,
+        tenant_id: str,
     ) -> Tuple[bool, Optional[str]]:
         """
         Annule une action exécutée (si rollback supporté).
         """
-        pending = await self._get_pending(action_id)
+        pending = await self._get_pending_for_tenant(action_id, tenant_id)
 
         if not pending:
             return False, "Action not found"
