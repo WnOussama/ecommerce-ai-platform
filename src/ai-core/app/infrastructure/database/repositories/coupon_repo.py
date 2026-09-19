@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.database.models.coupon import Coupon, CouponStatus
@@ -73,6 +73,55 @@ class CouponRepository:
         )
 
         return coupon
+
+    async def latest_for_visitor(
+        self,
+        rule_id: UUID,
+        customer_id: Optional[str],
+        conversation_id: Optional[UUID],
+    ) -> Optional[Coupon]:
+        """
+        Dernier coupon émis par `rule_id` à ce visiteur : même customer_id
+        OU même conversation (les deux comptent, pour qu'ouvrir une nouvelle
+        conversation ne contourne pas la limite quand le customer_id est connu).
+        Sans customer_id ni conversation, aucune identité: retourne None.
+        """
+        scope = []
+        if customer_id:
+            scope.append(Coupon.extra_data["customer_id"].astext == customer_id)
+        if conversation_id:
+            scope.append(Coupon.conversation_id == conversation_id)
+        if not scope:
+            return None
+
+        result = await self._session.execute(
+            select(Coupon)
+            .where(
+                and_(
+                    Coupon.tenant_id == self._tenant_id,
+                    Coupon.rule_id == rule_id,
+                    or_(*scope),
+                )
+            )
+            .order_by(Coupon.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
+
+    async def count_for_rule_since(self, rule_id: UUID, since: datetime) -> int:
+        """Nombre de coupons émis par `rule_id` pour ce tenant depuis `since`."""
+        result = await self._session.execute(
+            select(func.count())
+            .select_from(Coupon)
+            .where(
+                and_(
+                    Coupon.tenant_id == self._tenant_id,
+                    Coupon.rule_id == rule_id,
+                    Coupon.created_at >= since,
+                )
+            )
+        )
+        return int(result.scalar_one())
 
     async def get_by_code(self, code: str) -> Optional[Coupon]:
         result = await self._session.execute(

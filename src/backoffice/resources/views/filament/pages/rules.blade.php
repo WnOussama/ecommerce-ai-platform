@@ -49,6 +49,8 @@
                                     isset($conditions['intent']) ? 'intent: '.$conditions['intent'] : null,
                                     !empty($conditions['keywords_any']) ? 'mots-clés (un): '.implode(', ', $conditions['keywords_any']) : null,
                                     !empty($conditions['keywords_all']) ? 'mots-clés (tous): '.implode(', ', $conditions['keywords_all']) : null,
+                                    !empty($conditions['first_message']) ? 'premier message' : null,
+                                    isset($conditions['min_cart_total']) ? 'panier ≥ '.$conditions['min_cart_total'].' €' : null,
                                 ]);
                             @endphp
                             <tr class="border-b border-gray-100 dark:border-white/5">

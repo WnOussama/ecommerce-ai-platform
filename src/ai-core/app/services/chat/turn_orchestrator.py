@@ -213,6 +213,7 @@ class ChatTurnOrchestrator:
         top_k: int = 5,
         history: Optional[List[Dict[str, str]]] = None,
         faq_context: str = "",
+        cart_total: Optional[float] = None,
     ) -> ChatTurnResult:
         metrics = self._metrics
 
@@ -246,7 +247,13 @@ class ChatTurnOrchestrator:
         # circuiter la génération (canned_response).
         # =====================================================================
         intent = self._intent_classifier.classify(message)
-        rule_match = self._rule_evaluator.evaluate(rules, intent, message)
+        rule_match = self._rule_evaluator.evaluate(
+            rules,
+            intent,
+            message,
+            is_first_message=not history,
+            cart_total=cart_total,
+        )
 
         if rule_match and rule_match.action.get("type") == "canned_response":
             response_text = rule_match.action.get("text") or rule_match.action.get("message") or ""

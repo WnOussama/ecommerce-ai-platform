@@ -33,12 +33,24 @@ class AiCoreClient
      *
      * @return array{ok: bool, data?: array, error?: string}
      */
-    public function sendChatMessage($message, $conversationId = null)
+    public function sendChatMessage($message, $conversationId = null, $customerId = null, $cartTotal = null)
     {
         $payload = ['message' => (string) $message, 'use_rag' => true];
 
         if ($conversationId !== null && $conversationId !== '') {
             $payload['conversation_id'] = (string) $conversationId;
+        }
+
+        // Identité du visiteur et total du panier: calculés côté serveur par
+        // la boutique (jamais lus depuis la requête du navigateur), ils
+        // pilotent les coupons de bienvenue (une fois par visiteur) et de
+        // palier (panier >= seuil).
+        if ($customerId !== null && $customerId !== '') {
+            $payload['customer_id'] = (string) $customerId;
+        }
+
+        if ($cartTotal !== null && is_numeric($cartTotal) && $cartTotal >= 0) {
+            $payload['cart_total'] = round((float) $cartTotal, 2);
         }
 
         return $this->request('POST', '/chat/message', $payload);

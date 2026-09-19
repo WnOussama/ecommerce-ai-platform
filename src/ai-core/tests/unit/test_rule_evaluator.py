@@ -9,6 +9,8 @@ l'endpoint HTTP.
 from dataclasses import dataclass, field
 from typing import Any, Dict
 
+import pytest
+
 from app.services.rules.evaluator import RuleEvaluator
 
 
@@ -65,6 +67,78 @@ class TestRuleEvaluator:
         rule = _FakeRule(conditions={"keywords_any": ["panier", "abandon"]})
         match = self.evaluator.evaluate([rule], intent="general", message="quel est le prix ?")
         assert match is None
+
+    def test_keyword_must_be_a_whole_word_not_a_substring(self):
+        """Regression: "carte" (bank card) must not fire the "cart" abandoned cart rule."""
+        rule = _FakeRule(conditions={"keywords_any": ["cart", "panier"]})
+        evaluator = RuleEvaluator()
+        assert (
+            evaluator.evaluate([rule], "general", "Quel est le numéro de carte du client ?") is None
+        )
+        assert evaluator.evaluate([rule], "general", "Une cartouche d'encre") is None
+        assert evaluator.evaluate([rule], "general", "my cart is empty") is not None
+
+    def test_short_keyword_does_not_match_inside_other_words(self):
+        rule = _FakeRule(conditions={"keywords_any": ["hi", "salut"]})
+        evaluator = RuleEvaluator()
+        assert evaluator.evaluate([rule], "general", "Do you sell a machine for this?") is None
+        assert evaluator.evaluate([rule], "general", "Hi, I need help") is not None
+
+    def test_keyword_matches_next_to_punctuation_and_accents(self):
+        rule = _FakeRule(conditions={"keywords_any": ["abandonné", "fidèle"]})
+        evaluator = RuleEvaluator()
+        assert evaluator.evaluate([rule], "general", "Mon panier est abandonné!") is not None
+        assert evaluator.evaluate([rule], "general", "Je suis client fidèle.") is not None
+
+    def test_multi_word_keyword_is_matched_as_a_phrase(self):
+        rule = _FakeRule(conditions={"keywords_any": ["come back", "been a while"]})
+        evaluator = RuleEvaluator()
+        assert evaluator.evaluate([rule], "general", "I want to come back to your shop") is not None
+        assert evaluator.evaluate([rule], "general", "welcome backpack") is None
+
+    # ------------------------------------------------------------------
+    # first_message / min_cart_total (coupon de bienvenue et de palier)
+    # ------------------------------------------------------------------
+
+    def test_first_message_rule_only_matches_on_the_first_turn(self):
+        rule = _FakeRule(conditions={"first_message": True})
+        evaluator = RuleEvaluator()
+        assert evaluator.evaluate([rule], "general", "Bonjour", is_first_message=True) is not None
+        assert evaluator.evaluate([rule], "general", "Encore moi", is_first_message=False) is None
+
+    def test_first_message_false_excludes_the_first_turn(self):
+        rule = _FakeRule(conditions={"first_message": False})
+        evaluator = RuleEvaluator()
+        assert evaluator.evaluate([rule], "general", "Bonjour", is_first_message=True) is None
+        assert evaluator.evaluate([rule], "general", "Suite", is_first_message=False) is not None
+
+    def test_min_cart_total_matches_at_or_above_the_threshold(self):
+        rule = _FakeRule(conditions={"min_cart_total": 100})
+        evaluator = RuleEvaluator()
+        assert evaluator.evaluate([rule], "general", "ok", cart_total=99.99) is None
+        assert evaluator.evaluate([rule], "general", "ok", cart_total=100) is not None
+        assert evaluator.evaluate([rule], "general", "ok", cart_total=250.5) is not None
+
+    def test_min_cart_total_never_matches_without_a_known_cart(self):
+        rule = _FakeRule(conditions={"min_cart_total": 100})
+        assert RuleEvaluator().evaluate([rule], "general", "ok", cart_total=None) is None
+
+    @pytest.mark.parametrize("bad_threshold", ["100", True, None, [100]])
+    def test_min_cart_total_with_a_non_numeric_threshold_never_matches(self, bad_threshold):
+        rule = _FakeRule(conditions={"min_cart_total": bad_threshold})
+        assert RuleEvaluator().evaluate([rule], "general", "ok", cart_total=500) is None
+
+    def test_welcome_and_threshold_combine_with_and(self):
+        rule = _FakeRule(conditions={"first_message": True, "min_cart_total": 50})
+        evaluator = RuleEvaluator()
+        assert (
+            evaluator.evaluate([rule], "general", "hi", is_first_message=True, cart_total=10)
+            is None
+        )
+        assert (
+            evaluator.evaluate([rule], "general", "hi", is_first_message=True, cart_total=80)
+            is not None
+        )
 
     def test_keywords_all_requires_every_keyword(self):
         rule = _FakeRule(conditions={"keywords_all": ["livraison", "gratuite"]})

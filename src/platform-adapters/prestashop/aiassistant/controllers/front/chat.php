@@ -16,6 +16,9 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
 {
     public $ssl = true;
 
+    /** Nom des CartRule créées par ce module: seules celles-ci sont applicables via le widget. */
+    const AI_CART_RULE_NAME = 'AI Assistant discount';
+
     public function initContent()
     {
         parent::initContent();
@@ -27,6 +30,8 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
             echo json_encode(['error' => 'assistant_disabled']);
             exit;
         }
+
+        $this->rejectCrossSiteRequest();
 
         // Reprise d'une conversation après un changement de page - le
         // widget perdait tout son historique affiché à chaque navigation
@@ -75,7 +80,13 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
             Configuration::get('AIASSISTANT_TENANT_ID')
         );
 
-        $result = $client->sendChatMessage($message, $conversationId);
+        // Jamais lus depuis $input: le navigateur ne peut pas les choisir.
+        $result = $client->sendChatMessage(
+            $message,
+            $conversationId,
+            $this->getVisitorId(),
+            $this->getCartTotal()
+        );
 
         if (!$result['ok']) {
             http_response_code(502);
@@ -85,6 +96,91 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
 
         echo json_encode($this->withRedeemableCoupons($this->withNavigation($result['data'])));
         exit;
+    }
+
+    /**
+     * Protection CSRF: un site tiers pouvait faire poster le navigateur d'un
+     * visiteur vers ce endpoint (le corps est du JSON lu tel quel, sans
+     * preflight CORS avec un Content-Type text/plain) pour consommer le
+     * quota du LLM ou appliquer des coupons. Un navigateur envoie toujours
+     * l'en-tête Origin sur ce genre de requête: s'il est présent, il doit
+     * être celui de la boutique.
+     */
+    private function rejectCrossSiteRequest()
+    {
+        $origin = isset($_SERVER['HTTP_ORIGIN']) ? (string) $_SERVER['HTTP_ORIGIN'] : '';
+
+        if ($origin === '') {
+            return;
+        }
+
+        $shopOrigin = Tools::getShopProtocol().Tools::getHttpHost(false);
+
+        if ($this->normalizeOrigin($origin) !== $this->normalizeOrigin($shopOrigin)) {
+            http_response_code(403);
+            echo json_encode(['error' => 'cross_site_request_refused']);
+            exit;
+        }
+    }
+
+    /**
+     * "https://Shop.example:443" -> "https://shop.example:443" ; le port par
+     * défaut est rendu explicite pour que http://x et http://x:80 soient égaux.
+     */
+    private function normalizeOrigin($url)
+    {
+        $parts = parse_url((string) $url);
+
+        if (empty($parts['scheme']) || empty($parts['host'])) {
+            return '';
+        }
+
+        $scheme = strtolower($parts['scheme']);
+        $port = isset($parts['port']) ? (int) $parts['port'] : ($scheme === 'https' ? 443 : 80);
+
+        return $scheme.'://'.strtolower($parts['host']).':'.$port;
+    }
+
+    /**
+     * Identité stable du visiteur, décidée côté serveur: client connecté,
+     * sinon invité PrestaShop, sinon un identifiant aléatoire gardé dans le
+     * cookie signé de PrestaShop. Sert à limiter les coupons par personne.
+     */
+    private function getVisitorId()
+    {
+        $customer = $this->context->customer;
+
+        if ($customer && Validate::isLoadedObject($customer) && $customer->isLogged()) {
+            return 'c'.(int) $customer->id;
+        }
+
+        $cookie = $this->context->cookie;
+
+        if (!empty($cookie->id_guest)) {
+            return 'g'.(int) $cookie->id_guest;
+        }
+
+        if (empty($cookie->ai_assistant_visitor)) {
+            $cookie->ai_assistant_visitor = bin2hex(random_bytes(16));
+            $cookie->write();
+        }
+
+        return 'v'.preg_replace('/[^a-f0-9]/', '', (string) $cookie->ai_assistant_visitor);
+    }
+
+    /**
+     * Total des produits du panier (TTC, avant réductions), calculé par
+     * PrestaShop. null si le visiteur n'a pas de panier.
+     */
+    private function getCartTotal()
+    {
+        $cart = $this->context->cart;
+
+        if (!$cart || !$cart->id) {
+            return null;
+        }
+
+        return (float) $cart->getOrderTotal(true, Cart::ONLY_PRODUCTS);
     }
 
     private function proxyConversationHistory($conversationId)
@@ -152,7 +248,7 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
 
         $cartRule = new CartRule();
         $cartRule->code = $code;
-        $cartRule->name = [(int) Configuration::get('PS_LANG_DEFAULT') => 'AI Assistant discount'];
+        $cartRule->name = [(int) Configuration::get('PS_LANG_DEFAULT') => self::AI_CART_RULE_NAME];
         $cartRule->quantity = 1;
         $cartRule->quantity_per_user = 1;
         $cartRule->date_from = date('Y-m-d H:i:s');
@@ -176,16 +272,26 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
     private function applyCouponToCart($code)
     {
         $idCartRule = (int) CartRule::getIdByCode($code);
+        $cartRule = $idCartRule ? new CartRule($idCartRule) : null;
 
-        if (!$idCartRule) {
+        // Seuls les codes émis par l'assistant sont applicables ici, et la
+        // réponse est identique pour un code inconnu ou un code de la boutique
+        // (codes VIP, partenaires...): le widget ne doit pas servir d'oracle
+        // pour deviner quels codes existent.
+        if (
+            !$cartRule
+            || !Validate::isLoadedObject($cartRule)
+            || !in_array(self::AI_CART_RULE_NAME, (array) $cartRule->name, true)
+        ) {
             http_response_code(404);
             echo json_encode(['error' => 'coupon_not_found']);
             return;
         }
 
-        $cartRule = new CartRule($idCartRule);
-
-        if (!Validate::isLoadedObject($cartRule) || !$cartRule->active) {
+        // Mêmes contrôles que le champ code promo standard de PrestaShop
+        // (dates, quantité restante, restrictions client/groupe...) - avant,
+        // seul `active` était vérifié.
+        if (!$cartRule->active || $cartRule->checkValidity($this->context, false, false) !== true) {
             http_response_code(410);
             echo json_encode(['error' => 'coupon_inactive_or_expired']);
             return;
@@ -230,12 +336,10 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
      * finding a product.
      *
      * Real, confirmed live bug: RAG's min_similarity=0.3 threshold (see
-     * app/services/rag/factory.py) is deliberately low, and this shop's
-     * embeddings are a deterministic hash (no OpenAI key configured - see
-     * app/services/rag/embedding_service.py::MockEmbeddingService), not a
-     * semantically meaningful one - so a pure policy question like "What's
-     * your return policy?" (intent=return_request) still comes back with
-     * ~0.5-0.57 similarity "matches" that are just noise, and the widget
+     * app/services/rag/factory.py) is deliberately low - RAG always returns
+     * its nearest products, even for a question that is not about a product -
+     * so a pure policy question like "What's your return policy?"
+     * (intent=return_request) still comes back with weak "matches", and the widget
      * was silently redirecting the shopper to an unrelated product page
      * mid-conversation, before they'd even read the reply. `products` is
      * already sorted similarity-descending (retrieval_service.py::search,

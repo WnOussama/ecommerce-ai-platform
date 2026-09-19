@@ -13,6 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
+from app.core.config.settings import settings
 from app.infrastructure.database.models.conversation import ConversationStatus
 from app.infrastructure.database.models.message import Message, MessageRole
 from app.infrastructure.database.unit_of_work import UnitOfWork
@@ -43,7 +44,24 @@ class ChatMessageRequest(BaseModel):
 
     message: str = Field(..., min_length=1, max_length=4096)
     conversation_id: Optional[str] = None
-    customer_id: Optional[str] = None
+    customer_id: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        description=(
+            "Stable visitor identity (logged in customer or guest id), set by the "
+            "shop's server side, never by the browser. Coupons are limited per "
+            "visitor using this value."
+        ),
+    )
+    cart_total: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=10_000_000,
+        description=(
+            "Current cart total, computed by the shop's server side. Drives "
+            "`min_cart_total` rules (spend threshold coupons)."
+        ),
+    )
     context: Optional[Dict[str, Any]] = Field(default_factory=dict)
     use_rag: bool = Field(default=True, description="Enable RAG product search")
     top_k: int = Field(default=5, ge=1, le=20, description="Number of products to retrieve")
@@ -217,6 +235,7 @@ async def send_message(request: Request, body: ChatMessageRequest):
                 )
 
     rules = await _load_active_rules(tenant_id)
+    rules = await _drop_exhausted_coupon_rules(tenant_id, rules, body.customer_id, conversation_id)
     llm = get_llm_provider()
     retrieval_service = get_retrieval_service() if body.use_rag else None
     history = await _load_recent_history(
@@ -234,6 +253,7 @@ async def send_message(request: Request, body: ChatMessageRequest):
         top_k=body.top_k,
         history=history,
         faq_context=faq_context,
+        cart_total=body.cart_total,
     )
 
     processing_time_ms = int((time.time() - start_time) * 1000)
@@ -743,6 +763,98 @@ async def _record_rule_triggered(
         )
 
 
+def _positive_number(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return float(value)
+
+
+def _coupon_cooldown(action: Dict[str, Any]) -> Optional[timedelta]:
+    """`cooldown_days` : délai avant qu'un même visiteur puisse recevoir à nouveau
+    ce coupon. Absent = une seule fois pour toujours (ex: coupon de bienvenue)."""
+    days = _positive_number(action.get("cooldown_days"))
+    return timedelta(days=days) if days else None
+
+
+def _hourly_cap(action: Dict[str, Any]) -> int:
+    cap = _positive_number(action.get("max_per_hour"))
+    if cap and cap <= 1000:
+        return int(cap)
+    return settings.tenant.max_auto_coupons_per_rule_per_hour
+
+
+async def _visitor_already_has_coupon(
+    coupons: Any,
+    rule_id: Any,
+    action: Dict[str, Any],
+    customer_id: Optional[str],
+    conv_uuid: Optional[uuid.UUID],
+) -> bool:
+    latest = await coupons.latest_for_visitor(rule_id, customer_id, conv_uuid)
+    if latest is None:
+        return False
+    cooldown = _coupon_cooldown(action)
+    if cooldown is None:
+        return True
+    created = latest.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return created > datetime.now(timezone.utc) - cooldown
+
+
+async def _rule_hourly_cap_reached(coupons: Any, rule_id: Any, action: Dict[str, Any]) -> bool:
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    return await coupons.count_for_rule_since(rule_id, since) >= _hourly_cap(action)
+
+
+async def _drop_exhausted_coupon_rules(
+    tenant_id: str,
+    rules: List[RuleLike],
+    customer_id: Optional[str],
+    conversation_id: str,
+) -> List[RuleLike]:
+    """
+    Retire les règles `generate_coupon` déjà épuisées pour ce visiteur (ou dont
+    le plafond horaire est atteint) AVANT l'évaluation.
+
+    L'évaluateur ne retient que la première règle qui matche : sans ce filtre,
+    une règle de palier ("panier >= 100") continuerait de matcher à chaque
+    message, masquerait toutes les règles suivantes et ré-annoncerait le même
+    code en boucle. Best-effort : en cas d'erreur, on garde les règles telles
+    quelles (l'émission revérifie de toute façon les limites).
+    """
+    coupon_rules = [r for r in rules if (r.action or {}).get("type") == "generate_coupon"]
+    if not coupon_rules:
+        return rules
+
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+    except (ValueError, AttributeError, TypeError):
+        return rules
+    try:
+        conv_uuid: Optional[uuid.UUID] = uuid.UUID(conversation_id)
+    except (ValueError, AttributeError, TypeError):
+        conv_uuid = None
+
+    exhausted = set()
+    try:
+        async with UnitOfWork(tenant_uuid) as uow:
+            for rule in coupon_rules:
+                action = rule.action or {}
+                if await _visitor_already_has_coupon(
+                    uow.coupons, rule.id, action, customer_id, conv_uuid
+                ) or await _rule_hourly_cap_reached(uow.coupons, rule.id, action):
+                    exhausted.add(rule.id)
+    except Exception as e:
+        logger.warning(
+            "Skipping coupon rule limit check for this request",
+            extra={"tenant_id": tenant_id, "error": str(e)},
+        )
+        return rules
+
+    return [r for r in rules if r.id not in exhausted]
+
+
 async def _generate_coupon_from_rule(
     tenant_id: str,
     rule_id: Any,
@@ -766,6 +878,20 @@ async def _generate_coupon_from_rule(
 
     try:
         async with UnitOfWork(tenant_uuid) as uow:
+            # Revérifie (la course entre deux requêtes simultanées est possible
+            # après le filtre d'avant tour) : une fois par visiteur, et plafond
+            # horaire par règle et par tenant.
+            if await _visitor_already_has_coupon(
+                uow.coupons, rule_id, action, customer_id, conv_uuid
+            ):
+                return None
+            if await _rule_hourly_cap_reached(uow.coupons, rule_id, action):
+                logger.warning(
+                    "Coupon rule hourly cap reached, not issuing",
+                    extra={"tenant_id": tenant_id, "rule_id": str(rule_id)},
+                )
+                return None
+
             code = uow.coupons.generate_code()
             now = datetime.now(timezone.utc)
             expires_at = now + timedelta(days=validity_days)
