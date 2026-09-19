@@ -137,6 +137,17 @@ class Product(BaseModel):
         default_factory=dict, description="Caractéristiques clé-valeur"
     )
 
+    @field_validator("manufacturer_name", "supplier_name", mode="before")
+    @classmethod
+    def coerce_false_to_none(cls, v: Any) -> Optional[str]:
+        """PrestaShop's webservice API returns the JSON literal `false` (not
+        `""` or `null`) for these fields when a product has no manufacturer/
+        supplier assigned - confirmed live: every product with "No brand"
+        set in the admin failed catalog sync with a Pydantic string_type
+        error on manufacturer_name, silently dropped from the synced
+        catalog (see client.py's `_parse_product` try/except)."""
+        return None if v is False else v
+
     @field_validator("price", "price_tax_incl", "wholesale_price", mode="before")
     @classmethod
     def coerce_decimal(cls, v: Any) -> Optional[Decimal]:
@@ -267,3 +278,20 @@ class CategoryListResponse(BaseModel):
                 tree[parent_id] = []
             tree[parent_id].append(cat)
         return tree
+
+
+class CMSPage(BaseModel):
+    """
+    Page CMS PrestaShop (ressource webservice `content_management_system`) -
+    les pages de politique par défaut de la boutique (livraison, retours,
+    CGV, à propos...). Source réelle pour la génération automatique de FAQ
+    (voir app/services/faq/generator.py) - `content_text` est déjà
+    dépouillé de son HTML.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    id: int
+    title: str
+    content_text: str = Field(description="Contenu de la page, HTML retiré")
+    active: bool = True

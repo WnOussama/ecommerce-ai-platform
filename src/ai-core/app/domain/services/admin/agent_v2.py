@@ -10,9 +10,8 @@ confirmation, approbation humaine, rollback, déjà réel et déjà testé,
 voir app/core/security/admin_safety.py).
 
 Ce module utilise maintenant:
-- get_llm_provider() (app.infrastructure.llm) - le même provider que le
-  chat client, compatible LLM_PROVIDER=mock comme partout ailleurs dans
-  ce projet.
+- get_llm_provider() (app.infrastructure.llm) - le même provider Groq que
+  le chat client, sans mock ni fallback silencieux.
 - InsightsService - les mêmes statistiques réelles que le dashboard,
   pas de chiffres inventés (total_revenue, "Product A", segments
   vip/at_risk fantômes...).
@@ -46,6 +45,18 @@ from app.infrastructure.llm import get_llm_provider
 from app.services.insights.service import InsightsService
 
 logger = logging.getLogger(__name__)
+
+
+class ActionNotImplementedError(Exception):
+    """Levée par _dispatch quand action_name n'a pas de handler réel.
+
+    Doit toujours se propager jusqu'à admin_safety.execute_action ou
+    _run_and_record, qui la mappent (comme toute exception) vers
+    ActionStatus.FAILED / status="failed" - jamais retournée comme un
+    dict de statut normal, sous peine d'être traitée comme un succès
+    (c'était le bug : "not_implemented" renvoyé en tant que résultat
+    normal, donc marqué "completed" par l'appelant).
+    """
 
 
 # =============================================================================
@@ -445,13 +456,10 @@ class AdminAgent:
         }
         handler = handlers.get(action_name)
         if not handler:
-            return {
-                "status": "not_implemented",
-                "message": (
-                    f"'{action_name}' has no real execution path yet - only the "
-                    "confirmation/dry-run/audit workflow is wired for it."
-                ),
-            }
+            raise ActionNotImplementedError(
+                f"'{action_name}' has no real execution path yet - only the "
+                "confirmation/dry-run/audit workflow is wired for it."
+            )
         return await handler(parameters)
 
     async def _handle_get_analytics(self, params: Dict[str, Any]) -> Dict[str, Any]:

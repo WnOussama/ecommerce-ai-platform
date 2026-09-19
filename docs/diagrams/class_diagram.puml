@@ -160,9 +160,7 @@ package "Infrastructure" #FCE4EC {
         +{abstract} chat()
     }
 
-    class OpenAIProvider
-    class AnthropicProvider
-    class MockProvider
+    class GroqLLMProvider
 
     class RetrievalService {
         +search_products(query): List[Product]
@@ -204,9 +202,7 @@ InsightsService --> UnmetSearch
 InsightsService --> InsightsSummary
 
 ' Relations - Infrastructure
-BaseLLMProvider <|-- OpenAIProvider
-BaseLLMProvider <|-- AnthropicProvider
-BaseLLMProvider <|-- MockProvider
+BaseLLMProvider <|-- GroqLLMProvider
 AdminAgent ..> BaseLLMProvider : suggest_marketing_strategy uniquement
 UnitOfWork --> RuleRepository
 UnitOfWork --> RetrievalService

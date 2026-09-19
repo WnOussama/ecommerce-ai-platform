@@ -27,6 +27,7 @@ os.environ.setdefault('DB_NAME', 'saas_ecommerce')
 os.environ.setdefault('DB_USER', 'saas_user')
 os.environ.setdefault('DB_PASSWORD', 'test_password_123')
 os.environ.setdefault('SECURITY_JWT_SECRET_KEY', 'dev_jwt_secret_key_32_characters_minimum_for_alembic')
+os.environ.setdefault('SECURITY_API_KEY_ENCRYPTION_KEY', 'dev_api_key_encryption_32_chars_min_alembic')
 os.environ.setdefault('LLM_PROVIDER', 'mock')
 
 # Import configuration et modèles (APRÈS avoir configuré les variables d'env)

@@ -33,7 +33,7 @@ class AiCoreClient
      *
      * @return array{ok: bool, data?: array, error?: string}
      */
-    public function sendChatMessage($message, $conversationId = null)
+    public function sendChatMessage($message, $conversationId = null, $customerId = null, $cartTotal = null)
     {
         $payload = ['message' => (string) $message, 'use_rag' => true];
 
@@ -41,7 +41,33 @@ class AiCoreClient
             $payload['conversation_id'] = (string) $conversationId;
         }
 
+        // Identité du visiteur et total du panier: calculés côté serveur par
+        // la boutique (jamais lus depuis la requête du navigateur), ils
+        // pilotent les coupons de bienvenue (une fois par visiteur) et de
+        // palier (panier >= seuil).
+        if ($customerId !== null && $customerId !== '') {
+            $payload['customer_id'] = (string) $customerId;
+        }
+
+        if ($cartTotal !== null && is_numeric($cartTotal) && $cartTotal >= 0) {
+            $payload['cart_total'] = round((float) $cartTotal, 2);
+        }
+
         return $this->request('POST', '/chat/message', $payload);
+    }
+
+    /**
+     * Récupère l'historique persisté d'une conversation - voir
+     * controllers/front/chat.php::proxyConversationHistory(), utilisé pour
+     * réafficher le fil de discussion après une navigation (le widget
+     * perd son état DOM à chaque rechargement de page, contrairement à la
+     * conversation elle-même, déjà persistée côté AI Core).
+     *
+     * @return array{ok: bool, data?: array, error?: string}
+     */
+    public function getConversationHistory($conversationId)
+    {
+        return $this->request('GET', '/chat/history/'.rawurlencode((string) $conversationId));
     }
 
     /**

@@ -120,22 +120,22 @@ class VectorStoreSettings(BaseSettings):
 
 
 class LLMSettings(BaseSettings):
-    """Configuration LLM avec support multi-provider"""
+    """Configuration LLM - chat via Groq (seul LLM réel utilisé, pas de mock)."""
 
     model_config = SettingsConfigDict(
         env_prefix="LLM_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    provider: str = "mock"  # mock, openai, anthropic, azure
+    # Groq (free tier - OpenAI-compatible API serving open-weight models) -
+    # seul provider de chat de ce projet, voir infrastructure/llm/provider_factory.py.
+    groq_api_key: Optional[str] = None
+    groq_model: str = "openai/gpt-oss-120b"
 
-    # OpenAI
+    # OpenAI - utilisé uniquement pour les embeddings RAG (app/services/rag/),
+    # Groq n'expose pas d'API d'embeddings. Sans clé, le RAG utilise le vrai
+    # modèle local all-MiniLM-L6-v2 (voir app/services/rag/factory.py).
     openai_api_key: Optional[str] = None
-    openai_model: str = "gpt-4-turbo-preview"
     openai_embedding_model: str = "text-embedding-3-small"
-
-    # Anthropic (backup)
-    anthropic_api_key: Optional[str] = None
-    anthropic_model: str = "claude-3-sonnet-20240229"
 
     # Paramètres génération
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
@@ -169,6 +169,10 @@ class SecuritySettings(BaseSettings):
     # API Keys
     api_key_prefix: str = "sk_"
     api_key_length: int = 32
+    # Encrypts the tenant HMAC secret at rest (app/core/security/secret_box.py) -
+    # unlike the API key/JWT secret, this must be recoverable in plaintext to
+    # verify a request signature, so it can't just be hashed like the others.
+    api_key_encryption_key: str = Field(..., min_length=32)
 
     # Rate Limiting
     rate_limit_requests: int = 100
@@ -193,6 +197,14 @@ class SecuritySettings(BaseSettings):
     prompt_injection_detection: bool = True
     sensitive_action_confirmation: bool = True
     admin_action_audit_log: bool = True
+
+    # Dev-only auth bypass: accepts an unauthenticated X-Tenant-ID header in
+    # place of a real API key. Must be an explicit opt-in (SECURITY_ALLOW_DEV_TENANT_HEADER=true)
+    # and NEVER derived from `environment` - a compose file or deployment that
+    # merely forgets to set ENVIRONMENT=production must not silently grant
+    # unauthenticated cross-tenant access. Defaults to false everywhere,
+    # including local dev; enable it explicitly per environment that needs it.
+    allow_dev_tenant_header: bool = False
 
     @field_validator("cors_origins", "allowed_file_types", mode="before")
     @classmethod
@@ -229,29 +241,6 @@ class MonitoringSettings(BaseSettings):
     health_check_interval: int = 30
 
 
-class EmailSettings(BaseSettings):
-    """Configuration email (vérification tenant, notifications)"""
-
-    model_config = SettingsConfigDict(
-        env_prefix="EMAIL_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
-    )
-
-    provider: str = "mock"  # mock (dev/test, aucun envoi réel) ou smtp
-
-    smtp_host: str = "localhost"
-    smtp_port: int = 587
-    smtp_user: Optional[str] = None
-    smtp_password: Optional[str] = None
-    smtp_use_tls: bool = True
-
-    from_address: str = "no-reply@example.com"
-    from_name: str = "SaaS AI E-commerce Assistant"
-
-    # Base URL publique de l'API (utilisée pour construire le lien de
-    # vérification dans l'email) - doit inclure le schéma, sans slash final.
-    public_base_url: str = "http://localhost:8000"
-
-
 class TenantSettings(BaseSettings):
     """Configuration multi-tenant"""
 
@@ -266,6 +255,12 @@ class TenantSettings(BaseSettings):
     default_max_conversations_per_day: int = 1000
     default_max_products_indexed: int = 10000
     default_max_customers: int = 50000
+
+    # Garde-fou anti-abus: nombre maximum de coupons qu'UNE règle peut émettre
+    # automatiquement par heure pour un tenant (une règle peut le surcharger
+    # avec `max_per_hour` dans son action). Borne les dégâts si quelqu'un
+    # enchaîne de nouvelles conversations pour récolter des codes.
+    max_auto_coupons_per_rule_per_hour: int = 10
 
     # Plans
     plans: dict = {
@@ -316,7 +311,6 @@ class Settings(BaseSettings):
     security: SecuritySettings = Field(default_factory=SecuritySettings)
     monitoring: MonitoringSettings = Field(default_factory=MonitoringSettings)
     tenant: TenantSettings = Field(default_factory=TenantSettings)
-    email: EmailSettings = Field(default_factory=EmailSettings)
 
     @field_validator("environment", mode="before")
     @classmethod

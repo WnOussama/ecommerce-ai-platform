@@ -319,3 +319,50 @@ class TestAdminCommandEndToEnd:
         ).fetchone()
         assert row is not None
         assert row.event_type == "admin_action"
+
+    async def test_action_with_no_handler_is_reported_as_failed_not_completed(self, tenant_id):
+        """
+        Régression: segment_customers (comme delete_customer_data et
+        bulk_order_modification) est entièrement risk-classifié et
+        dry-run-simulé par admin_safety.py - mais AdminAgent._dispatch()
+        n'a pas de handler réel pour lui. Il retournait un dict
+        {"status": "not_implemented", ...} au lieu de lever une erreur,
+        et execute_action() (qui ne mappe vers FAILED que sur une
+        exception) traitait donc ce retour normal comme un succès :
+        l'audit log et la réponse au client affichaient "completed" pour
+        une action qui n'avait rien exécuté.
+        """
+        from app.main import create_application
+
+        app = create_application()
+        transport = ASGITransport(app=app)
+        headers = {"X-Tenant-ID": str(tenant_id)}
+
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            initial = await client.post(
+                "/api/v1/admin/command",
+                json={"action_name": "segment_customers", "parameters": {}},
+                headers=headers,
+            )
+            assert initial.status_code == 200, initial.text
+            body = initial.json()
+            assert body["status"] == "pending_confirmation"
+            assert body["confirmation_token"]
+
+            confirm = await client.post(
+                "/api/v1/admin/confirm",
+                json={
+                    "action_id": body["action_id"],
+                    "confirmation_token": body["confirmation_token"],
+                },
+                headers=headers,
+            )
+
+        assert confirm.status_code == 200, confirm.text
+        confirmed_body = confirm.json()
+
+        # Le point du test : jamais "completed" pour une action sans handler réel.
+        assert confirmed_body["status"] != "completed"
+        assert confirmed_body["status"] == "failed"
+        assert confirmed_body["success"] is False
+        assert confirmed_body["error"]

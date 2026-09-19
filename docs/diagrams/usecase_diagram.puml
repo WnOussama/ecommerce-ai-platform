@@ -25,7 +25,7 @@ actor "Client\n(Visiteur/Acheteur)" as Client #E3F2FD
 actor "Administrateur\n(Marchand)" as Admin #FFF3E0
 actor "Agent IA Client" as AIClient #E8F5E9
 actor "Agent IA Admin" as AIAdmin #E8F5E9
-actor "LLM Provider\n(OpenAI/Anthropic)" as LLM #FCE4EC
+actor "LLM Provider\n(Groq)" as LLM #FCE4EC
 
 ' ============================================================================
 ' SYSTÈME PRINCIPAL

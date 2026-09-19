@@ -82,6 +82,33 @@
     align-self: flex-start;
 }
 
+.ai-assistant-message.nav-notice {
+    font-style: italic;
+    color: #666;
+}
+
+.ai-assistant-coupon {
+    background: none;
+    padding: 0;
+    max-width: 100%;
+}
+
+.ai-assistant-coupon-apply {
+    border: none;
+    background: #27ae60;
+    color: #fff;
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.ai-assistant-coupon-apply:disabled {
+    background: #9fd8b8;
+    cursor: default;
+}
+
 .ai-assistant-input-row {
     display: flex;
     border-top: 1px solid #eee;

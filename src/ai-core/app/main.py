@@ -25,6 +25,7 @@ from app.api.v1.endpoints import (
     insights,
     recommendations,
     rules,
+    sync,
     tenants,
 )
 from app.core.config.settings import settings
@@ -173,6 +174,8 @@ def create_application() -> FastAPI:
     app.include_router(admin.router, prefix=f"{api_prefix}/admin", tags=["Admin AI"])
 
     app.include_router(tenants.router, prefix=f"{api_prefix}/tenants", tags=["Tenant Management"])
+
+    app.include_router(sync.router, prefix=f"{api_prefix}/sync", tags=["Sync"])
 
     # Prometheus metrics: per-request (api_requests_total, latency, tenant
     # attribution) via MetricsMiddleware, plus AI-specific metrics recorded

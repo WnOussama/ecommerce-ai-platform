@@ -1,5 +1,14 @@
 """
-LLM Provider Factory - Abstraction multi-provider avec fallback automatique
+LLM Provider Factory - Groq uniquement.
+
+Historique: ce module supportait avant un switch multi-provider
+(mock/openai/anthropic/groq) qui tombait silencieusement sur un
+MockLLMProvider dès qu'une clé manquait ou était invalide - en prod comme
+en démo, une clé mal configurée donnait donc des réponses fabriquées sans
+qu'aucune erreur ne remonte nulle part. Groq est le seul LLM réel utilisé
+par ce projet (API gratuite, compatible OpenAI) ; une config invalide lève
+maintenant une erreur explicite au lieu de dégrader silencieusement vers
+du faux contenu.
 """
 
 import logging
@@ -28,8 +37,17 @@ class BaseLLMProvider(ABC):
         pass
 
     @abstractmethod
-    async def chat(self, message: str, context: Optional[str] = None, **kwargs) -> str:
-        """Interface simplifiée pour le chat."""
+    async def chat(
+        self,
+        message: str,
+        context: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+        **kwargs,
+    ) -> str:
+        """Interface simplifiée pour le chat. `history` (tours précédents de
+        la conversation, `[{"role": "user"|"assistant", "content": ...}]`,
+        ordre chronologique) est optionnel pour rester compatible avec les
+        appels existants qui n'en fournissent pas (ex: admin agent)."""
         pass
 
     @abstractmethod
@@ -48,23 +66,21 @@ class BaseLLMProvider(ABC):
         pass
 
 
-class OpenAILLMProvider(BaseLLMProvider):
-    """Provider OpenAI avec support GPT-4."""
+class GroqLLMProvider(BaseLLMProvider):
+    """
+    Provider Groq (free tier). Sert des modèles open-weight (Llama, Gemma...)
+    via une API compatible OpenAI - on réutilise donc le client `openai` avec
+    un base_url différent plutôt que d'ajouter une dépendance dédiée.
+    """
 
-    def __init__(self, api_key: str, model: str = "gpt-4-turbo-preview"):
-        import tiktoken
+    def __init__(self, api_key: str, model: str = "openai/gpt-oss-120b"):
         from openai import AsyncOpenAI
 
-        self.client = AsyncOpenAI(api_key=api_key)
+        self.client = AsyncOpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
         self.model = model
         self._api_key = api_key
 
-        try:
-            self._encoder = tiktoken.encoding_for_model("gpt-4")
-        except Exception:
-            self._encoder = tiktoken.get_encoding("cl100k_base")
-
-        logger.info(f"OpenAILLMProvider initialized with model: {model}")
+        logger.info(f"GroqLLMProvider initialized with model: {model}")
 
     async def generate(
         self,
@@ -99,33 +115,44 @@ class OpenAILLMProvider(BaseLLMProvider):
             "latency_ms": latency_ms,
         }
 
-    async def chat(self, message: str, context: Optional[str] = None, **kwargs) -> str:
+    async def chat(
+        self,
+        message: str,
+        context: Optional[str] = None,
+        history: Optional[List[Dict[str, str]]] = None,
+        **kwargs,
+    ) -> str:
         messages = []
         if context:
             messages.append({"role": "system", "content": context})
+        if history:
+            messages.extend(history)
         messages.append({"role": "user", "content": message})
 
         response = await self.generate(messages, **kwargs)
         return response["content"]
 
     def count_tokens(self, text: str) -> int:
-        return len(self._encoder.encode(text))
+        # Modèles open-weight servis par Groq (Llama, Gemma...) - pas de
+        # tokenizer local applicable comme tiktoken pour OpenAI, donc
+        # approximation. generate() récupère déjà les comptes réels via
+        # response.usage sur chaque appel ; cette méthode ne sert qu'à une
+        # estimation ponctuelle hors flux normal.
+        return max(len(text) // 4, 1)
 
     def get_model_name(self) -> str:
         return self.model
 
     def is_available(self) -> bool:
-        return bool(self._api_key and self._api_key.startswith("sk-") and len(self._api_key) > 20)
+        return bool(self._api_key and self._api_key.startswith("gsk_") and len(self._api_key) > 20)
 
 
 class LLMProviderFactory:
     """
-    Factory pour créer le bon LLM provider selon la configuration.
+    Factory pour créer le LLM provider (Groq uniquement).
 
-    Stratégie:
-    1. Si LLM_PROVIDER=mock → MockLLMProvider
-    2. Si LLM_PROVIDER=openai ET clé valide → OpenAILLMProvider
-    3. Sinon → Fallback vers MockLLMProvider
+    Une clé Groq manquante ou invalide lève une erreur explicite - pas de
+    fallback silencieux vers un mock.
     """
 
     _instance: Optional[BaseLLMProvider] = None
@@ -133,96 +160,53 @@ class LLMProviderFactory:
     @classmethod
     def get_provider(cls, force_new: bool = False) -> BaseLLMProvider:
         """
-        Retourne une instance du LLM provider.
+        Retourne une instance du LLM provider Groq.
 
         Args:
             force_new: Si True, crée une nouvelle instance
 
         Returns:
-            Instance de BaseLLMProvider
+            Instance de GroqLLMProvider
+
+        Raises:
+            RuntimeError: si LLM_GROQ_API_KEY (ou GROQ_API_KEY) est absente
+                ou ne ressemble pas à une vraie clé Groq.
         """
         if cls._instance is not None and not force_new:
             return cls._instance
 
-        provider_type = cls._get_provider_type()
-
-        if provider_type == "mock":
-            cls._instance = cls._create_mock_provider()
-        elif provider_type == "openai":
-            cls._instance = cls._create_openai_provider()
-        else:
-            logger.warning(f"Unknown provider type: {provider_type}, falling back to mock")
-            cls._instance = cls._create_mock_provider()
-
+        cls._instance = cls._create_groq_provider()
         return cls._instance
 
     @classmethod
-    def _get_provider_type(cls) -> str:
-        """Détermine le type de provider à utiliser."""
-        # Priorité: variable d'environnement > settings
-        provider = os.getenv("LLM_PROVIDER", "").lower()
+    def _create_groq_provider(cls) -> BaseLLMProvider:
+        """Crée un GroqLLMProvider. Lève une erreur si la clé est absente/invalide."""
+        api_key = os.getenv("LLM_GROQ_API_KEY") or os.getenv("GROQ_API_KEY")
 
-        if not provider:
-            provider = getattr(settings.llm, "provider", "mock").lower()
+        if not api_key:
+            api_key = getattr(settings.llm, "groq_api_key", None)
 
+        if not api_key or not cls._is_valid_groq_key(api_key):
+            raise RuntimeError(
+                "LLM_GROQ_API_KEY manquante ou invalide. Ce projet n'utilise que Groq "
+                "comme LLM (pas de mock, pas de fallback silencieux) - obtenez une clé "
+                "gratuite sur https://console.groq.com/keys et configurez-la via "
+                "LLM_GROQ_API_KEY dans le .env."
+            )
+
+        model = getattr(settings.llm, "groq_model", "openai/gpt-oss-120b")
+        provider = GroqLLMProvider(api_key=api_key, model=model)
+        logger.info(f"Groq provider initialized with model: {model}")
         return provider
 
     @classmethod
-    def _create_mock_provider(cls) -> BaseLLMProvider:
-        """Crée un MockLLMProvider."""
-        from app.infrastructure.llm.mock_provider import MockLLMProvider
-
-        logger.info("Creating MockLLMProvider")
-        return MockLLMProvider(simulate_latency=True)
-
-    @classmethod
-    def _create_openai_provider(cls) -> BaseLLMProvider:
-        """Crée un OpenAILLMProvider ou fallback vers mock."""
-        api_key = os.getenv("LLM_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
-
-        if not api_key:
-            api_key = getattr(settings.llm, "openai_api_key", None)
-
-        # Validation de la clé
-        if not api_key or not cls._is_valid_openai_key(api_key):
-            logger.warning("Invalid or missing OpenAI API key, falling back to mock provider")
-            return cls._create_mock_provider()
-
-        try:
-            model = getattr(settings.llm, "openai_model", "gpt-4-turbo-preview")
-            provider = OpenAILLMProvider(api_key=api_key, model=model)
-
-            if provider.is_available():
-                logger.info(f"OpenAI provider initialized with model: {model}")
-                return provider
-            else:
-                logger.warning("OpenAI provider not available, falling back to mock")
-                return cls._create_mock_provider()
-
-        except ImportError as e:
-            logger.warning(f"OpenAI package not installed: {e}. Falling back to mock provider.")
-            return cls._create_mock_provider()
-        except ValueError as e:
-            logger.warning(f"Invalid OpenAI configuration: {e}. Falling back to mock provider.")
-            return cls._create_mock_provider()
-        except (TypeError, AttributeError) as e:
-            logger.warning(
-                f"OpenAI provider initialization error: {e}. Falling back to mock provider."
-            )
-            return cls._create_mock_provider()
-
-    @classmethod
-    def _is_valid_openai_key(cls, key: str) -> bool:
-        """Vérifie si une clé OpenAI semble valide."""
+    def _is_valid_groq_key(cls, key: str) -> bool:
+        """Vérifie si une clé Groq semble valide."""
         if not key:
             return False
-        if (
-            key.startswith("sk-fake")
-            or key.startswith("sk-test")
-            or key == "sk-your-openai-key-here"
-        ):
+        if key.startswith("gsk_fake") or key.startswith("gsk_test"):
             return False
-        if not key.startswith("sk-") or len(key) < 20:
+        if not key.startswith("gsk_") or len(key) < 20:
             return False
         return True
 

@@ -7,9 +7,7 @@ Architecture:
 ├─────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                  │
 │  1. API KEY SECURITY                                                             │
-│     • HMAC signature validation                                                  │
-│     • Expiration & rotation                                                      │
-│     • IP whitelist                                                               │
+│     • HMAC request signing, verified in TenantContextMiddleware                  │
 │                                                                                  │
 │  2. RATE LIMITING                                                                │
 │     • Per IP (global DDoS protection)                                            │
@@ -40,13 +38,7 @@ from app.core.security.admin_safety import (
 )
 from app.core.security.api_key_security import (
     APIClientSigner,
-    APIKey,
     APIKeyConfig,
-    APIKeyGenerator,
-    APIKeyManager,
-    APIKeyStatus,
-    APIKeyType,
-    APIKeyWithSecret,
     HMACSignatureValidator,
 )
 
@@ -75,14 +67,8 @@ from app.core.security.tenant_validation import (
 
 __all__ = [
     # API Key Security
-    "APIKeyType",
-    "APIKeyStatus",
     "APIKeyConfig",
-    "APIKey",
-    "APIKeyWithSecret",
-    "APIKeyGenerator",
     "HMACSignatureValidator",
-    "APIKeyManager",
     "APIClientSigner",
     # Rate Limiting
     "RateLimitTier",

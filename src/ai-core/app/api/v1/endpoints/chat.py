@@ -5,6 +5,7 @@ Chat Endpoints - Client AI Interactions with RAG Support
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -13,20 +14,24 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from app.core.config.settings import settings
-from app.core.monitoring import get_metrics_collector
-from app.core.security.guardrails import GuardrailCategory, GuardrailResult, guardrails
 from app.infrastructure.database.models.conversation import ConversationStatus
 from app.infrastructure.database.models.message import Message, MessageRole
 from app.infrastructure.database.unit_of_work import UnitOfWork
 from app.infrastructure.llm import get_llm_provider
+from app.services.chat import ChatTurnOrchestrator, TurnOutcome
 from app.services.rag.factory import get_retrieval_service
-from app.services.rules.evaluator import RuleEvaluator, RuleMatch
+from app.services.rules.evaluator import RuleLike
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-_rule_evaluator = RuleEvaluator()
+# Décide la réponse à un message - voir app/services/chat/turn_orchestrator.py
+# et docs/adr/0001-chat-turn-orchestrator-pure-decision-engine.md. Instance
+# partagée : ses seuls collaborateurs internes (garde-fous, évaluateur de
+# règles, classifieur d'intention, métriques) sont des singletons déjà
+# partagés ailleurs dans l'app, pas d'état par requête ici.
+_chat_turn_orchestrator = ChatTurnOrchestrator()
 
 
 # =============================================================================
@@ -39,10 +44,36 @@ class ChatMessageRequest(BaseModel):
 
     message: str = Field(..., min_length=1, max_length=4096)
     conversation_id: Optional[str] = None
-    customer_id: Optional[str] = None
+    customer_id: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        description=(
+            "Stable visitor identity (logged in customer or guest id), set by the "
+            "shop's server side, never by the browser. Coupons are limited per "
+            "visitor using this value."
+        ),
+    )
+    cart_total: Optional[float] = Field(
+        default=None,
+        ge=0,
+        le=10_000_000,
+        description=(
+            "Current cart total, computed by the shop's server side. Drives "
+            "`min_cart_total` rules (spend threshold coupons)."
+        ),
+    )
     context: Optional[Dict[str, Any]] = Field(default_factory=dict)
     use_rag: bool = Field(default=True, description="Enable RAG product search")
     top_k: int = Field(default=5, ge=1, le=20, description="Number of products to retrieve")
+    idempotency_key: Optional[str] = Field(
+        default=None,
+        description=(
+            "Client-supplied UUID identifying this logical request. Send the "
+            "same value on a retry (timeout, dropped connection) to get back "
+            "the cached response instead of a second LLM call and a second "
+            "generate_coupon action. Omit for a normal, non-retried message."
+        ),
+    )
 
     class Config:
         json_schema_extra = {
@@ -126,11 +157,12 @@ async def send_message(request: Request, body: ChatMessageRequest):
     """
     Send a message to the AI assistant and get a response.
 
-    This endpoint handles:
-    - Intent classification
-    - Context retrieval (RAG) - searches relevant products
-    - Response generation with product context
-    - Action extraction
+    Decides what to say via ChatTurnOrchestrator (intent, guardrails,
+    rules, RAG, LLM - see app/services/chat/turn_orchestrator.py); this
+    endpoint's own job is transport and persistence: resolve the
+    conversation, hand the orchestrator its per-request collaborators,
+    then execute whatever the resulting ChatTurnResult calls for (log
+    messages, generate a coupon, record rule usage).
     """
     start_time = time.time()
     tenant_id = getattr(request.state, "tenant_id", None)
@@ -149,350 +181,306 @@ async def send_message(request: Request, body: ChatMessageRequest):
     )
 
     # Résout/crée la conversation persistée et y enregistre le message
-    # utilisateur (best-effort - voir _log_user_message).
-    conversation_id = await _log_user_message(tenant_id, body)
+    # utilisateur, de façon idempotente si body.idempotency_key est fourni
+    # (best-effort - voir _log_user_message).
+    user_log = await _log_user_message(tenant_id, body)
+    conversation_id = user_log.conversation_id
     message_id = f"msg_{uuid.uuid4().hex[:12]}"
 
-    metrics = get_metrics_collector()
+    # La clé de la réponse assistant est dérivée de celle du message
+    # utilisateur (uuid5, déterministe) plutôt que tirée au hasard : deux
+    # exécutions concurrentes du même tour (même idempotency_key côté
+    # client) convergent alors vers la même clé assistant, et
+    # create_idempotent() garantit qu'une seule des deux écrit réellement -
+    # pas seulement le message utilisateur. None si aucun message réel
+    # n'a été persisté (cas de repli) - pas de déduplication possible.
+    assistant_idempotency_key: Optional[uuid.UUID] = None
+    if user_log.message is not None:
+        assistant_idempotency_key = uuid.uuid5(
+            user_log.message.idempotency_key, "assistant-response"
+        )
+
+        if not user_log.created:
+            # Idempotency hit : ce message utilisateur existait déjà. Si une
+            # réponse a déjà été générée pour lui, on la renvoie directement
+            # - pas de second appel LLM, pas de second coupon généré. Sinon
+            # (retry après un échec avant que la réponse n'ait pu être
+            # persistée), le pipeline se déroule normalement plus bas.
+            existing_response = await _find_existing_assistant_response(
+                tenant_id, conversation_id, user_log.message.id
+            )
+            if existing_response is not None:
+                logger.info(
+                    "Idempotency hit - returning cached response, no LLM call",
+                    extra={
+                        "tenant_id": tenant_id,
+                        "conversation_id": conversation_id,
+                        "cached_message_id": str(existing_response.id),
+                    },
+                )
+                cached_extra = existing_response.extra_data or {}
+                return ChatMessageResponse(
+                    conversation_id=conversation_id,
+                    message_id=message_id,
+                    response=existing_response.content,
+                    intent=cached_extra.get("intent", "general"),
+                    confidence=cached_extra.get("confidence", 0.0),
+                    actions=[],
+                    suggestions=[],
+                    products=[],
+                    metadata={
+                        "processing_time_ms": int((time.time() - start_time) * 1000),
+                        "cached": True,
+                    },
+                )
+
+    rules = await _load_active_rules(tenant_id)
+    rules = await _drop_exhausted_coupon_rules(tenant_id, rules, body.customer_id, conversation_id)
+    llm = get_llm_provider()
+    retrieval_service = get_retrieval_service() if body.use_rag else None
+    history = await _load_recent_history(
+        tenant_id, conversation_id, user_log.message.id if user_log.message else None
+    )
+    faq_context = await _load_faq_context(tenant_id)
+
+    turn = await _chat_turn_orchestrator.process_turn(
+        tenant_id=tenant_id,
+        message=body.message,
+        rules=rules,
+        llm_provider=llm,
+        retrieval_service=retrieval_service,
+        use_rag=body.use_rag,
+        top_k=body.top_k,
+        history=history,
+        faq_context=faq_context,
+        cart_total=body.cart_total,
+    )
+
+    processing_time_ms = int((time.time() - start_time) * 1000)
 
     # =========================================================================
-    # GUARDRAILS D'ENTRÉE - avant tout traitement (RAG, LLM)
+    # BLOQUÉ PAR LES GARDE-FOUS D'ENTRÉE
     # =========================================================================
-    input_report = await guardrails.check_input(body.message, context={"tenant_id": tenant_id})
-
-    if not input_report.passed:
-        for check in input_report.checks:
-            if check.result == GuardrailResult.BLOCK:
-                metrics.record_guardrail_trigger(tenant_id, check.category.value, "blocked")
-                if check.category.value == "injection":
-                    metrics.record_prompt_injection_attempt(tenant_id, "high", blocked=True)
-
+    if turn.outcome == TurnOutcome.BLOCKED:
         logger.warning(
             "Chat message blocked by input guardrails",
             extra={
                 "tenant_id": tenant_id,
                 "message_id": message_id,
-                "block_reason": input_report.get_block_reason(),
+                "block_reason": turn.block_reason,
             },
-        )
-
-        blocked_response = (
-            "Je ne peux pas traiter cette demande. Pouvez-vous reformuler votre question ?"
         )
         await _log_assistant_message(
             tenant_id,
             conversation_id,
-            blocked_response,
-            extra_data={"guardrail_blocked": True, "block_reason": input_report.get_block_reason()},
+            turn.response,
+            extra_data={"guardrail_blocked": True, "block_reason": turn.block_reason},
+            idempotency_key=assistant_idempotency_key,
         )
-
         return ChatMessageResponse(
             conversation_id=conversation_id,
             message_id=message_id,
-            response=blocked_response,
-            intent="blocked",
-            confidence=1.0,
+            response=turn.response,
+            intent=turn.intent,
+            confidence=turn.confidence,
             actions=[],
             suggestions=[],
             products=[],
-            metadata={
-                "guardrail_blocked": True,
-                "processing_time_ms": int((time.time() - start_time) * 1000),
-            },
+            metadata={"guardrail_blocked": True, "processing_time_ms": processing_time_ms},
         )
 
     # =========================================================================
-    # RÈGLES TENANT - classées par priorité, évaluées avant le RAG/LLM pour
-    # pouvoir court-circuiter la génération (canned_response). Best-effort :
-    # mêmes garde-fous que _log_user_message (pas de vrai tenant UUID, ou
-    # échec DB => on continue sans règles plutôt que de casser le chat).
+    # RÉPONSE TOUTE FAITE (règle canned_response) - court-circuite le LLM
     # =========================================================================
-    intent = _classify_intent(body.message)
-    rule_match = await _match_rule(tenant_id, intent, body.message)
-
-    if rule_match and rule_match.action.get("type") == "canned_response":
-        response_text = rule_match.action.get("text") or rule_match.action.get("message") or ""
-        processing_time_ms = int((time.time() - start_time) * 1000)
-
-        await _record_rule_triggered(tenant_id, rule_match.rule, conversation_id, "canned_response")
+    if turn.outcome == TurnOutcome.CANNED_RESPONSE:
+        await _record_rule_triggered(
+            tenant_id, turn.rule_match.rule, conversation_id, "canned_response"
+        )
         await _log_assistant_message(
             tenant_id,
             conversation_id,
-            response_text,
+            turn.response,
             extra_data={
-                "intent": intent,
-                "rule_triggered": str(rule_match.rule.id),
-                "rule_name": rule_match.rule.name,
+                "intent": turn.intent,
+                "rule_triggered": str(turn.rule_match.rule.id),
+                "rule_name": turn.rule_match.rule.name,
             },
             latency_ms=processing_time_ms,
+            idempotency_key=assistant_idempotency_key,
         )
-
         return ChatMessageResponse(
             conversation_id=conversation_id,
             message_id=message_id,
-            response=response_text,
-            intent=intent,
-            confidence=1.0,
+            response=turn.response,
+            intent=turn.intent,
+            confidence=turn.confidence,
             actions=[],
-            suggestions=_generate_suggestions(intent, has_products=False),
+            suggestions=turn.suggestions,
             products=[],
             metadata={
                 "processing_time_ms": processing_time_ms,
                 "rule_triggered": True,
-                "rule_id": str(rule_match.rule.id),
+                "rule_id": str(turn.rule_match.rule.id),
             },
         )
 
-    rule_instruction: Optional[str] = None
-    if rule_match and rule_match.action.get("type") == "inject_instruction":
-        rule_instruction = rule_match.action.get("instruction")
-
-    # Variables pour le RAG
-    products_context = ""
-    retrieved_products = []
-    rag_search_time_ms = 0
-    actions: List[ChatAction] = []
-
-    try:
-        # =====================================================================
-        # ÉTAPE 1: RAG - Recherche de produits pertinents
-        # =====================================================================
-        if body.use_rag:
-            try:
-                retrieval_service = get_retrieval_service()
-                with metrics.track_rag_query(tenant_id, "product"):
-                    rag_result = await retrieval_service.search_products(
-                        query=body.message,
-                        tenant_id=tenant_id,
-                        top_k=body.top_k,
-                    )
-                metrics.record_rag_result(
-                    tenant_id=tenant_id,
-                    doc_type="product",
-                    documents_found=len(rag_result.products),
-                )
-
-                rag_search_time_ms = rag_result.search_time_ms
-
-                if rag_result.has_results:
-                    products_context = rag_result.to_context_string()
-                    retrieved_products = [
-                        {
-                            "id": p.product_id,
-                            "name": p.name,
-                            "price": p.price,
-                            "category": p.category,
-                            "in_stock": p.in_stock,
-                            "similarity": round(p.similarity_score, 3),
-                        }
-                        for p in rag_result.products
-                    ]
-
-                    logger.debug(
-                        "RAG found relevant products",
-                        extra={
-                            "tenant_id": tenant_id,
-                            "products_found": len(retrieved_products),
-                            "search_time_ms": rag_search_time_ms,
-                        },
-                    )
-                else:
-                    logger.debug("RAG found no relevant products", extra={"tenant_id": tenant_id})
-
-            except Exception as e:
-                # Fallback gracieux - continuer sans RAG
-                logger.warning(
-                    "RAG search failed, continuing without product context",
-                    extra={"tenant_id": tenant_id, "error": str(e)},
-                )
-
-        # =====================================================================
-        # ÉTAPE 2: Obtenir le LLM provider
-        # =====================================================================
-        llm = get_llm_provider()
-
-        # =====================================================================
-        # ÉTAPE 3: Construire le contexte système avec produits
-        # =====================================================================
-        system_context = _build_system_context(
-            tenant_id=tenant_id,
-            products_context=products_context,
-            extra_instruction=rule_instruction,
-        )
-
-        # =====================================================================
-        # ÉTAPE 4: Générer la réponse
-        # =====================================================================
-        with metrics.track_llm_request(tenant_id, llm.get_model_name(), "chat"):
-            response_text = await llm.chat(message=body.message, context=system_context)
-
-        input_tokens = llm.count_tokens(body.message)
-        output_tokens = llm.count_tokens(response_text)
-        estimated_cost = (
-            input_tokens / 1000 * settings.llm.cost_per_1k_input_tokens
-            + output_tokens / 1000 * settings.llm.cost_per_1k_output_tokens
-        )
-        metrics.record_llm_tokens(
-            tenant_id=tenant_id,
-            model=llm.get_model_name(),
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cost=estimated_cost,
-        )
-
-        # =====================================================================
-        # GUARDRAILS DE SORTIE - PII masking, XSS, hallucination/confidence
-        # =====================================================================
-        output_context = {
-            "retrieved_documents": [{"content": products_context}] if products_context else []
-        }
-        output_report = await guardrails.check_output(response_text, output_context)
-
-        if output_report.sanitized_content:
-            response_text = output_report.sanitized_content
-
-        hallucination_flagged = False
-        for check in output_report.checks:
-            if check.result in (GuardrailResult.WARN, GuardrailResult.BLOCK):
-                metrics.record_guardrail_trigger(
-                    tenant_id,
-                    check.category.value,
-                    "warned" if check.result == GuardrailResult.WARN else "blocked",
-                )
-                if check.category == GuardrailCategory.HALLUCINATION:
-                    hallucination_flagged = True
-
-        # =====================================================================
-        # ÉTAPE 5: Générer suggestions contextuelles (intention déjà classée
-        # plus haut, avant l'évaluation des règles)
-        # =====================================================================
-        suggestions = _generate_suggestions(intent, has_products=len(retrieved_products) > 0)
-
-        confidence = 0.85
-        metrics.record_response_confidence(tenant_id, confidence)
-
-        # =====================================================================
-        # ÉTAPE 6: Action de règle éventuelle (generate_coupon) - le rule_match
-        # inject_instruction a déjà été appliqué au prompt système plus haut
-        # =====================================================================
-        if rule_match and rule_match.action.get("type") == "generate_coupon":
-            coupon_data = await _generate_coupon_from_rule(
-                tenant_id, rule_match.rule.id, rule_match.action, body.customer_id, conversation_id
-            )
-            if coupon_data:
-                actions.append(ChatAction(type="generate_coupon", data=coupon_data))
-
-        if rule_match:
-            await _record_rule_triggered(
-                tenant_id,
-                rule_match.rule,
-                conversation_id,
-                rule_match.action.get("type", "unknown"),
-            )
-
-        processing_time_ms = int((time.time() - start_time) * 1000)
-
-        logger.info(
-            "Chat message processed successfully",
-            extra={
-                "tenant_id": tenant_id,
-                "message_id": message_id,
-                "intent": intent,
-                "processing_time_ms": processing_time_ms,
-                "rag_search_time_ms": rag_search_time_ms,
-                "products_found": len(retrieved_products),
-                "llm_provider": llm.get_model_name(),
-            },
-        )
-
+    # =========================================================================
+    # ERREUR - fallback gracieux (RAG a déjà son propre fallback interne ;
+    # ceci couvre l'échec du LLM ou des garde-fous de sortie)
+    # =========================================================================
+    if turn.outcome == TurnOutcome.ERROR:
         await _log_assistant_message(
             tenant_id,
             conversation_id,
-            response_text,
-            extra_data={
-                "intent": intent,
-                "rag_used": body.use_rag,
-                "products_found": len(retrieved_products),
-                "product_ids": [p["id"] for p in retrieved_products],
-                "confidence": confidence,
-                "hallucination_flagged": hallucination_flagged,
-                **(
-                    {
-                        "rule_triggered": str(rule_match.rule.id),
-                        "rule_action": rule_match.action.get("type"),
-                    }
-                    if rule_match
-                    else {}
-                ),
-            },
-            latency_ms=processing_time_ms,
-            tokens_input=input_tokens,
-            tokens_output=output_tokens,
+            turn.response,
+            extra_data={"error": True},
+            idempotency_key=assistant_idempotency_key,
         )
-
         return ChatMessageResponse(
             conversation_id=conversation_id,
             message_id=message_id,
-            response=response_text,
-            intent=intent,
-            confidence=confidence,
-            actions=actions,
-            suggestions=suggestions,
-            products=retrieved_products,
-            metadata={
-                "processing_time_ms": processing_time_ms,
-                "rag_search_time_ms": rag_search_time_ms,
-                "model": llm.get_model_name(),
-                "rag_enabled": body.use_rag,
-            },
-        )
-
-    except Exception as e:
-        logger.exception(
-            "Error processing chat message", extra={"tenant_id": tenant_id, "error": str(e)}
-        )
-
-        # Réponse de fallback en cas d'erreur
-        error_response = (
-            "Je suis désolé, je rencontre un problème technique. "
-            "Pouvez-vous reformuler votre question ?"
-        )
-        await _log_assistant_message(
-            tenant_id, conversation_id, error_response, extra_data={"error": True}
-        )
-
-        return ChatMessageResponse(
-            conversation_id=conversation_id,
-            message_id=message_id,
-            response=error_response,
-            intent="error",
-            confidence=0.0,
+            response=turn.response,
+            intent=turn.intent,
+            confidence=turn.confidence,
             actions=[],
-            suggestions=["Réessayer", "Contacter le support"],
+            suggestions=turn.suggestions,
             products=[],
-            metadata={"processing_time_ms": int((time.time() - start_time) * 1000), "error": True},
+            metadata={"processing_time_ms": processing_time_ms, "error": True},
         )
 
+    # =========================================================================
+    # NORMAL - exécute ce que l'orchestrateur a décidé : coupon éventuel,
+    # usage de règle, persistance de la réponse.
+    # =========================================================================
+    actions: List[ChatAction] = []
+    response_text = turn.response
+    if turn.coupon_decision:
+        coupon_data = await _generate_coupon_from_rule(
+            tenant_id,
+            turn.coupon_decision.rule_id,
+            turn.coupon_decision.action,
+            body.customer_id,
+            conversation_id,
+        )
+        if coupon_data:
+            actions.append(ChatAction(type="generate_coupon", data=coupon_data))
+            # Real, confirmed live bug: the orchestrator generates response_text
+            # BEFORE this coupon exists (turn_orchestrator.py's ChatTurnResult is
+            # a pure decision, this endpoint does the actual DB write after) -
+            # the LLM has no way to know the code, so it never appeared anywhere
+            # the shopper could see it, not in the reply text nor in the
+            # persisted conversation log, even though a real coupon WAS created
+            # every time. Appending it here, in the same style as coupons.py's
+            # own _STRATEGY_MESSAGES templates.
+            response_text = (
+                f"{response_text}\n\nYour code: {coupon_data['code']} "
+                f"(-{coupon_data['discount_percent']}%, valid until "
+                f"{coupon_data['expires_at'][:10]})."
+            )
 
-async def _log_user_message(tenant_id: str, body: ChatMessageRequest) -> str:
+    if turn.rule_match:
+        await _record_rule_triggered(
+            tenant_id,
+            turn.rule_match.rule,
+            conversation_id,
+            turn.rule_match.action.get("type", "unknown"),
+        )
+
+    logger.info(
+        "Chat message processed successfully",
+        extra={
+            "tenant_id": tenant_id,
+            "message_id": message_id,
+            "intent": turn.intent,
+            "processing_time_ms": processing_time_ms,
+            "rag_search_time_ms": turn.rag_search_time_ms,
+            "products_found": len(turn.products),
+            "llm_provider": turn.model_name,
+        },
+    )
+
+    await _log_assistant_message(
+        tenant_id,
+        conversation_id,
+        response_text,
+        extra_data={
+            "intent": turn.intent,
+            "rag_used": body.use_rag,
+            "products_found": len(turn.products),
+            "product_ids": [p["id"] for p in turn.products],
+            "confidence": turn.confidence,
+            "hallucination_flagged": turn.hallucination_flagged,
+            **(
+                {
+                    "rule_triggered": str(turn.rule_match.rule.id),
+                    "rule_action": turn.rule_match.action.get("type"),
+                }
+                if turn.rule_match
+                else {}
+            ),
+        },
+        latency_ms=processing_time_ms,
+        tokens_input=turn.tokens_input,
+        tokens_output=turn.tokens_output,
+        idempotency_key=assistant_idempotency_key,
+    )
+
+    return ChatMessageResponse(
+        conversation_id=conversation_id,
+        message_id=message_id,
+        response=response_text,
+        intent=turn.intent,
+        confidence=turn.confidence,
+        actions=actions,
+        suggestions=turn.suggestions,
+        products=turn.products,
+        metadata={
+            "processing_time_ms": processing_time_ms,
+            "rag_search_time_ms": turn.rag_search_time_ms,
+            "model": turn.model_name,
+            "rag_enabled": body.use_rag,
+        },
+    )
+
+
+@dataclass
+class _UserMessageLog:
+    """Résultat de _log_user_message - ce qu'il faut pour décider, dans
+    send_message, si un tour peut être servi depuis le cache
+    (idempotency) avant d'appeler l'orchestrateur."""
+
+    conversation_id: str
+    message: Optional[Message] = None  # None dans les cas de repli (voir docstring)
+    created: bool = True  # False = idempotency hit, message existant retourné
+
+
+async def _log_user_message(tenant_id: str, body: ChatMessageRequest) -> _UserMessageLog:
     """
     Résout/crée la conversation persistée et y enregistre le message
-    utilisateur. Best-effort : si tenant_id n'est pas un vrai UUID (bypass
-    dev avec un identifiant humain comme "demo-tenant") ou si la
-    persistance échoue pour toute autre raison, on continue sans
-    persister plutôt que de casser le chat - même principe de dégradation
-    gracieuse que le fallback RAG plus haut dans ce fichier.
+    utilisateur - de façon idempotente (INSERT ... ON CONFLICT DO NOTHING,
+    voir MessageRepository.create_idempotent) si le client a fourni
+    body.idempotency_key ; sinon une clé aléatoire est générée à chaque
+    appel, comme avant, et created est toujours True (rien à dédupliquer).
 
-    Returns:
-        L'UUID de la conversation persistée (str), ou un identifiant de
-        secours si la persistance n'a pas pu avoir lieu.
+    Best-effort : si tenant_id n'est pas un vrai UUID (bypass dev avec un
+    identifiant humain comme "demo-tenant") ou si la persistance échoue
+    pour toute autre raison, on continue sans persister plutôt que de
+    casser le chat - même principe de dégradation gracieuse que le
+    fallback RAG plus haut dans ce fichier. Dans ces cas, message=None et
+    created=True : pas de message réel à dédupliquer, le tour se déroule
+    normalement.
     """
     fallback_id = body.conversation_id or f"conv_{uuid.uuid4().hex[:12]}"
 
     try:
         tenant_uuid = uuid.UUID(tenant_id)
     except (ValueError, AttributeError, TypeError):
-        return fallback_id
+        return _UserMessageLog(conversation_id=fallback_id)
+
+    try:
+        idempotency_key = uuid.UUID(body.idempotency_key) if body.idempotency_key else uuid.uuid4()
+    except ValueError:
+        idempotency_key = uuid.uuid4()
 
     try:
         async with UnitOfWork(tenant_uuid) as uow:
@@ -510,21 +498,72 @@ async def _log_user_message(tenant_id: str, body: ChatMessageRequest) -> str:
                 user_identifier = body.customer_id or f"anon_{uuid.uuid4().hex[:12]}"
                 conversation, _ = await uow.conversations.get_or_create(user_identifier)
 
-            await uow.messages.create(
+            message, created = await uow.messages.create_idempotent(
                 conversation_id=conversation.id,
-                idempotency_key=uuid.uuid4(),
+                idempotency_key=idempotency_key,
                 role=MessageRole.USER,
                 content=body.message,
             )
             await uow.commit()
 
-            return str(conversation.id)
+            # message.conversation_id, pas conversation.id : sur un conflit
+            # d'idempotency_key (created=False), create_idempotent renvoie le
+            # message déjà existant, qui peut appartenir à une conversation
+            # différente de celle - potentiellement neuve - résolue ci-dessus
+            # (pas de body.conversation_id/customer_id => un user_identifier
+            # anonyme différent est généré à chaque appel). Utiliser
+            # conversation.id ici renverrait un conversation_id où le message
+            # dédupliqué n'existe pas, et casserait le court-circuit
+            # idempotency dans send_message (recherche dans la mauvaise
+            # conversation, toujours vide).
+            return _UserMessageLog(
+                conversation_id=str(message.conversation_id), message=message, created=created
+            )
     except Exception as e:
         logger.warning(
             "Skipping conversation persistence for this request",
             extra={"tenant_id": tenant_id, "error": str(e)},
         )
-        return fallback_id
+        return _UserMessageLog(conversation_id=fallback_id)
+
+
+async def _find_existing_assistant_response(
+    tenant_id: str, conversation_id: str, after_message_id: uuid.UUID
+) -> Optional[Message]:
+    """
+    Cherche, pour le court-circuit idempotency de send_message, une
+    réponse assistant déjà générée à la suite du message utilisateur
+    after_message_id. Fenêtre bornée (les deux messages d'un tour sont
+    toujours consécutifs) plutôt qu'une requête dédiée - même dégradation
+    best-effort que le reste de ce fichier : DB indisponible => on ne
+    trouve rien, le tour se déroule normalement (pas de cache, pas de
+    crash).
+    """
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+        conv_uuid = uuid.UUID(conversation_id)
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+    try:
+        async with UnitOfWork(tenant_uuid) as uow:
+            messages = await uow.messages.get_by_conversation(conv_uuid, limit=10, order_asc=True)
+    except Exception as e:
+        logger.warning(
+            "Skipping idempotency response lookup for this request",
+            extra={"tenant_id": tenant_id, "error": str(e)},
+        )
+        return None
+
+    found_user_message = False
+    for message in messages:
+        if message.id == after_message_id:
+            found_user_message = True
+            continue
+        if found_user_message and message.role == MessageRole.ASSISTANT:
+            return message
+
+    return None
 
 
 async def _log_assistant_message(
@@ -535,8 +574,18 @@ async def _log_assistant_message(
     latency_ms: Optional[int] = None,
     tokens_input: Optional[int] = None,
     tokens_output: Optional[int] = None,
+    idempotency_key: Optional[uuid.UUID] = None,
 ) -> None:
-    """Enregistre le message de l'assistant - best-effort, mêmes garde-fous que _log_user_message."""
+    """
+    Enregistre le message de l'assistant - best-effort, mêmes garde-fous
+    que _log_user_message. idempotency_key est dérivée par l'appelant
+    (send_message) de celle du message utilisateur, pour que deux
+    exécutions concurrentes du même tour (même idempotency_key client)
+    convergent vers la même clé et que create_idempotent() n'en persiste
+    qu'une seule ; None (cas de repli, pas de message utilisateur réel)
+    retombe sur une clé aléatoire - pas de déduplication possible dans ce
+    cas de toute façon.
+    """
     try:
         tenant_uuid = uuid.UUID(tenant_id)
         conv_uuid = uuid.UUID(conversation_id)
@@ -545,9 +594,9 @@ async def _log_assistant_message(
 
     try:
         async with UnitOfWork(tenant_uuid) as uow:
-            await uow.messages.create(
+            await uow.messages.create_idempotent(
                 conversation_id=conv_uuid,
-                idempotency_key=uuid.uuid4(),
+                idempotency_key=idempotency_key or uuid.uuid4(),
                 role=MessageRole.ASSISTANT,
                 content=content,
                 extra_data=extra_data or {},
@@ -563,27 +612,112 @@ async def _log_assistant_message(
         )
 
 
-async def _match_rule(tenant_id: str, intent: str, message: str) -> Optional[RuleMatch]:
+_MAX_HISTORY_MESSAGES = 20  # ~10 échanges - borne le coût/latence LLM
+
+
+async def _load_recent_history(
+    tenant_id: str, conversation_id: str, exclude_message_id: Optional[uuid.UUID]
+) -> List[Dict[str, str]]:
     """
-    Charge les règles actives du tenant et retourne la première qui matche
-    l'intention/le message, ou None. Best-effort - mêmes garde-fous que
-    _log_user_message (pas de vrai tenant UUID, échec DB => pas de règles).
+    Charge les derniers tours de la conversation pour les donner au LLM
+    comme mémoire réelle du fil de discussion. Avant ce fix, chaque tour
+    repartait de zéro (seul le message courant était envoyé au LLM, voir
+    turn_orchestrator.py) alors même que la conversation entière était déjà
+    persistée et affichée à l'utilisateur - le bot semblait donc amnésique
+    et redemandait des informations déjà données. exclude_message_id est le
+    message utilisateur qu'on vient de logger pour ce tour (déjà passé
+    séparément comme `message` à l'orchestrateur) - pas de doublon. Best-
+    effort - mêmes garde-fous que le reste de ce fichier.
+    """
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+        conv_uuid = uuid.UUID(conversation_id)
+    except (ValueError, AttributeError, TypeError):
+        return []
+
+    try:
+        async with UnitOfWork(tenant_uuid) as uow:
+            # order_asc=False (le plus récent d'abord) - avec order_asc=True
+            # `limit` aurait gardé les N PREMIERS messages de la conversation
+            # (les plus anciens) pour toujours, au lieu des N derniers, dès
+            # qu'une conversation dépasse _MAX_HISTORY_MESSAGES messages.
+            # Re-inversé ensuite pour redonner l'ordre chronologique attendu
+            # par l'API chat des LLM.
+            messages = await uow.messages.get_by_conversation(
+                conv_uuid, limit=_MAX_HISTORY_MESSAGES + 1, order_asc=False
+            )
+    except Exception as e:
+        logger.warning(
+            "Skipping conversation history load for this request",
+            extra={"tenant_id": tenant_id, "error": str(e)},
+        )
+        return []
+
+    role_map = {MessageRole.USER: "user", MessageRole.ASSISTANT: "assistant"}
+    history = [
+        {"role": role_map[m.role], "content": m.content}
+        for m in reversed(messages)
+        if m.id != exclude_message_id and m.role in role_map
+    ]
+    return history[-_MAX_HISTORY_MESSAGES:]
+
+
+async def _load_faq_context(tenant_id: str) -> str:
+    """
+    Formats the tenant's generated FAQ (see app/services/faq/generator.py)
+    as compact context for the chat prompt. Without this, a policy
+    question ("what's your delivery policy?") had the LLM invent a
+    plausible-sounding answer (a made-up delivery window, EU/non-EU
+    caveats, ...) from its own general knowledge instead of the shop's
+    real, already-generated FAQ content - confirmed live: the real CMS
+    page says "dispatched within 2 days... via UPS", the ungrounded reply
+    said "3-5 business days... express options... outside the EU". Best-
+    effort - mêmes garde-fous que le reste de ce fichier.
     """
     try:
         tenant_uuid = uuid.UUID(tenant_id)
     except (ValueError, AttributeError, TypeError):
-        return None
+        return ""
 
     try:
         async with UnitOfWork(tenant_uuid) as uow:
-            rules = await uow.rules.list_active()
-            return _rule_evaluator.evaluate(rules, intent, message)
+            items = await uow.faq.get_all()
     except Exception as e:
         logger.warning(
-            "Skipping rule evaluation for this request",
+            "Skipping FAQ context load for this request",
             extra={"tenant_id": tenant_id, "error": str(e)},
         )
-        return None
+        return ""
+
+    if not items:
+        return ""
+
+    lines = [f"- Q: {item.question}\n  A: {item.answer}" for item in items]
+    return "Real store policy FAQ:\n" + "\n".join(lines)
+
+
+async def _load_active_rules(tenant_id: str) -> List[RuleLike]:
+    """
+    Charge les règles actives du tenant - matching pur (RuleEvaluator)
+    délégué à ChatTurnOrchestrator, cette fonction ne fait que le
+    chargement DB. Best-effort - mêmes garde-fous que _log_user_message
+    (pas de vrai tenant UUID, échec DB => pas de règles, le chat continue
+    sans court-circuit possible plutôt que de casser).
+    """
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+    except (ValueError, AttributeError, TypeError):
+        return []
+
+    try:
+        async with UnitOfWork(tenant_uuid) as uow:
+            return await uow.rules.list_active()
+    except Exception as e:
+        logger.warning(
+            "Skipping rule loading for this request",
+            extra={"tenant_id": tenant_id, "error": str(e)},
+        )
+        return []
 
 
 async def _record_rule_triggered(
@@ -629,6 +763,98 @@ async def _record_rule_triggered(
         )
 
 
+def _positive_number(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return float(value)
+
+
+def _coupon_cooldown(action: Dict[str, Any]) -> Optional[timedelta]:
+    """`cooldown_days` : délai avant qu'un même visiteur puisse recevoir à nouveau
+    ce coupon. Absent = une seule fois pour toujours (ex: coupon de bienvenue)."""
+    days = _positive_number(action.get("cooldown_days"))
+    return timedelta(days=days) if days else None
+
+
+def _hourly_cap(action: Dict[str, Any]) -> int:
+    cap = _positive_number(action.get("max_per_hour"))
+    if cap and cap <= 1000:
+        return int(cap)
+    return settings.tenant.max_auto_coupons_per_rule_per_hour
+
+
+async def _visitor_already_has_coupon(
+    coupons: Any,
+    rule_id: Any,
+    action: Dict[str, Any],
+    customer_id: Optional[str],
+    conv_uuid: Optional[uuid.UUID],
+) -> bool:
+    latest = await coupons.latest_for_visitor(rule_id, customer_id, conv_uuid)
+    if latest is None:
+        return False
+    cooldown = _coupon_cooldown(action)
+    if cooldown is None:
+        return True
+    created = latest.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    return created > datetime.now(timezone.utc) - cooldown
+
+
+async def _rule_hourly_cap_reached(coupons: Any, rule_id: Any, action: Dict[str, Any]) -> bool:
+    since = datetime.now(timezone.utc) - timedelta(hours=1)
+    return await coupons.count_for_rule_since(rule_id, since) >= _hourly_cap(action)
+
+
+async def _drop_exhausted_coupon_rules(
+    tenant_id: str,
+    rules: List[RuleLike],
+    customer_id: Optional[str],
+    conversation_id: str,
+) -> List[RuleLike]:
+    """
+    Retire les règles `generate_coupon` déjà épuisées pour ce visiteur (ou dont
+    le plafond horaire est atteint) AVANT l'évaluation.
+
+    L'évaluateur ne retient que la première règle qui matche : sans ce filtre,
+    une règle de palier ("panier >= 100") continuerait de matcher à chaque
+    message, masquerait toutes les règles suivantes et ré-annoncerait le même
+    code en boucle. Best-effort : en cas d'erreur, on garde les règles telles
+    quelles (l'émission revérifie de toute façon les limites).
+    """
+    coupon_rules = [r for r in rules if (r.action or {}).get("type") == "generate_coupon"]
+    if not coupon_rules:
+        return rules
+
+    try:
+        tenant_uuid = uuid.UUID(tenant_id)
+    except (ValueError, AttributeError, TypeError):
+        return rules
+    try:
+        conv_uuid: Optional[uuid.UUID] = uuid.UUID(conversation_id)
+    except (ValueError, AttributeError, TypeError):
+        conv_uuid = None
+
+    exhausted = set()
+    try:
+        async with UnitOfWork(tenant_uuid) as uow:
+            for rule in coupon_rules:
+                action = rule.action or {}
+                if await _visitor_already_has_coupon(
+                    uow.coupons, rule.id, action, customer_id, conv_uuid
+                ) or await _rule_hourly_cap_reached(uow.coupons, rule.id, action):
+                    exhausted.add(rule.id)
+    except Exception as e:
+        logger.warning(
+            "Skipping coupon rule limit check for this request",
+            extra={"tenant_id": tenant_id, "error": str(e)},
+        )
+        return rules
+
+    return [r for r in rules if r.id not in exhausted]
+
+
 async def _generate_coupon_from_rule(
     tenant_id: str,
     rule_id: Any,
@@ -652,6 +878,20 @@ async def _generate_coupon_from_rule(
 
     try:
         async with UnitOfWork(tenant_uuid) as uow:
+            # Revérifie (la course entre deux requêtes simultanées est possible
+            # après le filtre d'avant tour) : une fois par visiteur, et plafond
+            # horaire par règle et par tenant.
+            if await _visitor_already_has_coupon(
+                uow.coupons, rule_id, action, customer_id, conv_uuid
+            ):
+                return None
+            if await _rule_hourly_cap_reached(uow.coupons, rule_id, action):
+                logger.warning(
+                    "Coupon rule hourly cap reached, not issuing",
+                    extra={"tenant_id": tenant_id, "rule_id": str(rule_id)},
+                )
+                return None
+
             code = uow.coupons.generate_code()
             now = datetime.now(timezone.utc)
             expires_at = now + timedelta(days=validity_days)
@@ -680,84 +920,6 @@ async def _generate_coupon_from_rule(
             extra={"tenant_id": tenant_id, "rule_id": str(rule_id), "error": str(e)},
         )
         return None
-
-
-def _build_system_context(
-    tenant_id: str, products_context: str = "", extra_instruction: Optional[str] = None
-) -> str:
-    """
-    Construit le contexte système pour le LLM.
-
-    Args:
-        tenant_id: ID du tenant
-        products_context: Contexte produits formaté (peut être vide)
-        extra_instruction: Instruction additionnelle injectée par une règle tenant (peut être None)
-
-    Returns:
-        Prompt système complet
-    """
-    base_context = f"""Tu es un assistant IA pour une boutique e-commerce.
-Tenant: {tenant_id}
-Sois concis, utile et professionnel. Utilise le vouvoiement.
-"""
-
-    if extra_instruction:
-        base_context = f"{base_context}\n{extra_instruction}\n"
-
-    if products_context:
-        return f"""{base_context}
-{products_context}
-
-Utilise ces informations produits pour répondre à la question de l'utilisateur.
-Si les produits ne sont pas pertinents pour la question, réponds normalement sans les mentionner.
-"""
-
-    return base_context
-
-
-def _classify_intent(message: str) -> str:
-    """Classification d'intention basique par règles."""
-    message_lower = message.lower()
-
-    intent_patterns = {
-        "order_status": ["commande", "order", "suivi", "tracking", "colis"],
-        "product_search": ["cherche", "recherche", "produit", "article", "trouver"],
-        "price_inquiry": ["prix", "price", "coût", "tarif", "combien"],
-        "shipping_info": ["livraison", "shipping", "délai", "expédition"],
-        "return_request": ["retour", "rembours", "échange", "renvoyer"],
-        "coupon_request": ["promo", "code", "réduction", "coupon", "remise"],
-        "recommendation": ["recommand", "suggé", "conseil", "similaire"],
-        "greeting": ["bonjour", "hello", "salut", "bonsoir"],
-    }
-
-    for intent, keywords in intent_patterns.items():
-        if any(kw in message_lower for kw in keywords):
-            return intent
-
-    return "general"
-
-
-def _generate_suggestions(intent: str, has_products: bool = False) -> List[str]:
-    """Génère des suggestions basées sur l'intention et les produits trouvés."""
-    suggestions_map = {
-        "order_status": ["Suivre ma commande", "Contacter le support"],
-        "product_search": ["Voir les promotions", "Filtrer par catégorie"],
-        "price_inquiry": ["Comparer les prix", "Voir les offres"],
-        "shipping_info": ["Options de livraison", "Frais de port"],
-        "return_request": ["Politique de retour", "Formulaire de retour"],
-        "coupon_request": ["Offres en cours", "Programme fidélité"],
-        "recommendation": ["Meilleures ventes", "Nouveautés"],
-        "greeting": ["Voir les produits", "Mes commandes"],
-        "general": ["Parcourir le catalogue", "Aide"],
-    }
-
-    base_suggestions = suggestions_map.get(intent, ["Aide", "Catalogue"])
-
-    # Ajouter des suggestions si des produits ont été trouvés
-    if has_products:
-        base_suggestions = ["Voir les détails", "Ajouter au panier"] + base_suggestions[:2]
-
-    return base_suggestions[:4]  # Limiter à 4 suggestions
 
 
 @router.get("/conversations", response_model=ConversationListResponse)

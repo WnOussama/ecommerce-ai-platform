@@ -11,7 +11,7 @@ Person(client, "Client E-commerce", "Visiteur/Acheteur du site marchand")
 Person(admin, "Administrateur", "Gère les règles, consulte les insights")
 
 System_Ext(prestashop, "PrestaShop", "Catalogue produits/catégories - pas de commandes")
-System_Ext(llm, "OpenAI / Anthropic", "LLM_PROVIDER=mock en dev (aucun coût, aucune clé requise)")
+System_Ext(llm, "Groq", "LLM_GROQ_API_KEY requise - pas de mock, pas de fallback")
 
 System_Boundary(platform, "E-commerce AI Platform") {
     Container(backoffice, "Backoffice", "Laravel / Filament", "Client REST pur - aucun accès direct a la base (imposé par l'architecture, pas seulement la convention)")

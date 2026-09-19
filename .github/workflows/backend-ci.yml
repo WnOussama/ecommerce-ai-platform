@@ -105,7 +105,10 @@ jobs:
 
     env:
       ENVIRONMENT: test
-      LLM_PROVIDER: mock
+      # Explicit opt-in for the X-Tenant-ID test auth bypass (see
+      # SecuritySettings.allow_dev_tenant_header) - CI has no real tenant
+      # API keys to authenticate with.
+      SECURITY_ALLOW_DEV_TENANT_HEADER: "true"
       DB_HOST: localhost
       DB_PORT: 5432
       DB_NAME: test_db
@@ -193,6 +196,11 @@ jobs:
           scan-ref: 'src/ai-core'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
+          # trivyignores is resolved relative to the repo root, not
+          # scan-ref - without this, src/ai-core/.trivyignore (verified
+          # server-only ChromaDB CVEs unreachable via this app's embedded
+          # PersistentClient usage - see that file) was silently ignored.
+          trivyignores: 'src/ai-core/.trivyignore'
 
       - name: Install Bandit
         run: pip install bandit
@@ -228,9 +236,27 @@ jobs:
       # ghcr.io requires lowercase image names, but github.repository
       # preserves the owner's actual case (WnOussama/...) - lowercase it here
       # rather than inline, since Actions expressions have no case function.
-      - name: Compute lowercase image name
+      - name: Compute lowercase image name and tags
         id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}/ai-core" >> "$GITHUB_OUTPUT"
+        # github.ref_name is only a clean branch name (valid as a Docker
+        # tag) on a push event - on pull_request it's GitHub's synthetic
+        # "<pr-number>/merge" ref, which contains a "/" and fails buildx
+        # with "invalid reference format". This job's needs: [test,
+        # security-scan] meant it never actually ran to completion on a
+        # PR before now (earlier failures always short-circuited it), so
+        # this was a real, previously-undetected latent bug, not
+        # something this PR introduced.
+        run: |
+          name="ghcr.io/${GITHUB_REPOSITORY,,}/ai-core"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          {
+            echo "tags<<EOF"
+            echo "$name:${GITHUB_SHA}"
+            if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+              echo "$name:${GITHUB_REF_NAME}"
+            fi
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Log in to GitHub Container Registry
         if: github.event_name == 'push'
@@ -246,9 +272,7 @@ jobs:
           context: ${{ env.WORKING_DIR }}
           file: infrastructure/docker/services/ai-core.Dockerfile
           push: ${{ github.event_name == 'push' }}
-          tags: |
-            ${{ steps.image.outputs.name }}:${{ github.sha }}
-            ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+          tags: ${{ steps.image.outputs.tags }}
           target: production
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -17,12 +17,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config.settings import settings
+from app.core.security.secret_box import encrypt_secret
 from app.infrastructure.database.models.tenant import Tenant
 
 logger = logging.getLogger(__name__)
 
 API_KEY_RANDOM_BYTES = 32
 VERIFICATION_TOKEN_BYTES = 32
+HMAC_SECRET_BYTES = 48
 
 
 def _hash(value: str) -> str:
@@ -32,6 +34,15 @@ def _hash(value: str) -> str:
 def generate_api_key() -> str:
     """Génère une clé API brute (jamais stockée telle quelle)."""
     return f"{settings.security.api_key_prefix}{secrets.token_urlsafe(API_KEY_RANDOM_BYTES)}"
+
+
+def generate_hmac_secret() -> str:
+    """
+    Génère le secret HMAC brut utilisé pour signer les requêtes (voir
+    app/core/security/api_key_security.py). Stocké chiffré (pas hashé) -
+    la vérification d'une signature a besoin du secret en clair.
+    """
+    return secrets.token_urlsafe(HMAC_SECRET_BYTES)
 
 
 def generate_verification_token() -> str:
@@ -98,19 +109,24 @@ class TenantRepository:
 
         return tenant, raw_token
 
-    async def activate_and_issue_api_key(self, tenant: Tenant) -> str:
+    async def activate_and_issue_api_key(self, tenant: Tenant) -> tuple[str, str]:
         """
-        Vérifie l'email d'un tenant et émet sa clé API réelle.
+        Vérifie l'email d'un tenant et émet sa clé API réelle + son secret HMAC.
 
         Returns:
-            La clé API brute (affichée une seule fois - seul son hash est stocké).
+            (raw_api_key, raw_hmac_secret) - affichés une seule fois, seuls
+            leur hash / forme chiffrée sont stockés. The caller must sign
+            requests with the secret (see APIClientSigner) - the API key
+            alone is no longer sufficient to authenticate.
         """
         raw_api_key = generate_api_key()
+        raw_hmac_secret = generate_hmac_secret()
 
         tenant.is_verified = True
         tenant.is_active = True
         tenant.verified_at = datetime.now(timezone.utc)
         tenant.api_key_hash = _hash(raw_api_key)
+        tenant.hmac_secret_encrypted = encrypt_secret(raw_hmac_secret)
         tenant.verification_token_hash = None
 
         await self._session.flush()
@@ -121,19 +137,21 @@ class TenantRepository:
             extra={"tenant_id": str(tenant.id)},
         )
 
-        return raw_api_key
+        return raw_api_key, raw_hmac_secret
 
-    async def rotate_api_key(self, tenant: Tenant) -> str:
-        """Génère une nouvelle clé API pour un tenant déjà vérifié."""
+    async def rotate_api_key(self, tenant: Tenant) -> tuple[str, str]:
+        """Génère une nouvelle clé API + secret HMAC pour un tenant déjà vérifié."""
         raw_api_key = generate_api_key()
+        raw_hmac_secret = generate_hmac_secret()
         tenant.api_key_hash = _hash(raw_api_key)
+        tenant.hmac_secret_encrypted = encrypt_secret(raw_hmac_secret)
 
         await self._session.flush()
         await self._session.refresh(tenant)
 
         logger.info("API key rotated", extra={"tenant_id": str(tenant.id)})
 
-        return raw_api_key
+        return raw_api_key, raw_hmac_secret
 
     async def update_settings(self, tenant: Tenant, settings_update: dict) -> Tenant:
         merged = dict(tenant.settings or {})

@@ -33,6 +33,7 @@ from app.infrastructure.external.prestashop.exceptions import (
 from app.infrastructure.external.prestashop.models import (
     Category,
     CategoryListResponse,
+    CMSPage,
     Product,
     ProductImage,
     ProductListResponse,
@@ -350,6 +351,20 @@ class PrestaShopClient:
                     },
                 )
 
+        # `quantity` on /products is confirmed live to sit at "0" for every
+        # product regardless of real stock (PrestaShop only keeps it fresh
+        # on /stock_availables) - every synced product read as out-of-stock
+        # until this overlay. Best-effort: a malformed/unexpected response
+        # here (e.g. in tests, which mock a single fixed response shared by
+        # both calls) just leaves each product's originally-parsed quantity
+        # untouched rather than failing the whole sync.
+        if products:
+            real_stock = await self._fetch_real_stock([p.id for p in products])
+            products = [
+                p.model_copy(update={"quantity": real_stock[p.id]}) if p.id in real_stock else p
+                for p in products
+            ]
+
         # Note: L'API PrestaShop ne retourne pas toujours le total
         # On estime s'il y a plus de résultats
         total = offset + len(products)
@@ -371,6 +386,37 @@ class PrestaShopClient:
             limit=limit,
             offset=offset,
         )
+
+    async def _fetch_real_stock(self, product_ids: List[int]) -> Dict[int, int]:
+        """Real quantities from /stock_availables, keyed by product id.
+
+        Best-effort: returns {} (leaving callers' originally-parsed, stale
+        quantity untouched) on any error or unexpected response shape,
+        rather than failing the product fetch over a stock lookup.
+        """
+        if not product_ids:
+            return {}
+
+        ids_filter = "[" + "|".join(str(i) for i in product_ids) + "]"
+        try:
+            data = await self._request(
+                "GET",
+                "/stock_availables",
+                params={
+                    "filter[id_product]": ids_filter,
+                    "display": "[id_product,quantity]",
+                },
+            )
+            entries = data.get("stock_availables", [])
+            if not isinstance(entries, list):
+                entries = [entries] if entries else []
+            return {int(e["id_product"]): int(e["quantity"]) for e in entries}
+        except Exception as e:
+            logger.warning(
+                "Failed to fetch real stock from /stock_availables, quantities may be stale",
+                extra={"tenant_id": self.tenant_id, "error": str(e)},
+            )
+            return {}
 
     async def get_product(self, product_id: int) -> Product:
         """
@@ -645,6 +691,67 @@ class PrestaShopClient:
         )
 
     # =========================================================================
+    # CMS PAGES (source for automatic FAQ generation - see app/services/faq/)
+    # =========================================================================
+
+    async def get_cms_pages(self, active_only: bool = True) -> List[CMSPage]:
+        """
+        Récupère les pages CMS de la boutique (livraison, CGV, à propos...)
+        - resource webservice `content_management_system` (nommage
+          confirmé en interrogeant /api/ : ni "cms" ni "content" n'existent
+          côté PrestaShop 8, malgré ce que suggère la doc de plus haut
+          niveau). Nécessite que la clé webservice ait la permission GET
+          dessus (décochée par défaut sur une clé fraîchement créée).
+
+        Utilisé par app/services/faq/generator.py comme UNIQUE source
+        réelle pour générer des FAQ - jamais fabriquées.
+        """
+        params: Dict[str, Any] = {"display": "full"}
+
+        data = await self._request("GET", "/content_management_system", params=params)
+
+        pages_data = data.get("content_management_system", [])
+        if not isinstance(pages_data, list):
+            pages_data = [pages_data] if pages_data else []
+
+        pages = []
+        for p in pages_data:
+            try:
+                active = str(p.get("active", "1")) == "1"
+                if active_only and not active:
+                    continue
+
+                pages.append(
+                    CMSPage(
+                        id=int(p.get("id")),
+                        title=self._get_localized_value(p.get("meta_title", "")) or "Untitled",
+                        content_text=self._strip_html(
+                            self._get_localized_value(p.get("content", ""))
+                        ),
+                        active=active,
+                    )
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to parse CMS page",
+                    extra={"tenant_id": self.tenant_id, "cms_id": p.get("id"), "error": str(e)},
+                )
+
+        return pages
+
+    @staticmethod
+    def _strip_html(html: str) -> str:
+        """Texte brut d'un champ CMS - suffisant pour un prompt LLM, pas besoin
+        d'une dépendance HTML dédiée (bs4/lxml) pour ce seul usage."""
+        import html as html_module
+        import re
+
+        text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=re.DOTALL | re.IGNORECASE)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = html_module.unescape(text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    # =========================================================================
     # HELPERS
     # =========================================================================
 
@@ -718,10 +825,15 @@ class PrestaShopClient:
             if not img_id:
                 continue
 
-            # Construire l'URL de l'image
-            # Format: {shop_url}/{id_product}-{id_image}.jpg
-            # Note: simplifié, l'URL réelle dépend de la config PrestaShop
-            url = f"{self.config.shop_url}/img/p/{img_id}.jpg"
+            # PrestaShop nests image files one folder per digit of the image
+            # id (e.g. image id 24 -> img/p/2/4/24.jpg, id 1234 ->
+            # img/p/1/2/3/4/1234.jpg) - confirmed live against a real
+            # PrestaShop 8 instance. The previous flat img/p/{id}.jpg (a
+            # PrestaShop <=1.4 convention, per this method's own former
+            # comment admitting it was "simplified") 404'd for every
+            # product's cover_image_url, live, with no image ever showing.
+            folder_path = "/".join(str(img_id))
+            url = f"{self.config.shop_url}/img/p/{folder_path}/{img_id}.jpg"
 
             images.append(
                 ProductImage(
@@ -786,10 +898,19 @@ class PrestaShopClient:
 
         Returns:
             True si la connexion est OK, False sinon
+
+        Note: on interroge /products (limité à 1 résultat) plutôt que la
+        racine /api - la racine liste toutes les ressources disponibles et
+        PrestaShop (vérifié en 8.2.7) plante avec un TypeError PHP dans
+        WebserviceOutputJSON::overrideContent quand cette liste est
+        sérialisée en JSON (bug confirmé côté PrestaShop; XML fonctionne,
+        JSON non, pour ce endpoint précis). /products en JSON fonctionne
+        normalement, donc c'est un check d'auth équivalent sans déclencher
+        ce bug.
         """
         try:
-            # Appel simple pour vérifier l'auth
-            await self._request("GET", "/", params={"display": "id"})
+            # Appel simple pour vérifier l'auth (ressource concrète, pas la racine)
+            await self._request("GET", "/products", params={"limit": "0,1"})
             return True
         except PrestaShopError as e:
             logger.warning(

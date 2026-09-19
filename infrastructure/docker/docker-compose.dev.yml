@@ -23,7 +23,13 @@ services:
       - .env
     environment:
       - ENVIRONMENT=development
-      - LLM_PROVIDER=${LLM_PROVIDER:-mock}
+      - LLM_GROQ_API_KEY=${LLM_GROQ_API_KEY:-}
+      - LLM_OPENAI_API_KEY=${LLM_OPENAI_API_KEY:-}
+      # Explicit opt-in for the unauthenticated X-Tenant-ID dev bypass (see
+      # SecuritySettings.allow_dev_tenant_header) - local dev only, never set
+      # this in a compose file reachable from outside this machine.
+      - SECURITY_ALLOW_DEV_TENANT_HEADER=true
+      - ANONYMIZED_TELEMETRY=False
       - DB_HOST=postgres
       - DB_PORT=5432
       - DB_NAME=${DB_NAME:-saas_ecommerce}
@@ -31,6 +37,7 @@ services:
       - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD is required}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
       - CHROMA_HOST=chromadb
       - CHROMA_PORT=8000
     ports:
@@ -107,8 +114,8 @@ services:
       POSTGRES_DB: ${DB_NAME:-saas_ecommerce}
       POSTGRES_USER: ${DB_USER:-saas_user}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
-    ports:
-      - "${DB_PORT:-5432}:5432"
+    # No host port mapping: only ai-core (on saas_network) needs to reach
+    # Postgres. Use `docker compose exec postgres psql ...` for ad-hoc access.
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./services/postgres/init:/docker-entrypoint-initdb.d:ro
@@ -127,25 +134,108 @@ services:
           memory: 512M
 
   # ===========================================================================
+  # PRESTASHOP DEMO STOREFRONT - real shop for the aiassistant module
+  #
+  # Separate from the ai-core/backoffice Postgres above: PrestaShop needs its
+  # own MySQL. Not required for the core stack - only for demoing the
+  # storefront widget (src/platform-adapters/prestashop/aiassistant).
+  # ===========================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: saas_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${PS_DB_PASSWORD:?PS_DB_PASSWORD is required}
+      MYSQL_DATABASE: ${PS_DB_NAME:-prestashop}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - saas_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${PS_DB_PASSWORD:?PS_DB_PASSWORD is required}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  prestashop:
+    image: prestashop/prestashop:8-apache
+    container_name: saas_prestashop
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_SERVER: mysql
+      DB_NAME: ${PS_DB_NAME:-prestashop}
+      DB_USER: root
+      DB_PASSWD: ${PS_DB_PASSWORD:?PS_DB_PASSWORD is required}
+      PS_DOMAIN: ${PS_DOMAIN:-localhost:8080}
+      PS_INSTALL_AUTO: 1
+      PS_ERASE_DB: 0
+      PS_LANGUAGE: en
+      PS_COUNTRY: GB
+      # PS_DEV_MODE=1 forces PrestaShop's Symfony kernel into the 'dev'
+      # environment, which needs var/cache/dev/appParameters.php - but the
+      # auto-installer only ever builds the 'prod' cache (confirmed: install
+      # log references appAppKernelProdContainer.php). With dev mode on,
+      # any request that boots the Symfony side (module front controllers)
+      # crashes with "Failed opening required .../var/cache/dev/
+      # appParameters.php". Keep this at 0 to match the cache that actually
+      # gets built; PHP errors are still visible via docker logs regardless.
+      PS_DEV_MODE: 0
+      ADMIN_MAIL: ${PS_ADMIN_EMAIL:-admin@example.com}
+      ADMIN_PASSWD: ${PS_ADMIN_PASSWORD:?PS_ADMIN_PASSWORD is required}
+    ports:
+      - "8080:80"
+    volumes:
+      - prestashop_data:/var/www/html
+      - ../../src/platform-adapters/prestashop/aiassistant:/var/www/html/modules/aiassistant
+      # aiassistant/vendor/ ships PHPUnit's dev-only deps (incl. nikic/php-parser)
+      # for the module's own test suite - never required at runtime (verified: no
+      # `require vendor/autoload.php` anywhere in aiassistant.php/classes/
+      # controllers/). Left mounted, its php-parser collides with PrestaShop
+      # core's own copy and crashes `prestashop:module install` with
+      # "Call to undefined method PhpParser\ParserFactory::create()". Shadow
+      # it with an anonymous volume so PrestaShop's autoloader never sees it -
+      # the host's vendor/ (used by `composer test` locally) is untouched.
+      - /var/www/html/modules/aiassistant/vendor
+    networks:
+      - saas_network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1G
+
+  # ===========================================================================
   # CACHE & SESSION - Redis 7
   # ===========================================================================
   redis:
     image: redis:7-alpine
     container_name: saas_redis
     restart: unless-stopped
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     command: >
-      redis-server 
-      --appendonly yes 
-      --maxmemory 128mb 
+      sh -c 'redis-server
+      --appendonly yes
+      --maxmemory 128mb
       --maxmemory-policy allkeys-lru
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+      --requirepass "$$REDIS_PASSWORD"'
+    # No host port mapping (see postgres, above) - anyone reaching 6379
+    # without a password could read/write every tenant's cached data.
     volumes:
       - redis_data:/data
     networks:
       - saas_network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -216,7 +306,7 @@ services:
     restart: unless-stopped
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:?GRAFANA_PASSWORD is required}
       - GF_USERS_ALLOW_SIGN_UP=false
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
@@ -243,6 +333,10 @@ networks:
 # =============================================================================
 volumes:
   postgres_data:
+    driver: local
+  mysql_data:
+    driver: local
+  prestashop_data:
     driver: local
   redis_data:
     driver: local

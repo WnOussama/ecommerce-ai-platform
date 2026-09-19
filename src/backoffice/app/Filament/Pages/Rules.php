@@ -15,6 +15,7 @@ use Filament\Forms\Form;
 use Filament\Forms\Get;
 use Filament\Notifications\Notification;
 use Filament\Pages\Page;
+use Illuminate\Support\Arr;
 
 class Rules extends Page implements HasForms
 {
@@ -37,6 +38,12 @@ class Rules extends Page implements HasForms
         'inject_instruction' => 'Instruction injectée dans le prompt système',
         'generate_coupon' => 'Génère un coupon',
     ];
+
+    /** Clés de `conditions` éditées par le formulaire (les autres sont conservées). */
+    public const MANAGED_CONDITION_KEYS = ['intent', 'keywords_any', 'keywords_all', 'first_message', 'min_cart_total'];
+
+    /** Clés de `action` éditées par le formulaire (les autres, ex: max_per_hour, sont conservées). */
+    public const MANAGED_ACTION_KEYS = ['type', 'text', 'instruction', 'discount_percent', 'validity_days', 'reason', 'cooldown_days'];
 
     public ?array $data = [];
 
@@ -89,6 +96,16 @@ class Rules extends Page implements HasForms
                     ->label('Mots-clés - tous requis (séparés par des virgules)')
                     ->helperText('La règle matche seulement si le message contient tous ces mots.'),
 
+                Toggle::make('first_message')
+                    ->label('Seulement au premier message de la conversation')
+                    ->helperText('Ex: coupon de bienvenue. Combiné avec « une seule fois par visiteur » côté coupon.'),
+
+                TextInput::make('min_cart_total')
+                    ->label('Total du panier minimum (€)')
+                    ->numeric()
+                    ->minValue(0)
+                    ->helperText('Le total du panier est fourni par la boutique. La règle ne matche que si le panier atteint ce montant (ex: coupon de palier).'),
+
                 Select::make('action_type')
                     ->label('Action')
                     ->options(self::ACTION_TYPES)
@@ -128,6 +145,13 @@ class Rules extends Page implements HasForms
                     ->helperText('Ex: "cart_abandonment", "loyalty", "winback" - relie cette règle à la politique de remise utilisée par /coupons/generate.')
                     ->visible(fn (Get $get) => $get('action_type') === 'generate_coupon'),
 
+                TextInput::make('cooldown_days')
+                    ->label('Nouveau coupon possible après (jours)')
+                    ->numeric()
+                    ->minValue(1)
+                    ->helperText('Vide = un seul coupon par visiteur, pour toujours (ex: bienvenue). Sinon le même visiteur peut en recevoir un autre après ce délai (ex: palier, 30).')
+                    ->visible(fn (Get $get) => $get('action_type') === 'generate_coupon'),
+
                 TextInput::make('priority')
                     ->label('Priorité')
                     ->numeric()
@@ -145,13 +169,26 @@ class Rules extends Page implements HasForms
     {
         $state = $this->form->getState();
 
-        $conditions = array_filter([
-            'intent' => $state['intent'] ?? null,
-            'keywords_any' => $this->splitKeywords($state['keywords_any'] ?? null),
-            'keywords_all' => $this->splitKeywords($state['keywords_all'] ?? null),
-        ], fn ($value) => filled($value));
+        $original = $this->editingRuleId
+            ? (collect($this->rules)->firstWhere('id', $this->editingRuleId) ?? [])
+            : [];
+
+        // Les clés que ce formulaire ne gère pas sont conservées telles quelles:
+        // sans ça, modifier une règle ici les effaçait en silence.
+        $conditions = Arr::except($original['conditions'] ?? [], self::MANAGED_CONDITION_KEYS)
+            + array_filter([
+                'intent' => $state['intent'] ?? null,
+                'keywords_any' => $this->splitKeywords($state['keywords_any'] ?? null),
+                'keywords_all' => $this->splitKeywords($state['keywords_all'] ?? null),
+                'first_message' => ! empty($state['first_message']) ? true : null,
+                'min_cart_total' => $this->positiveNumber($state['min_cart_total'] ?? null),
+            ], fn ($value) => filled($value));
 
         $action = $this->buildAction($state);
+
+        if (($original['action']['type'] ?? null) === ($action['type'] ?? null)) {
+            $action += Arr::except($original['action'] ?? [], self::MANAGED_ACTION_KEYS);
+        }
 
         $payload = [
             'name' => $state['name'],
@@ -199,6 +236,9 @@ class Rules extends Page implements HasForms
             'intent' => $conditions['intent'] ?? null,
             'keywords_any' => implode(', ', $conditions['keywords_any'] ?? []),
             'keywords_all' => implode(', ', $conditions['keywords_all'] ?? []),
+            'first_message' => (bool) ($conditions['first_message'] ?? false),
+            'min_cart_total' => $conditions['min_cart_total'] ?? null,
+            'cooldown_days' => $action['cooldown_days'] ?? null,
             'action_type' => $action['type'] ?? 'canned_response',
             'text' => $action['text'] ?? '',
             'instruction' => $action['instruction'] ?? '',
@@ -251,9 +291,19 @@ class Rules extends Page implements HasForms
                 'discount_percent' => (int) ($state['discount_percent'] ?? 10),
                 'validity_days' => (int) ($state['validity_days'] ?? 7),
                 'reason' => $state['reason'] ?: null,
+                'cooldown_days' => $this->positiveNumber($state['cooldown_days'] ?? null),
             ], fn ($value) => $value !== null),
             default => ['type' => $state['action_type']],
         };
+    }
+
+    protected function positiveNumber(mixed $value): int|float|null
+    {
+        if (! is_numeric($value) || (float) $value <= 0) {
+            return null;
+        }
+
+        return $value + 0;
     }
 
     protected function splitKeywords(?string $raw): array

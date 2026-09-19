@@ -5,7 +5,7 @@ Chaque boutique e-commerce = 1 tenant.
 Toutes les autres entités sont liées à un tenant.
 """
 
-from sqlalchemy import Boolean, Column, DateTime, Index, String
+from sqlalchemy import Boolean, Column, DateTime, Index, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -41,6 +41,11 @@ class Tenant(Base, UUIDMixin, TimestampMixin, SoftDeleteMixin):
 
     # Authentification
     api_key_hash = Column(String(255), nullable=True)
+    # Secret HMAC pour la signature des requêtes (voir
+    # app/core/security/api_key_security.py) - chiffré, pas hashé : la
+    # vérification d'une signature a besoin du secret en clair, un hash
+    # sens-unique comme pour api_key_hash ne suffit pas.
+    hmac_secret_encrypted = Column(Text, nullable=True)
 
     # Onboarding / vérification email
     # Un tenant créé via signup démarre non-vérifié et sans api_key_hash ;

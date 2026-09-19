@@ -60,7 +60,7 @@ node "Poste de développement / Serveur hôte" {
 }
 
 cloud "PrestaShop\n(externe)" as prestashop
-cloud "OpenAI / Anthropic\n(externe, LLM_PROVIDER=mock en dev)" as llm
+cloud "Groq\n(externe, LLM_GROQ_API_KEY requise - pas de mock)" as llm
 
 actor "Navigateur\n(client / admin)" as browser
 
@@ -74,7 +74,7 @@ aicore --> pg : "TCP 5432 (interne)"
 aicore --> redis : "TCP 6379 (interne)"
 aicore --> chroma : "HTTP 8000 (interne)\nCHROMA_PORT: 8100 -> hôte"
 aicore ..> prestashop : "Webservice API\n(synchronisation catalogue)"
-aicore ..> llm : "API HTTPS\n(désactivé en dev : mock)"
+aicore ..> llm : "API HTTPS\n(clé requise, y compris en dev)"
 prom --> aicore : "scrape /metrics"
 grafana --> prom : "requêtes PromQL"
 
