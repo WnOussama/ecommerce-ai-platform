@@ -49,4 +49,4 @@ ENV PHP_CLI_SERVER_WORKERS=8
 # Crée/migre la base sqlite locale du panel (users, sessions, cache) au
 # démarrage du conteneur - jamais bakée dans l'image (voir .dockerignore),
 # pour que chaque conteneur reparte d'une base propre et migrée.
-CMD ["sh", "-c", "touch database/database.sqlite && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000 --no-reload"]
+CMD ["sh", "-c", "touch ${DB_DATABASE:-database/database.sqlite} && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=8000 --no-reload"]

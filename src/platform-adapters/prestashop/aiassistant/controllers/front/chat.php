@@ -259,6 +259,11 @@ class AiAssistantChatModuleFrontController extends ModuleFrontController
         $cartRule->reduction_tax = true;
         $cartRule->highlight = true;
         $cartRule->active = true;
+        // Non cumulable: sans cette restriction, un coupon de bienvenue et un
+        // coupon de palier s'empilaient (15 % puis encore 15 % sur le reste,
+        // constaté sur le vrai panier). checkValidity() refuse maintenant un
+        // second code quand un autre est déjà dans le panier.
+        $cartRule->cart_rule_restriction = true;
 
         return (bool) $cartRule->add();
     }

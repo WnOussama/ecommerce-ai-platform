@@ -77,12 +77,17 @@ services:
     environment:
       - APP_KEY=${BACKOFFICE_APP_KEY:?BACKOFFICE_APP_KEY is required}
       - DB_CONNECTION=sqlite
+      # The panel's users and sessions live in a named volume so they survive
+      # a container recreate (they used to be lost every time).
+      - DB_DATABASE=/data/database.sqlite
       - AICORE_API_URL=http://ai-core:8000/api/v1
       - AICORE_ROOT_URL=http://ai-core:8000
       - AICORE_TENANT_ID=${BACKOFFICE_TENANT_ID:-}
       - AICORE_API_KEY=${BACKOFFICE_API_KEY:-}
     ports:
       - "${BACKOFFICE_PORT:-8090}:8000"
+    volumes:
+      - backoffice_data:/data
     networks:
       - saas_network
     depends_on:
@@ -309,6 +314,8 @@ volumes:
   prestashop_data:
     driver: local
   redis_data:
+    driver: local
+  backoffice_data:
     driver: local
   ai_core_logs:
     driver: local
