@@ -57,16 +57,19 @@ async def db_session():
 
 @pytest.mark.asyncio
 class TestTenantProvisioningEndToEnd:
-    async def test_provisioned_tenant_authenticates_and_rotates(self, db_session: AsyncSession):
+    async def test_provisioned_tenant_authenticates_and_rotates(
+        self, db_session: AsyncSession, monkeypatch
+    ):
         from app.core.config.settings import Environment, settings
         from app.infrastructure.database.repositories.tenant_repo import TenantRepository
         from app.main import create_application
 
         # Environnement de type production: pas de bypass X-Tenant-ID.
-        original_env = settings.environment
-        settings.environment = Environment.STAGING
-        original_bypass = settings.security.allow_dev_tenant_header
-        settings.security.allow_dev_tenant_header = False
+        # monkeypatch restaure toujours les réglages, même si le test échoue
+        # avant son bloc finally (sinon les tests suivants héritent d'un
+        # environnement "staging" sans bypass).
+        monkeypatch.setattr(settings, "environment", Environment.STAGING)
+        monkeypatch.setattr(settings.security, "allow_dev_tenant_header", False)
 
         email = "e2e-provisioned@example.com"
         repo = TenantRepository(db_session)
@@ -131,35 +134,29 @@ class TestTenantProvisioningEndToEnd:
                 )
                 assert new_key_check.status_code == 200
         finally:
-            settings.environment = original_env
-            settings.security.allow_dev_tenant_header = original_bypass
             await db_session.execute(
                 text("DELETE FROM tenants WHERE email = :email"), {"email": email}
             )
             await db_session.commit()
 
-    async def test_public_signup_and_verify_routes_are_closed(self, db_session: AsyncSession):
+    async def test_public_signup_and_verify_routes_are_closed(
+        self, db_session: AsyncSession, monkeypatch
+    ):
         """Nobody can create a tenant or receive an API key without authenticating."""
         from app.core.config.settings import Environment, settings
         from app.main import create_application
 
-        original_env = settings.environment
-        settings.environment = Environment.STAGING
-        original_bypass = settings.security.allow_dev_tenant_header
-        settings.security.allow_dev_tenant_header = False
+        monkeypatch.setattr(settings, "environment", Environment.STAGING)
+        monkeypatch.setattr(settings.security, "allow_dev_tenant_header", False)
 
         app = create_application()
         transport = ASGITransport(app=app)
 
-        try:
-            async with AsyncClient(transport=transport, base_url="http://test") as client:
-                signup = await client.post(
-                    "/api/v1/tenants", json={"name": "Intruder Shop", "email": "x@example.com"}
-                )
-                assert signup.status_code == 401
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            signup = await client.post(
+                "/api/v1/tenants", json={"name": "Intruder Shop", "email": "x@example.com"}
+            )
+            assert signup.status_code == 401
 
-                verify = await client.get("/api/v1/tenants/verify/any-token")
-                assert verify.status_code == 401
-        finally:
-            settings.environment = original_env
-            settings.security.allow_dev_tenant_header = original_bypass
+            verify = await client.get("/api/v1/tenants/verify/any-token")
+            assert verify.status_code == 401

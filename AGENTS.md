@@ -19,7 +19,7 @@ An AI chat assistant for online shops (PrestaShop today) plus an admin backoffic
 # Dev stack (Postgres, Redis, ai-core :8000, backoffice :8090). Needs infrastructure/docker/.env
 cd infrastructure/docker && docker-compose -f docker-compose.dev.yml up -d
 
-make migrate                           # see the ai-core gotcha about Alembic history
+make migrate                           # alembic upgrade head (see the ai-core migrations note)
 
 # Test
 make test                              # ai-core unit tests only

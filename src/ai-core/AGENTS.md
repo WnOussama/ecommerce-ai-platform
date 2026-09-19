@@ -51,7 +51,7 @@ docker exec saas_ai_core sh -c "cd /app && python -m pytest tests/ -q"
 
 ## Gotchas
 
-- Alembic history is broken. The live dev database was built with `create_all` and is stamped `a1f4c7d92b3e`, which has no file, and `001_initial` is missing. Schema changes there were applied by hand with `ALTER TABLE`. `alembic upgrade head` fails on that database.
+- Migrations live in `alembic/versions/` and CI builds its database with `alembic upgrade head`. The folder `app/infrastructure/database/migrations/` is a dead legacy copy that Alembic ignores, so a migration placed there never runs. Chain a new migration after the current head (`alembic heads`) and write it idempotent (`IF NOT EXISTS`), because a dev database may already have hand applied changes. Test it on an empty database before pushing.
 - Do not call `create_application()` in a unit test that reaches a database endpoint. The shared asyncpg engine is bound to an old event loop and fails with "attached to a different loop". Wrap the middleware in a tiny Starlette app instead.
 - `app/core/config/security_settings.py` (`StrictSecuritySettings`) is exported but never called. Real settings live in `settings.py`.
 - The `chromadb` service in the compose files is unused. ChromaDB runs embedded from `data/chroma`, and nothing connects to that container.
