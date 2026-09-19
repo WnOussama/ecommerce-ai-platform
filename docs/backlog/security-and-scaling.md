@@ -42,6 +42,20 @@ How to read the evidence tags:
 - Grafana falls back to `admin`/`admin` and promtail mounts `docker.sock`. Fix before any shared environment.
 - Not tested yet: indirect prompt injection through product descriptions (a product text that says "ignore your rules"), PII in logs, `pip-audit` and `composer audit`, conversation data retention and deletion (GDPR).
 
+## 2b. Product gaps found in the version 1 browser test
+
+These are not security problems. They are things a shop owner would notice.
+
+- **Insights, "most requested products" is inflated.** Every chat retrieves its top 5 products, so each product shows about 70 "requests" whatever shoppers asked. Some rows are bare numbers (products that no longer exist). Count only product search intents, or only results above a similarity threshold, and show names.
+- **Coupon conversion is stuck at 0 of 41.** A coupon used in PrestaShop is never reported back to ai-core, so its status stays `ACTIVE`. Call a "mark used" endpoint when an order uses the cart rule (order hook in the module).
+- **Admin agent page has no field for a reason or parameters.** The destructive actions (`delete_customer_data`, `update_product_prices`, `bulk_order_modification`) always answer "Reason is required", so they cannot be completed from the UI. Safe, but incomplete.
+- **Plan gating is not enforced.** The demo tenant is on `starter` (features: chatbot, faq) but coupons and the admin agent work. Check `features` per route.
+- **Tenant Settings has blank fields** (Domaine, Plateforme, Statut, Utilisation period): the page expects fields the API does not return.
+- **Rules page button says "Créer la règle" while editing.** It should say "Enregistrer".
+- **Widget shows literal `**` around bold text.** Render a small safe subset of markdown, or ask the model for plain text.
+- **Satisfaction score is always 0.0** (see the feedback item above: no rating is ever stored).
+- **Coupon redemption in PrestaShop:** two old 15% cart rules created before the non combinable fix can still stack. Deactivate or delete them.
+
 ## 3. Row level security (to decide together)
 
 Today isolation is done in the application: every repository query filters by
