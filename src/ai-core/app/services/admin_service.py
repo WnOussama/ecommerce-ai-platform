@@ -54,7 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
     from app.services.message_queue.redis_queue import get_queue_client
 
     app.state.queue_client = get_queue_client(
-        redis_url=f"redis://{settings.redis.host}:{settings.redis.port}",
+        redis_url=settings.redis.url,  # inclut le mot de passe (Redis exige REDIS_PASSWORD)
         consumer_group="admin-service",
         consumer_name=f"admin-{os.getpid()}",
     )

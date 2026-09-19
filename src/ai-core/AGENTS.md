@@ -44,7 +44,7 @@ docker exec saas_ai_core sh -c "cd /app && python -m pytest tests/ -q"
 
 - Import `settings` from `app.core.config.settings`. A new required secret must also be added to `tests/conftest.py`, `alembic/env.py`, `.env.example`, the CI env, and the compose files, or boot and tests fail.
 - Layers: `api` (routers, middleware) then `domain/services` then `infrastructure`. Repositories always scope by `tenant_id`.
-- Real auth needs an API key (`Authorization: Bearer` or `X-API-Key`) plus `X-Timestamp` and `X-Signature` (HMAC SHA256 over timestamp, method, path, body hash, within 5 minutes). Use `APIClientSigner` to build them. The tenant secret is stored encrypted with `SECURITY_API_KEY_ENCRYPTION_KEY`.
+- Real auth needs an API key (`Authorization: Bearer` or `X-API-Key`) plus `X-Timestamp` and `X-Signature` (HMAC SHA256 over timestamp, method, path plus query string, body hash, within 5 minutes). Use `APIClientSigner` to build them. The tenant secret is stored encrypted with `SECURITY_API_KEY_ENCRYPTION_KEY`.
 - The `X-Tenant-ID` shortcut is gated only by `SECURITY_ALLOW_DEV_TENANT_HEADER`. Never derive it from `ENVIRONMENT`.
 - Coupons come from tenant rules with a `generate_coupon` action, never from a bare keyword. Use the `first_message` condition for a welcome coupon and `min_cart_total` for a spend threshold. The shop sends `customer_id` and `cart_total` from its server side. One coupon per visitor and rule, or again after `cooldown_days`. `max_per_hour` caps a rule per tenant (default 10). Keyword conditions match whole words.
 - Ruff: line length 100, target py311, rules E, F, I, W. `asyncio_mode` is `auto` in pytest.
@@ -55,6 +55,7 @@ docker exec saas_ai_core sh -c "cd /app && python -m pytest tests/ -q"
 - Do not call `create_application()` in a unit test that reaches a database endpoint. The shared asyncpg engine is bound to an old event loop and fails with "attached to a different loop". Wrap the middleware in a tiny Starlette app instead.
 - `app/core/config/security_settings.py` (`StrictSecuritySettings`) is exported but never called. Real settings live in `settings.py`.
 - The `chromadb` service in the compose files is unused. ChromaDB runs embedded from `data/chroma`, and nothing connects to that container.
+- A tenant whose key predates HMAC has no secret and is refused, and it cannot call the rotate route. Run `python -m scripts.reissue_tenant_credentials <tenant_id>`, then restart ai-core because the auth cache lives in memory. A signed request replayed unchanged is accepted inside its 5 minute window (there is no nonce).
 - With a `customer_id`, ai-core reuses that visitor's open conversation, so `first_message` is true only once per visitor. A welcome coupon refused by the hourly cap is not offered again.
 - `docker-compose.dev.yml` is the only compose file. The first embedding call downloads a ~80 MB model into `data/onnx_models` (git ignored).
 - ChromaDB 0.4.22 needs `numpy<2`. If ai-core logs "ChromaDB not available", the image is stale: rebuild it.

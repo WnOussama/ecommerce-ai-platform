@@ -20,8 +20,8 @@ verifying a signature requires the raw secret, not just a comparison hash.
 
 import hashlib
 import hmac
+import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 
@@ -83,11 +83,18 @@ class HMACSignatureValidator:
         """
         Valide une signature HMAC.
 
+        `path` est la cible de la requête: le chemin PLUS "?query" quand il y
+        en a une. Sans la query string, un attaquant pouvait rejouer une
+        requête signée avec d'autres paramètres (filtres, pagination...).
+
         Returns:
             (is_valid, error_message)
         """
         # 1. Vérifier le timestamp (anti-replay)
-        now = int(datetime.utcnow().timestamp())
+        # Epoch réel: datetime.utcnow().timestamp() interprète le datetime naïf
+        # comme une heure LOCALE et décale le résultat du fuseau du serveur, ce
+        # qui fait rejeter les clients qui envoient time()/Date.now().
+        now = int(time.time())
         time_diff = abs(now - timestamp)
 
         if time_diff > self._config.signature_window_seconds:
@@ -96,8 +103,12 @@ class HMACSignatureValidator:
         # 2. Recalculer la signature
         expected_signature = self.create_signature(secret, timestamp, method, path, body)
 
-        # 3. Comparaison timing-safe
-        if not hmac.compare_digest(provided_signature, expected_signature):
+        # 3. Comparaison timing-safe, sur des bytes: compare_digest lève un
+        # TypeError sur une str non ASCII (en-tête X-Signature contrôlé par
+        # l'appelant), ce qui donnait un 500 au lieu d'un 401.
+        if not hmac.compare_digest(
+            provided_signature.encode("utf-8"), expected_signature.encode("utf-8")
+        ):
             return False, "Invalid signature"
 
         return True, None
@@ -148,10 +159,13 @@ class APIClientSigner:
         """
         Crée les headers de signature pour une requête.
 
+        `path` doit inclure la query string ("/api/v1/x?limit=10") quand la
+        requête en a une: elle fait partie de ce qui est signé.
+
         Returns:
             Headers dict à ajouter à la requête
         """
-        timestamp = int(datetime.utcnow().timestamp())
+        timestamp = int(time.time())
 
         signature = self._validator.create_signature(
             self._secret,

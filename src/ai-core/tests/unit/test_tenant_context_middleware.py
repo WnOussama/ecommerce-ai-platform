@@ -131,13 +131,19 @@ class TestDevTenantHeaderBypassRequiresExplicitOptIn:
         assert response.json()["tenant_id"] == "00000000-0000-0000-0000-000000000001"
 
 
-def _make_request(headers: dict, method: str = "GET", path: str = "/api/v1/tenants/current"):
+def _make_request(
+    headers: dict,
+    method: str = "GET",
+    path: str = "/api/v1/tenants/current",
+    query_string: str = "",
+):
     from starlette.requests import Request
 
     scope = {
         "type": "http",
         "method": method,
         "path": path,
+        "query_string": query_string.encode(),
         "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
     }
 
@@ -202,6 +208,78 @@ class TestVerifySignature:
         request = _make_request({"X-Timestamp": str(stale_timestamp), "X-Signature": signature})
         error = await middleware._verify_signature(request, {"id": "t1", "hmac_secret": secret})
         assert error is not None
+
+    async def test_non_ascii_signature_is_a_401_not_a_500(self, middleware):
+        """compare_digest lève TypeError sur une str non ASCII: ça devait être rejeté proprement."""
+        import time
+
+        request = _make_request({"X-Timestamp": str(int(time.time())), "X-Signature": "sïgnature"})
+        error = await middleware._verify_signature(request, {"id": "t1", "hmac_secret": "sekret"})
+        assert error == "Invalid signature"
+
+    async def test_query_string_is_part_of_what_is_signed(self, middleware):
+        from app.core.security.api_key_security import APIClientSigner
+
+        signer = APIClientSigner("sk_test", "sekret")
+        headers = signer.sign_request("GET", "/api/v1/tenants/current?limit=10")
+        tenant = {"id": "t1", "hmac_secret": "sekret"}
+
+        same = _make_request(headers, query_string="limit=10")
+        assert await middleware._verify_signature(same, tenant) is None
+
+        # même signature rejouée avec d'autres paramètres: refusée
+        tampered = _make_request(headers, query_string="limit=10000&admin=1")
+        assert await middleware._verify_signature(tampered, tenant) == "Invalid signature"
+
+        # et une requête signée sans query rejouée AVEC une query: refusée aussi
+        no_query_headers = signer.sign_request("GET", "/api/v1/tenants/current")
+        added = _make_request(no_query_headers, query_string="limit=10")
+        assert await middleware._verify_signature(added, tenant) == "Invalid signature"
+
+    async def test_undecryptable_secret_is_rejected_without_leaking_why(self, middleware):
+        request = _make_request({"X-Timestamp": "123", "X-Signature": "abc"})
+        error = await middleware._verify_signature(
+            request, {"id": "t1", "hmac_secret": None, "hmac_secret_undecryptable": True}
+        )
+        assert error == "Request signature could not be verified"
+        assert "encrypt" not in error.lower() and "key" not in error.lower()
+
+    async def test_epoch_timestamp_does_not_depend_on_the_server_timezone(self, monkeypatch):
+        """datetime.utcnow().timestamp() décalait l'heure du fuseau du serveur (Europe/Paris:
+        1 à 2 h), donc un client qui envoie time() était rejeté."""
+        import time
+
+        from app.core.security.api_key_security import APIClientSigner, HMACSignatureValidator
+
+        monkeypatch.setenv("TZ", "Asia/Tokyo")
+        time.tzset()
+        try:
+            headers = APIClientSigner("sk_test", "sekret").sign_request("GET", "/x")
+            assert abs(int(headers["X-Timestamp"]) - time.time()) < 3
+
+            client_ts = int(time.time())  # ce que PHP time() / JS Date.now()/1000 enverraient
+            sig = HMACSignatureValidator().create_signature("sekret", client_ts, "GET", "/x")
+            ok, err = HMACSignatureValidator().validate_signature(
+                sig, "sekret", client_ts, "GET", "/x"
+            )
+            assert ok, err
+        finally:
+            monkeypatch.delenv("TZ", raising=False)
+            time.tzset()
+
+    async def test_wrong_encryption_key_is_logged_and_does_not_raise(self, caplog):
+        import logging
+        from types import SimpleNamespace
+
+        from app.core.security.secret_box import encrypt_secret
+
+        tenant = SimpleNamespace(id="t1", hmac_secret_encrypted=encrypt_secret("abc"))
+        # simule un secret chiffré avec une AUTRE clé
+        tenant.hmac_secret_encrypted = "gAAAAAB-not-a-valid-token-for-this-key"
+
+        with caplog.at_level(logging.ERROR):
+            assert TenantContextMiddleware._decrypt_tenant_secret(tenant) is None
+        assert "SECURITY_API_KEY_ENCRYPTION_KEY" in caplog.text
 
     async def test_malformed_timestamp_rejected(self, middleware):
         request = _make_request({"X-Timestamp": "not-a-number", "X-Signature": "abc"})

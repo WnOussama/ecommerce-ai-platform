@@ -198,17 +198,16 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             if tenant:
                 plan_name = (tenant.settings or {}).get("plan", DEFAULT_PLAN)
                 plan = _plan_config(plan_name)
+                hmac_secret = self._decrypt_tenant_secret(tenant)
                 tenant_data = {
                     "id": str(tenant.id),
                     "plan": plan_name,
                     "features": plan["features"],
                     "rate_limit_rpm": plan["rate_limit_rpm"],
                     "is_active": tenant.is_active,
-                    "hmac_secret": (
-                        decrypt_secret(tenant.hmac_secret_encrypted)
-                        if tenant.hmac_secret_encrypted
-                        else None
-                    ),
+                    "hmac_secret": hmac_secret,
+                    "hmac_secret_undecryptable": bool(tenant.hmac_secret_encrypted)
+                    and hmac_secret is None,
                 }
 
                 # Mise en cache: pas de TTL, invalidée explicitement par
@@ -221,6 +220,26 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
 
         return None
 
+    @staticmethod
+    def _decrypt_tenant_secret(tenant) -> Optional[str]:
+        """
+        Déchiffre le secret HMAC du tenant. Une clé de chiffrement erronée ou
+        changée ne doit pas faire remonter une exception hors du middleware
+        (500 générique sans indice pour l'opérateur): on journalise l'erreur et
+        le tenant est refusé en 401.
+        """
+        if not tenant.hmac_secret_encrypted:
+            return None
+        try:
+            return decrypt_secret(tenant.hmac_secret_encrypted)
+        except ValueError:
+            logger.error(
+                "Cannot decrypt tenant HMAC secret - check SECURITY_API_KEY_ENCRYPTION_KEY "
+                "(was it changed?)",
+                extra={"tenant_id": str(tenant.id)},
+            )
+            return None
+
     async def _verify_signature(self, request: Request, tenant: dict) -> Optional[str]:
         """
         Vérifie la signature HMAC de la requête (voir
@@ -230,6 +249,10 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             Un message d'erreur si la requête doit être rejetée, sinon None.
         """
         secret = tenant.get("hmac_secret")
+        if not secret and tenant.get("hmac_secret_undecryptable"):
+            # Détail réservé aux logs (voir _decrypt_tenant_secret): la réponse ne
+            # révèle rien sur la configuration du chiffrement.
+            return "Request signature could not be verified"
         if not secret:
             # Ne devrait pas arriver pour une clé émise après l'ajout de ce
             # système (activate_and_issue_api_key / rotate_api_key génèrent
@@ -261,7 +284,7 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             secret=secret,
             timestamp=timestamp,
             method=request.method,
-            path=request.url.path,
+            path=self._request_target(request),
             body=body or None,
         )
 
@@ -273,6 +296,12 @@ class TenantContextMiddleware(BaseHTTPMiddleware):
             return error
 
         return None
+
+    @staticmethod
+    def _request_target(request: Request) -> str:
+        """Chemin + query string: c'est ce que le client signe."""
+        query = request.url.query
+        return f"{request.url.path}?{query}" if query else request.url.path
 
     def clear_cache(self, tenant_id: str = None):
         """Vide le cache (tout ou pour un tenant spécifique)"""

@@ -2,9 +2,8 @@
 Script de peuplement pour l'environnement de démonstration.
 
 Crée un tenant réaliste, un petit catalogue produits, et indexe le
-catalogue dans le vector store RAG (ChromaDB en conteneur, InMemory en
-fallback natif si ChromaDB n'est pas importable dans l'environnement
-courant - voir app/services/rag/factory.py::get_vector_store).
+catalogue dans le vector store RAG (ChromaDB embarqué et persistant, sans
+repli en mémoire - voir app/services/rag/factory.py::get_vector_store).
 
 Usage (depuis src/ai-core, dans le conteneur ai-core ou avec les
 variables DB_* pointant vers une instance Postgres accessible):
