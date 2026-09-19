@@ -97,10 +97,14 @@ class TestDevTenantHeaderBypassRequiresExplicitOptIn:
     """
 
     async def test_header_alone_is_rejected_when_flag_is_off(self, monkeypatch):
-        from app.core.config.settings import settings
+        from app.core.config.settings import Environment, settings
 
+        # Le piège: ENVIRONMENT vaut "development" par défaut. On le force ici
+        # (la CI utilise un autre ENVIRONMENT) pour prouver que l'environnement
+        # seul n'ouvre plus le bypass.
+        monkeypatch.setattr(settings, "environment", Environment.DEVELOPMENT)
         monkeypatch.setattr(settings.security, "allow_dev_tenant_header", False)
-        assert settings.is_development  # le défaut - c'est justement le piège
+        assert settings.is_development
 
         app = _middleware_only_app()
         transport = ASGITransport(app=app)
