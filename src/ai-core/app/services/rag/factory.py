@@ -12,80 +12,69 @@ Usage:
 """
 
 import logging
+import os
 from typing import Optional
 
 from app.core.config.settings import settings
 from app.services.rag.embedding_service import (
     EmbeddingService,
-    MockEmbeddingService,
+    LocalEmbeddingService,
 )
 from app.services.rag.retrieval_service import (
     ChromaSearchableVectorStore,
-    InMemorySearchableVectorStore,
     ProductRetrievalService,
 )
 
 logger = logging.getLogger(__name__)
 
 # Singletons
-_embedding_service: Optional[EmbeddingService] = None
+_embedding_service = None
 _vector_store = None
 _retrieval_service: Optional[ProductRetrievalService] = None
 
 
-def get_embedding_service() -> EmbeddingService:
+def get_embedding_service():
     """
-    Retourne une instance du service d'embedding.
+    Retourne une instance du service d'embedding (toujours un vrai modèle).
 
-    Utilise le mock si pas de clé OpenAI (Groq n'a pas d'API d'embeddings).
+    OpenAI si une clé est configurée, sinon le modèle local all-MiniLM-L6-v2
+    (Groq n'a pas d'API d'embeddings). Pas de mock, pas de repli silencieux.
     """
     global _embedding_service
 
     if _embedding_service is None:
-        # Vérifier si on doit utiliser le mock
-        use_mock = not settings.llm.openai_api_key
-
-        if use_mock:
-            logger.info("Using MockEmbeddingService")
-            _embedding_service = MockEmbeddingService(dimensions=384)
-        else:
+        if settings.llm.openai_api_key:
             logger.info("Using EmbeddingService with OpenAI")
             _embedding_service = EmbeddingService(
                 api_key=settings.llm.openai_api_key,
                 model=settings.llm.openai_embedding_model,
-                fallback_to_mock=True,
             )
+        else:
+            model_dir = os.path.join(
+                os.path.dirname(settings.vector_store.persist_directory.rstrip("/")),
+                "onnx_models",
+                LocalEmbeddingService.MODEL_NAME,
+            )
+            logger.info("Using LocalEmbeddingService (all-MiniLM-L6-v2)")
+            _embedding_service = LocalEmbeddingService(model_dir=model_dir)
 
     return _embedding_service
 
 
 def get_vector_store():
     """
-    Retourne une instance du vector store.
+    Retourne le vector store ChromaDB (embarqué, persistant).
 
-    Utilise InMemory en mode dev/test, ChromaDB sinon.
+    Si ChromaDB est indisponible l'erreur remonte : pas de repli silencieux
+    vers un store en mémoire qui perdrait les données au redémarrage.
     """
     global _vector_store
 
     if _vector_store is None:
-        # En mode test/dev sans ChromaDB installé, utiliser InMemory
-        use_in_memory = settings.is_development
-
-        if use_in_memory:
-            try:
-                # Essayer d'utiliser ChromaDB même en dev
-                _vector_store = ChromaSearchableVectorStore(
-                    persist_directory=settings.vector_store.persist_directory
-                )
-                logger.info("Using ChromaSearchableVectorStore")
-            except Exception as e:
-                logger.warning(f"ChromaDB not available, using InMemory: {e}")
-                _vector_store = InMemorySearchableVectorStore()
-        else:
-            _vector_store = ChromaSearchableVectorStore(
-                persist_directory=settings.vector_store.persist_directory
-            )
-            logger.info("Using ChromaSearchableVectorStore")
+        _vector_store = ChromaSearchableVectorStore(
+            persist_directory=settings.vector_store.persist_directory
+        )
+        logger.info("Using ChromaSearchableVectorStore")
 
     return _vector_store
 

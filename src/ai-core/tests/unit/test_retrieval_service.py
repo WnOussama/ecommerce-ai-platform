@@ -16,7 +16,7 @@ from app.services.rag.retrieval_service import (
     RetrievedProduct,
     InMemorySearchableVectorStore,
 )
-from app.services.rag.embedding_service import MockEmbeddingService
+from tests.support.stub_embedding_service import StubEmbeddingService
 
 
 # =============================================================================
@@ -32,7 +32,7 @@ def tenant_id():
 @pytest.fixture
 def mock_embedding_service():
     """Service d'embedding mock."""
-    return MockEmbeddingService(dimensions=384)
+    return StubEmbeddingService(dimensions=384)
 
 
 @pytest.fixture

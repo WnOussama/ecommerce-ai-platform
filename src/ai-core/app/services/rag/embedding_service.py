@@ -2,15 +2,15 @@
 Embedding Service - Génération d'embeddings multi-provider
 
 Ce service abstrait la génération d'embeddings pour:
-- Support mock (développement/tests)
-- Support OpenAI (production)
+- Modèle local réel (all-MiniLM-L6-v2, sans clé API)
+- OpenAI (optionnel, si une clé est fournie)
 - Batching optimisé
 - Multi-tenant safe
 """
 
-import hashlib
+import asyncio
 import logging
-import random
+import threading
 from dataclasses import dataclass
 from typing import List, Optional, Protocol
 
@@ -72,123 +72,66 @@ class EmbeddingServiceProtocol(Protocol):
 
 
 # =============================================================================
-# MOCK EMBEDDING SERVICE
+# LOCAL EMBEDDING SERVICE (real model, no API key)
 # =============================================================================
 
 
-class MockEmbeddingService:
+class LocalEmbeddingService:
     """
-    Service d'embedding mock pour développement et tests.
+    Vrai modèle d'embedding local : all-MiniLM-L6-v2 (ONNX, 384 dimensions),
+    le même que celui livré avec ChromaDB. Aucune clé API : Groq n'a pas
+    d'API d'embeddings, et OpenAI est optionnel.
 
-    Génère des embeddings déterministes basés sur le hash du texte.
-    Cela permet d'avoir des embeddings reproductibles pour les tests.
-
-    Usage:
-        service = MockEmbeddingService()
-        embedding = await service.generate_embedding("Hello world")
+    Le modèle (~80 Mo) est téléchargé une seule fois dans `model_dir`, puis
+    chargé paresseusement au premier appel. L'inférence tourne dans un
+    thread pour ne pas bloquer la boucle asyncio.
     """
 
-    DEFAULT_DIMENSIONS = 384  # Similaire à sentence-transformers
+    DEFAULT_DIMENSIONS = 384
+    MODEL_NAME = "all-MiniLM-L6-v2"
 
-    def __init__(
-        self,
-        dimensions: int = DEFAULT_DIMENSIONS,
-        simulate_latency: bool = False,
-    ):
-        """
-        Initialise le service mock.
-
-        Args:
-            dimensions: Dimension des embeddings générés
-            simulate_latency: Simuler une latence réseau
-        """
-        self._dimensions = dimensions
-        self._simulate_latency = simulate_latency
-        self._model_name = "mock-embedding-v1"
-
-        logger.info("MockEmbeddingService initialized", extra={"dimensions": dimensions})
+    def __init__(self, model_dir: Optional[str] = None):
+        self._model_dir = model_dir
+        self._fn = None
+        self._lock = threading.Lock()
 
     @property
     def dimensions(self) -> int:
-        """Dimension des embeddings."""
-        return self._dimensions
+        return self.DEFAULT_DIMENSIONS
 
     @property
     def model_name(self) -> str:
-        """Nom du modèle."""
-        return self._model_name
+        return self.MODEL_NAME
+
+    def _load(self):
+        with self._lock:
+            if self._fn is None:
+                from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+
+                if self._model_dir:
+                    ONNXMiniLM_L6_V2.DOWNLOAD_PATH = self._model_dir
+                self._fn = ONNXMiniLM_L6_V2()
+                logger.info("Local embedding model ready", extra={"model": self.MODEL_NAME})
+        return self._fn
+
+    def _encode(self, texts: List[str]) -> List[List[float]]:
+        return [[float(x) for x in vec] for vec in self._load()(texts)]
 
     async def generate_embedding(
         self,
         text: str,
         tenant_id: Optional[str] = None,
     ) -> List[float]:
-        """
-        Génère un embedding déterministe pour un texte.
-
-        L'embedding est basé sur un hash du texte, ce qui garantit
-        que le même texte produira toujours le même embedding.
-
-        Args:
-            text: Texte à encoder
-            tenant_id: ID du tenant (ignoré pour mock)
-
-        Returns:
-            Liste de floats représentant l'embedding
-        """
-        if self._simulate_latency:
-            import asyncio
-
-            await asyncio.sleep(random.uniform(0.01, 0.05))
-
-        return self._generate_deterministic_embedding(text)
+        return (await self.generate_embeddings_batch([text], tenant_id))[0]
 
     async def generate_embeddings_batch(
         self,
         texts: List[str],
         tenant_id: Optional[str] = None,
     ) -> List[List[float]]:
-        """
-        Génère des embeddings pour plusieurs textes.
-
-        Args:
-            texts: Liste de textes à encoder
-            tenant_id: ID du tenant (ignoré pour mock)
-
-        Returns:
-            Liste d'embeddings
-        """
-        if self._simulate_latency:
-            import asyncio
-
-            # Latence proportionnelle au nombre de textes
-            await asyncio.sleep(random.uniform(0.01, 0.02) * len(texts))
-
-        return [self._generate_deterministic_embedding(text) for text in texts]
-
-    def _generate_deterministic_embedding(self, text: str) -> List[float]:
-        """
-        Génère un embedding déterministe basé sur le hash du texte.
-
-        Utilise SHA256 comme seed pour un générateur pseudo-aléatoire,
-        garantissant des résultats reproductibles.
-        """
-        # Hash du texte comme seed
-        text_hash = hashlib.sha256(text.encode()).hexdigest()
-        seed = int(text_hash[:8], 16)
-
-        # Générateur avec seed fixe
-        rng = random.Random(seed)
-
-        # Générer des valeurs normalisées entre -1 et 1
-        embedding = [rng.gauss(0, 0.3) for _ in range(self._dimensions)]
-
-        # Normaliser le vecteur (L2 norm)
-        norm = sum(x * x for x in embedding) ** 0.5
-        if norm > 0:
-            embedding = [x / norm for x in embedding]
-
-        return embedding
+        if not texts:
+            return []
+        return await asyncio.to_thread(self._encode, texts)
 
 
 # =============================================================================
@@ -204,7 +147,6 @@ class EmbeddingService:
     - Génération d'embeddings unitaires
     - Batching optimisé
     - Rate limiting
-    - Fallback vers mock si OpenAI indisponible
 
     Usage:
         service = EmbeddingService(api_key="sk-...")
@@ -220,7 +162,6 @@ class EmbeddingService:
         api_key: Optional[str] = None,
         model: str = DEFAULT_MODEL,
         dimensions: int = DEFAULT_DIMENSIONS,
-        fallback_to_mock: bool = True,
     ):
         """
         Initialise le service d'embedding.
@@ -229,35 +170,22 @@ class EmbeddingService:
             api_key: Clé API OpenAI
             model: Modèle d'embedding à utiliser
             dimensions: Dimension des embeddings
-            fallback_to_mock: Utiliser mock si OpenAI indisponible
         """
         self._api_key = api_key
         self._model = model
         self._dimensions = dimensions
-        self._fallback_to_mock = fallback_to_mock
         self._client = None
-        self._mock_service: Optional[MockEmbeddingService] = None
 
-        # Initialiser le client OpenAI si clé fournie
-        if api_key:
-            try:
-                from openai import AsyncOpenAI
+        if not api_key:
+            raise ValueError("EmbeddingService requires an OpenAI API key")
 
-                self._client = AsyncOpenAI(api_key=api_key)
-                logger.info(
-                    "EmbeddingService initialized with OpenAI",
-                    extra={"model": model, "dimensions": dimensions},
-                )
-            except ImportError:
-                logger.warning("OpenAI not installed, using mock")
-                self._init_mock()
-        else:
-            logger.info("No API key provided, using mock embedding service")
-            self._init_mock()
+        from openai import AsyncOpenAI
 
-    def _init_mock(self) -> None:
-        """Initialise le service mock."""
-        self._mock_service = MockEmbeddingService(dimensions=self._dimensions)
+        self._client = AsyncOpenAI(api_key=api_key)
+        logger.info(
+            "EmbeddingService initialized with OpenAI",
+            extra={"model": model, "dimensions": dimensions},
+        )
 
     @property
     def dimensions(self) -> int:
@@ -267,14 +195,7 @@ class EmbeddingService:
     @property
     def model_name(self) -> str:
         """Nom du modèle."""
-        if self._mock_service:
-            return self._mock_service.model_name
         return self._model
-
-    @property
-    def is_mock(self) -> bool:
-        """True si utilise le mock."""
-        return self._mock_service is not None
 
     async def generate_embedding(
         self,
@@ -291,11 +212,6 @@ class EmbeddingService:
         Returns:
             Embedding sous forme de liste de floats
         """
-        # Utiliser mock si disponible
-        if self._mock_service:
-            return await self._mock_service.generate_embedding(text, tenant_id)
-
-        # OpenAI
         try:
             response = await self._client.embeddings.create(
                 model=self._model,
@@ -307,12 +223,6 @@ class EmbeddingService:
             logger.error(
                 "Failed to generate embedding", extra={"tenant_id": tenant_id, "error": str(e)}
             )
-
-            # Fallback to mock
-            if self._fallback_to_mock:
-                if not self._mock_service:
-                    self._init_mock()
-                return await self._mock_service.generate_embedding(text, tenant_id)
 
             raise
 
@@ -335,10 +245,6 @@ class EmbeddingService:
         """
         if not texts:
             return []
-
-        # Utiliser mock si disponible
-        if self._mock_service:
-            return await self._mock_service.generate_embeddings_batch(texts, tenant_id)
 
         # OpenAI avec batching
         all_embeddings: List[List[float]] = []
@@ -375,15 +281,6 @@ class EmbeddingService:
                     },
                 )
 
-                # Fallback to mock for this batch
-                if self._fallback_to_mock:
-                    if not self._mock_service:
-                        self._init_mock()
-                    batch_embeddings = await self._mock_service.generate_embeddings_batch(
-                        batch, tenant_id
-                    )
-                    all_embeddings.extend(batch_embeddings)
-                else:
-                    raise
+                raise
 
         return all_embeddings

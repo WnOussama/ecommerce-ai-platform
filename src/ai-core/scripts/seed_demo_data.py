@@ -217,17 +217,10 @@ async def verify_retrieval(tenant_id: str) -> None:
     Vérifie que le pipeline embed -> store -> query -> rank fonctionne
     de bout en bout.
 
-    NOTE: en mode LLM_PROVIDER=mock, MockEmbeddingService hashe la chaîne
-    complète pour dériver un vecteur pseudo-aléatoire (voir
-    embedding_service.py::_generate_deterministic_embedding). Ce vecteur
-    n'a AUCUN sens sémantique - deux textes proches en sens n'ont pas de
-    vecteurs proches, seul un texte identique produit un vecteur identique.
-    On interroge donc avec le texte de recherche EXACT du produit "Ridge
-    Pro" (voir ProductIndexer._product_to_search_text) pour prouver que
-    la mécanique de bout en bout fonctionne - PAS que la recherche est
-    sémantiquement pertinente. Une vraie démonstration de pertinence
-    nécessite un service d'embedding réel (OpenAI ou un modèle local),
-    absent en mode mock.
+    Les embeddings sont réels (OpenAI si une clé est configurée, sinon le
+    modèle local all-MiniLM-L6-v2). On interroge avec le texte de recherche
+    exact du produit "Ridge Pro" (voir ProductIndexer._product_to_search_text),
+    qui doit donc ressortir en tête si le pipeline fonctionne.
     """
     retrieval_service = get_retrieval_service()
     exact_text_query = (

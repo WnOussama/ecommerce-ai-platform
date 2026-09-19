@@ -19,9 +19,7 @@ from app.services.rag.product_indexer import (
     IndexingError,
 )
 from tests.utils import InMemoryVectorStore
-from app.services.rag.embedding_service import (
-    MockEmbeddingService,
-)
+from tests.support.stub_embedding_service import StubEmbeddingService
 from app.services.catalog.repository import (
     ProductData,
     ProductFilter,
@@ -42,7 +40,7 @@ def tenant_id():
 @pytest.fixture
 def mock_embedding_service():
     """Service d'embedding mock."""
-    return MockEmbeddingService(dimensions=384)
+    return StubEmbeddingService(dimensions=384)
 
 
 @pytest.fixture
@@ -527,62 +525,6 @@ class TestMultiTenantIsolation:
         assert "Product B" in doc_b["document"]
         assert doc_a["metadata"]["price"] == 10.0
         assert doc_b["metadata"]["price"] == 20.0
-
-
-# =============================================================================
-# EMBEDDING SERVICE TESTS
-# =============================================================================
-
-class TestMockEmbeddingService:
-    """Tests pour le service d'embedding mock."""
-
-    @pytest.mark.asyncio
-    async def test_generate_embedding(self, mock_embedding_service):
-        """generate_embedding doit retourner un vecteur de la bonne dimension."""
-        embedding = await mock_embedding_service.generate_embedding("Hello world")
-
-        assert isinstance(embedding, list)
-        assert len(embedding) == 384  # dimensions par défaut
-        assert all(isinstance(x, float) for x in embedding)
-
-    @pytest.mark.asyncio
-    async def test_embedding_deterministic(self, mock_embedding_service):
-        """Le même texte doit produire le même embedding."""
-        text = "Test text for embedding"
-
-        embedding1 = await mock_embedding_service.generate_embedding(text)
-        embedding2 = await mock_embedding_service.generate_embedding(text)
-
-        assert embedding1 == embedding2
-
-    @pytest.mark.asyncio
-    async def test_different_texts_different_embeddings(self, mock_embedding_service):
-        """Des textes différents doivent produire des embeddings différents."""
-        embedding1 = await mock_embedding_service.generate_embedding("Text one")
-        embedding2 = await mock_embedding_service.generate_embedding("Text two")
-
-        assert embedding1 != embedding2
-
-    @pytest.mark.asyncio
-    async def test_generate_embeddings_batch(self, mock_embedding_service):
-        """generate_embeddings_batch doit fonctionner pour plusieurs textes."""
-        texts = ["Text one", "Text two", "Text three"]
-
-        embeddings = await mock_embedding_service.generate_embeddings_batch(texts)
-
-        assert len(embeddings) == 3
-        assert all(len(emb) == 384 for emb in embeddings)
-
-    @pytest.mark.asyncio
-    async def test_embedding_normalized(self, mock_embedding_service):
-        """Les embeddings doivent être normalisés (L2 norm ≈ 1)."""
-        embedding = await mock_embedding_service.generate_embedding("Test")
-
-        # Calculer la norme L2
-        norm = sum(x * x for x in embedding) ** 0.5
-
-        # La norme doit être proche de 1
-        assert 0.99 < norm < 1.01
 
 
 # =============================================================================

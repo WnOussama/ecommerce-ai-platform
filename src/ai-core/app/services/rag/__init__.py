@@ -10,7 +10,7 @@ Ce module contient:
 from app.services.rag.embedding_service import (
     EmbeddingService,
     EmbeddingServiceProtocol,
-    MockEmbeddingService,
+    LocalEmbeddingService,
 )
 from app.services.rag.product_indexer import (
     IndexingError,
@@ -41,5 +41,5 @@ __all__ = [
     # Embedding
     "EmbeddingService",
     "EmbeddingServiceProtocol",
-    "MockEmbeddingService",
+    "LocalEmbeddingService",
 ]
