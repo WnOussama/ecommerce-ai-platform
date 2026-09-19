@@ -2,11 +2,6 @@
 Configuration module exports.
 """
 
-from app.core.config.security_settings import (
-    SecretValidationError,
-    StrictSecuritySettings,
-    validate_security_settings,
-)
 from app.core.config.settings import (
     DatabaseSettings,
     Environment,
@@ -35,8 +30,4 @@ __all__ = [
     "SecuritySettings",
     "MonitoringSettings",
     "TenantSettings",
-    # Strict security
-    "StrictSecuritySettings",
-    "SecretValidationError",
-    "validate_security_settings",
 ]

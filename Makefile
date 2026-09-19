@@ -20,7 +20,7 @@ help:
 
 dev:
 	@echo "Starting development environment..."
-	cd infrastructure/docker && docker-compose -f docker-compose.dev.yml up -d postgres redis chromadb
+	cd infrastructure/docker && docker-compose -f docker-compose.dev.yml up -d postgres redis
 	@echo "Waiting for services to be ready..."
 	sleep 5
 	@echo "Services ready! Run 'cd src/ai-core && uvicorn app.main:app --reload' to start the API"
@@ -60,14 +60,12 @@ test-cov:
 lint:
 	@echo "Running linters..."
 	cd src/ai-core && ruff check app/
-	cd src/ai-core && black --check app/
-	cd src/ai-core && mypy app/ --ignore-missing-imports
+	cd src/ai-core && ruff format --check app/
 
 lint-fix:
 	@echo "Fixing lint issues..."
 	cd src/ai-core && ruff check app/ --fix
-	cd src/ai-core && black app/
-	cd src/ai-core && isort app/
+	cd src/ai-core && ruff format app/
 
 # =============================================================================
 # DATABASE

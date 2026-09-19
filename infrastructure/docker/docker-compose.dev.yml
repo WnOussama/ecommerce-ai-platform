@@ -5,7 +5,8 @@
 # - PostgreSQL: Owned EXCLUSIVELY by FastAPI (AI Core)
 # - Laravel Dashboard: Communicates via REST API only (NO direct DB access)
 # - Migrations: Managed by Alembic (Python) only
-# - Services: FastAPI + PostgreSQL + Redis + ChromaDB
+# - Vector store: ChromaDB runs EMBEDDED in ai-core (persisted in src/ai-core/data/chroma)
+# - Services: FastAPI + PostgreSQL + Redis
 # =============================================================================
 
 services:
@@ -38,8 +39,6 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_PASSWORD=${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-      - CHROMA_HOST=chromadb
-      - CHROMA_PORT=8000
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -246,35 +245,6 @@ services:
           memory: 256M
 
   # ===========================================================================
-  # VECTOR DATABASE - ChromaDB
-  # ===========================================================================
-  chromadb:
-    image: chromadb/chroma:0.4.22
-    container_name: saas_chromadb
-    restart: unless-stopped
-    environment:
-      - IS_PERSISTENT=TRUE
-      - PERSIST_DIRECTORY=/chroma/chroma
-      - ANONYMIZED_TELEMETRY=FALSE
-    ports:
-      - "${CHROMA_PORT:-8100}:8000"
-    volumes:
-      - chroma_data:/chroma/chroma
-    networks:
-      - saas_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
-
-  # ===========================================================================
   # PROMETHEUS - Scrapes ai-core's real /metrics (see prometheus.dev.yml)
   # ===========================================================================
   prometheus:
@@ -339,8 +309,6 @@ volumes:
   prestashop_data:
     driver: local
   redis_data:
-    driver: local
-  chroma_data:
     driver: local
   ai_core_logs:
     driver: local

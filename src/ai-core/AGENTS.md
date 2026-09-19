@@ -51,10 +51,9 @@ docker exec saas_ai_core sh -c "cd /app && python -m pytest tests/ -q"
 
 ## Gotchas
 
-- Migrations live in `alembic/versions/` and CI builds its database with `alembic upgrade head`. The folder `app/infrastructure/database/migrations/` is a dead legacy copy that Alembic ignores, so a migration placed there never runs. Chain a new migration after the current head (`alembic heads`) and write it idempotent (`IF NOT EXISTS`), because a dev database may already have hand applied changes. Test it on an empty database before pushing.
+- Migrations live in `alembic/versions/` and CI builds its database with `alembic upgrade head`. Chain a new migration after the current head (`alembic heads`) and write it idempotent (`IF NOT EXISTS`), because a dev database may already have hand applied changes. Test it on an empty database before pushing.
 - Do not call `create_application()` in a unit test that reaches a database endpoint. The shared asyncpg engine is bound to an old event loop and fails with "attached to a different loop". Wrap the middleware in a tiny Starlette app instead.
-- `app/core/config/security_settings.py` (`StrictSecuritySettings`) is exported but never called. Real settings live in `settings.py`.
-- The `chromadb` service in the compose files is unused. ChromaDB runs embedded from `data/chroma`, and nothing connects to that container.
+- ChromaDB runs embedded in ai-core from `data/chroma`. There is no Chroma server container.
 - A tenant whose key predates HMAC has no secret and is refused, and it cannot call the rotate route. Run `python -m scripts.reissue_tenant_credentials <tenant_id>`, then restart ai-core because the auth cache lives in memory. A signed request replayed unchanged is accepted inside its 5 minute window (there is no nonce).
 - With a `customer_id`, ai-core reuses that visitor's open conversation, so `first_message` is true only once per visitor. A welcome coupon refused by the hourly cap is not offered again.
 - `docker-compose.dev.yml` is the only compose file. The first embedding call downloads a ~80 MB model into `data/onnx_models` (git ignored).

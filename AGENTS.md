@@ -25,7 +25,7 @@ make migrate                           # alembic upgrade head (see the ai-core m
 make test                              # ai-core unit tests only
 cd src/backoffice && php artisan test  # backoffice
 
-# Lint (this is what CI runs; the Makefile lint targets still call black and mypy)
+# Lint (this is what CI runs; `make lint` runs the same checks)
 cd src/ai-core && ruff check app/ && ruff format --check app/
 cd src/backoffice && vendor/bin/pint --test
 ```
